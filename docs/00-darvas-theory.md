@@ -148,6 +148,20 @@ forming ──3日确认上轨──→ forming_bottom ──3日确认下轨─
 
 watch 状态机对应：`watching → pending`（买单生成）`→ holding`（成交）`→ exited`（清仓）；`watching → suspended`（人工挂起）`→ watching`（激活）；任意活跃态 `→ blacklisted`（两亏）。
 
+### 已交易股票历史库（原书校对补全，2026-10-18）
+
+达瓦斯自称**全书最重要的内容**：对每笔已完成的交易做记录，避免重复犯错。三记录制度：
+
+| # | 记录 | 落库位置 | 录入方式 |
+|---|------|---------|---------|
+| ① | 买入理由 | `plan_order.reason_json`（六问答案） | 自动（planner 生成计划时） |
+| ② | 卖出理由 | `position.close_reason` + `realized_pnl` | 自动（清仓时） |
+| ③ | 亏损原因/教训 | `trade_review`（0004：rule_followed/error_type/lesson） | **人工复盘录入**（`darvas review add <position_id> --lesson <文本>`） |
+
+- **战绩视图**：`darvas review list [code]`——每股交易次数/胜负/总盈亏/最新教训；单股模式列每笔明细，未写复盘的仓位给出录入命令提示。
+- **再纳入闭环**：poolsync 入池时查该股历史战绩，一亏未拉黑者再入池 → `watch.note` 留痕"先读教训再纳入"（两亏者直接拉黑，见上表规则2）。
+- **教训不自动生成**：不引入任何自动基本面/情绪模型，教训必须人工写（原书精神：复盘是交易者的功课）。
+
 ### 排除清单（达瓦斯用亏损换来的）
 
 - ❌ 打听消息 / 听经纪人建议 / 华尔街格言 / 谣言

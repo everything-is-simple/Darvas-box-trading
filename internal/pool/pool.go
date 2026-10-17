@@ -2,7 +2,8 @@
 //
 // 状态迁移（contract.PoolManager.Sync 主导入池与出池）：
 //
-//	→ watching     candidate 当日入池（初选四条件通过；黑名单/两亏/超上限拦截）
+//	→ watching     candidate 当日入池（初选四条件通过；黑名单/两亏/超上限拦截；
+//	               曾交易者 note 留痕历史战绩"先读教训再纳入"，B3）
 //	watching→pending 由 planner 生成停损买单计划时设置（M4，B2接线）
 //	pending→holding 由成交回录设置（M4，B2接线）
 //	holding→exited 止损成交（清仓）/ 人工移除
@@ -58,6 +59,16 @@ func (m *Manager) Sync(ctx context.Context, date string) (contract.TaskResult, e
 		if existing != nil && existing.Stage != contract.StageExited {
 			continue // 已在池（未退出），不重复入（blacklisted/suspended 也在此列）
 		}
+		// B3 再纳入提示（仅重新入池路径查战绩，原书：先读历史教训再纳入）：
+		// 曾交易过且未达两亏者 → watch.note 留痕（"darvas review list <code>" 查教训）
+		note := ""
+		if existing != nil {
+			if trades, losses, pnl, e := m.st.TradeRepo.TrackRecordByCode(c.Code); e == nil && trades > 0 {
+				note = fmt.Sprintf("历史战绩%d笔(亏%d)/累计盈亏%.0f元——再纳入：请先读教训 darvas review list %s",
+					trades, losses, pnl, c.Code)
+				m.log.Printf("再纳入提示 %s: %d笔交易/亏%d/累计%.0f元", c.Code, trades, losses, pnl)
+			}
+		}
 		// B2④ 跟踪5-8支上限：活跃池（watching+pending+holding）满则不再入
 		active, _ := m.st.PoolRepo.ActiveWatchCount()
 		if active >= maxWatch {
@@ -77,6 +88,7 @@ func (m *Manager) Sync(ctx context.Context, date string) (contract.TaskResult, e
 			Stage:        contract.StageWatching,
 			CurrentBoxID: boxID,
 			BoxCount:     0,
+			Note:         note,
 		})
 		entered++
 	}

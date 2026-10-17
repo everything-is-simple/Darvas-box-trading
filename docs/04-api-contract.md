@@ -432,6 +432,9 @@ darvas param   get|set        # 参数读写
 darvas pool    list [stage]   # 跟踪池查看（可按stage过滤，B2）
 darvas pool    suspend <code> --resume <价>   # 条件挂起：收盘≥激活价自动恢复跟踪
 darvas pool    remove <code> --reason <文本>  # 人工移除（留痕）
+darvas review list [code]     # 已交易股票历史库·战绩视图（B3：无code=每股汇总，有code=每笔明细+复盘）
+darvas review add <position_id> --lesson <文本> [--error-type <文本>] [--rule <followed|violated>]
+                              # 复盘录入（三记录制度之三：亏损原因/教训，人工写，重录覆盖）
 darvas fills   paste          # 交互式成交录入
 darvas doctor                 # 一致性体检（含账本三重校验）
 ```

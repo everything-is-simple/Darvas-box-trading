@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,6 +44,9 @@ func main() {
 	addr := fs.String("addr", "127.0.0.1:8787", "ui: HTTP监听地址")
 	resume := fs.Float64("resume", 0, "pool suspend: 挂起激活价（收盘≥此价自动恢复跟踪）")
 	reason := fs.String("reason", "", "pool remove: 人工移除原因")
+	lesson := fs.String("lesson", "", "review add: 教训（人工复盘录入，原书核心）")
+	errorType := fs.String("error-type", "", "review add: 错误类型（追高/不止损/过早止盈/情绪化…）")
+	rule := fs.String("rule", "", "review add: 规则执行评价（followed/violated/自由文本）")
 	// Go flag 遇首个非 flag 即停止；这里把 flag 与位置参数分离，使
 	// `darvas ladder <code> --db <path>` 这样的混合顺序也能正确解析。
 	flagArgs, positional := splitFlags(os.Args[2:])
@@ -73,6 +77,8 @@ func main() {
 		runRerun(*db, *date, cmd)
 	case "pool":
 		runPool(*db, positional, *resume, *reason)
+	case "review":
+		runReview(*db, positional, *lesson, *errorType, *rule)
 	case "weekly":
 		runWeekly(*db, *date)
 	case "fills":
@@ -121,6 +127,9 @@ func usage() {
   darvas pool    list [stage]                跟踪池查看（stage: watching/pending/holding/suspended/blacklisted）
   darvas pool    suspend <code> --resume <价> 条件挂起（收盘≥激活价自动恢复跟踪）
   darvas pool    remove <code> --reason <文本> 人工移除（留痕）
+  darvas review list [code]                已交易股票历史库·战绩视图（B3，三记录制度）
+  darvas review add <position_id> --lesson <文本> [--error-type <文本>] [--rule <评价>]
+                                             复盘录入（亏损原因/教训，人工写）
   darvas run    [--date]                     完整盘后流水线（M5）
   darvas boxscan|screen|poolsync|signal|plan|report [--date]
                                              单任务幂等补跑（docs/04 §7）
@@ -579,6 +588,104 @@ func runPool(db string, positional []string, resume float64, reason string) {
 		fmt.Println("未知子命令:", sub)
 		os.Exit(2)
 	}
+}
+
+// runReview 已交易股票历史库（B3，原书自称最重要的内容——三记录制度）。
+// ①买入理由（reason_json）②卖出理由（close_reason+realized_pnl）自动落库；
+// ③亏损原因/教训（trade_review）人工复盘录入。再纳入时 poolsync 留痕提示。
+func runReview(db string, args []string, lesson, errorType, rule string) {
+	if len(args) == 0 {
+		fmt.Println("用法: darvas review list [code]                    战绩视图（无code=全部汇总；有code=单股明细）")
+		fmt.Println("      darvas review add <position_id> --lesson <文本> [--error-type <文本>] [--rule <评价>]")
+		os.Exit(2)
+	}
+	st, err := store.Open(dbPath(db))
+	must(err)
+	defer st.Close()
+	switch args[0] {
+	case "list":
+		code := ""
+		if len(args) > 1 {
+			code = args[1]
+		}
+		if code == "" {
+			rows, err := st.TradeRepo.ReviewSummary("")
+			must(err)
+			if len(rows) == 0 {
+				fmt.Println("（暂无已完成的交易）")
+				return
+			}
+			fmt.Printf("%-10s %-10s 笔数 胜/负  %-12s %s\n", "代码", "名称", "累计盈亏", "最新教训")
+			var totTrades, totWins, totLosses int
+			var totPnl float64
+			for _, r := range rows {
+				fmt.Printf("%-10s %-10s %3d  %d胜/%d负  %-12.2f %s\n",
+					r.Code, r.Name, r.Trades, r.Wins, r.Losses, r.TotalPnl, ellipsis(r.Lesson, 40))
+				totTrades += r.Trades
+				totWins += r.Wins
+				totLosses += r.Losses
+				totPnl += r.TotalPnl
+			}
+			fmt.Printf("合计 %d 只股票：%d笔 %d胜/%d负 累计盈亏 %.2f\n",
+				len(rows), totTrades, totWins, totLosses, totPnl)
+			fmt.Println("单股明细: darvas review list <code>")
+			return
+		}
+		// 单股明细
+		sum, err := st.TradeRepo.ReviewSummary(code)
+		must(err)
+		if len(sum) == 0 {
+			fmt.Printf("%s 暂无已完成的交易\n", code)
+			return
+		}
+		s := sum[0]
+		fmt.Printf("%s %s：%d笔 %d胜/%d负 累计盈亏 %.2f\n\n", s.Code, s.Name, s.Trades, s.Wins, s.Losses, s.TotalPnl)
+		detail, err := st.TradeRepo.ReviewDetail(code)
+		must(err)
+		unreviewed := 0
+		for _, d := range detail {
+			fmt.Printf("position#%d  %s ~ %s  %d股  盈亏 %.2f  卖出原因:%s\n",
+				d.PositionID, d.OpenedDate, d.ClosedDate, d.Qty, d.RealizedPnl, d.CloseReason)
+			if d.Lesson == "" && d.ErrorType == "" {
+				fmt.Println("    （未写复盘）darvas review add", d.PositionID, "--lesson <教训>")
+				unreviewed++
+				continue
+			}
+			fmt.Printf("    规则:%s  错误类型:%s\n    教训:%s\n", d.RuleFollowed, d.ErrorType, d.Lesson)
+		}
+		if unreviewed > 0 {
+			fmt.Printf("\n⚠ %d 笔未写复盘（原书：每笔交易完成都必须记录教训）\n", unreviewed)
+		}
+	case "add":
+		if len(args) < 2 {
+			fmt.Println("用法: darvas review add <position_id> --lesson <文本> [--error-type <文本>] [--rule <评价>]")
+			fmt.Println("position_id 见: darvas review list <code>")
+			os.Exit(2)
+		}
+		id, err := strconv.ParseInt(args[1], 10, 64)
+		if err != nil {
+			fmt.Println("position_id 必须是数字（见 darvas review list <code>）")
+			os.Exit(2)
+		}
+		if lesson == "" && errorType == "" && rule == "" {
+			fmt.Println("至少提供 --lesson / --error-type / --rule 之一")
+			os.Exit(2)
+		}
+		must(st.TradeRepo.AddReview(id, rule, errorType, lesson))
+		fmt.Printf("已记录复盘：position#%d 教训=%q 错误类型=%q 规则=%q（重录覆盖）\n", id, lesson, errorType, rule)
+	default:
+		fmt.Println("未知子命令:", args[0])
+		os.Exit(2)
+	}
+}
+
+// ellipsis 超长文本截断（终端单行显示）。
+func ellipsis(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 // runWeekly M7.2 周报：默认锚定最近周六（docs/01 §4.3 周六10:00的命令行入口）。

@@ -24,6 +24,7 @@ erDiagram
     plan_order ||--o| trade_fill : "成交"
     security ||--o{ equity_snapshot : "权益(间接)"
     candidate ||--o{ watch : "入池来源"
+    position ||--o| trade_review : "复盘(每笔一条,B3)"
 
     security {
         TEXT code PK "sh600519"
@@ -142,6 +143,15 @@ erDiagram
         REAL fee
         TEXT raw_text "粘贴原文(审计)"
     }
+    trade_review {
+        INTEGER id PK
+        INTEGER position_id FK "每笔交易一条复盘(UNIQUE,重录覆盖)"
+        TEXT code FK
+        TEXT rule_followed "规则执行评价(人工)"
+        TEXT error_type "错误类型(人工:追高/不止损…)"
+        TEXT lesson "教训(人工复盘录入,B3)"
+        DATE created_at
+    }
     equity_snapshot {
         DATE date PK
         REAL cash
@@ -206,7 +216,7 @@ erDiagram
 
 ## 3. 完整DDL
 
-见 `internal/store/migrations/`（0001 初始 + 0002 fill.side + 0003 跟踪池生命周期，append-only，最新状态为事实源）。0003 要点：watch 表重建（stage 扩六值 + resume_trigger 列）、position 增 realized_pnl 列、4 个新参数种子。
+见 `internal/store/migrations/`（0001 初始 + 0002 fill.side + 0003 跟踪池生命周期 + 0004 已交易股票历史库，append-only，最新状态为事实源）。0003 要点：watch 表重建（stage 扩六值 + resume_trigger 列）、position 增 realized_pnl 列、4 个新参数种子。0004 要点：trade_review 复盘表（每笔 closed position 一条，`UNIQUE(position_id)` 重录覆盖；code 冗余存储便于按股索引查询；教训人工录入不自动生成——三记录制度见 docs/00 §6）。
 
 要点：
 - 主键策略：`daily_bar`用`(code,date)`复合主键；`box`/`signal`等用自增`INTEGER PRIMARY KEY`
@@ -226,6 +236,7 @@ erDiagram
 | box | `(code, status)` | 跟踪池当前箱体查找 |
 | box | `(code, id)` | 阶梯链回溯 |
 | watch | `(stage)` | 池列表视图 |
+| trade_review | `(code)` + `UNIQUE(position_id)` | 战绩按股查询 / 每笔一条复盘（B3） |
 | plan_order | `(trade_plan_id, status)` | 计划视图 |
 | signal | `(date, type)` | 当日信号汇总 |
 | daily_run | `(date, task)` | 心跳视图/补跑判断 |

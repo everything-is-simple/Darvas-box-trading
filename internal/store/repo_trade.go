@@ -584,3 +584,122 @@ func (r *TradeRepo) StalePendingCount(today string) (int, error) {
 		WHERE o.status = 'pending' AND p.execute_date < ?`, today).Scan(&n)
 	return n, err
 }
+
+// ---------------------------------------------------------------------------
+// 已交易股票历史库（B3，0004，docs/00 §6 三记录制度之三：亏损原因/教训）
+// 原书（197页 OCR 校对）：达瓦斯自称最重要的内容——每笔已完成的交易记录
+// ①买入理由（reason_json）②卖出理由（close_reason+realized_pnl，自动落库）
+// ③亏损原因/教训（trade_review，人工复盘录入）。教训不自动生成，人工写。
+// ---------------------------------------------------------------------------
+
+// ReviewRow 单笔已完结交易 + 复盘（review list <code> 明细行）。
+type ReviewRow struct {
+	PositionID   int64   `json:"position_id"`
+	Code         string  `json:"code"`
+	Name         string  `json:"name"`
+	OpenedDate   string  `json:"opened_date"`
+	ClosedDate   string  `json:"closed_date"`
+	Qty          int     `json:"qty"`
+	RealizedPnl  float64 `json:"realized_pnl"`
+	CloseReason  string  `json:"close_reason"`
+	RuleFollowed string  `json:"rule_followed"`
+	ErrorType    string  `json:"error_type"`
+	Lesson       string  `json:"lesson"`
+}
+
+// ReviewSummaryRow 某股历史战绩汇总（review list 汇总行）。
+type ReviewSummaryRow struct {
+	Code     string  `json:"code"`
+	Name     string  `json:"name"`
+	Trades   int     `json:"trades"`
+	Wins     int     `json:"wins"`
+	Losses   int     `json:"losses"`
+	TotalPnl float64 `json:"total_pnl"`
+	Lesson   string  `json:"lesson"` // 最新一条教训（未写复盘则空）
+}
+
+// AddReview 复盘录入（每笔 position 一条，UPSERT 重录覆盖）。
+// code 从 position 表反查（防手输错码）；position 不存在时无行受影响 → 报错。
+func (r *TradeRepo) AddReview(positionID int64, ruleFollowed, errorType, lesson string) error {
+	res, err := r.db.Exec(`INSERT INTO trade_review(position_id, code, rule_followed, error_type, lesson)
+		SELECT ?, code, ?, ?, ? FROM position WHERE id = ?
+		ON CONFLICT(position_id) DO UPDATE SET
+			rule_followed=excluded.rule_followed, error_type=excluded.error_type, lesson=excluded.lesson`,
+		positionID, ruleFollowed, errorType, lesson, positionID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("position %d 不存在", positionID)
+	}
+	return nil
+}
+
+// ReviewSummary 历史战绩汇总视图（code 空=全部股票；只统计已清仓交易）。
+func (r *TradeRepo) ReviewSummary(code string) ([]ReviewSummaryRow, error) {
+	q, args := `SELECT p.code, COALESCE(s.name,''), COUNT(*),
+			SUM(CASE WHEN p.realized_pnl > 0 THEN 1 ELSE 0 END),
+			SUM(CASE WHEN p.realized_pnl < 0 THEN 1 ELSE 0 END),
+			COALESCE(SUM(p.realized_pnl), 0),
+			COALESCE((SELECT lesson FROM trade_review tr WHERE tr.code = p.code
+				ORDER BY tr.id DESC LIMIT 1), '')
+		FROM position p LEFT JOIN security s ON s.code = p.code
+		WHERE p.status = 'closed'`, []any{}
+	if code != "" {
+		q += " AND p.code = ?"
+		args = append(args, code)
+	}
+	q += " GROUP BY p.code ORDER BY p.code"
+	rows, err := r.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ReviewSummaryRow
+	for rows.Next() {
+		var x ReviewSummaryRow
+		if err := rows.Scan(&x.Code, &x.Name, &x.Trades, &x.Wins, &x.Losses, &x.TotalPnl, &x.Lesson); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// ReviewDetail 单股全部已完结交易明细（含复盘三字段；qty 取 position_leg 聚合）。
+func (r *TradeRepo) ReviewDetail(code string) ([]ReviewRow, error) {
+	rows, err := r.db.Query(`SELECT p.id, p.code, COALESCE(s.name,''),
+			CAST(p.opened_date AS TEXT), COALESCE(CAST(p.closed_date AS TEXT),''),
+			COALESCE((SELECT SUM(l.qty) FROM position_leg l WHERE l.position_id = p.id), 0),
+			COALESCE(p.realized_pnl, 0), COALESCE(p.close_reason,''),
+			COALESCE(tr.rule_followed,''), COALESCE(tr.error_type,''), COALESCE(tr.lesson,'')
+		FROM position p
+		LEFT JOIN security s ON s.code = p.code
+		LEFT JOIN trade_review tr ON tr.position_id = p.id
+		WHERE p.status = 'closed' AND p.code = ?
+		ORDER BY p.opened_date`, code)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ReviewRow
+	for rows.Next() {
+		var x ReviewRow
+		if err := rows.Scan(&x.PositionID, &x.Code, &x.Name, &x.OpenedDate, &x.ClosedDate,
+			&x.Qty, &x.RealizedPnl, &x.CloseReason, &x.RuleFollowed, &x.ErrorType, &x.Lesson); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// TrackRecordByCode 某证券历史战绩汇总（B3 再纳入提示：交易笔数/亏损笔数/累计盈亏）。
+func (r *TradeRepo) TrackRecordByCode(code string) (trades, losses int, totalPnl float64, err error) {
+	err = r.db.QueryRow(`SELECT COUNT(*),
+			COALESCE(SUM(CASE WHEN realized_pnl < 0 THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(realized_pnl), 0)
+		FROM position WHERE code = ? AND status = 'closed'`, code).
+		Scan(&trades, &losses, &totalPnl)
+	return
+}

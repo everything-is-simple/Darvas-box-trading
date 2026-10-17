@@ -125,10 +125,20 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 > （poolsync 巡检：亏损交易≥pool.maxloss→blacklisted 终态+入池拦截）③条件挂起
 > （CLI `pool suspend --resume`：收盘≥激活价自动恢复）④5-8上限（ActiveWatchCount≥
 > pool.maxwatch 不入池，suspended 不占名额）⑤3周不获利（planner：开仓≥position.staledays
-> 交易日且收盘≤成本→time_stop 卖单）。同时补全 watch 状态机接线（此前 pending/holding
+> 同时补全 watch 状态机接线（此前 pending/holding
 > 从未写入）：planner 买单→pending、ledger 成交→holding、清仓→exited、买单过期→
 > RelaxPendingWatches 回退 watching。测试：pool_test 五用例+screener 太晚规则用例；
 > check_consistency C1 升级运行时验证（python sqlite3 执行迁移后读 sqlite_master）。
+> **B3 已交易股票历史库（2026-10-18，原书校对补全：达瓦斯自称最重要的内容）**：
+> migration 0004（trade_review 复盘表：position_id UNIQUE 每笔一条、code 冗余索引、
+> rule_followed/error_type/lesson 三字段人工录入）。三记录制度闭环：①买入理由
+> （reason_json，M4 已有）②卖出理由（close_reason+realized_pnl，0003 已有）③亏损
+> 原因/教训（本表，`darvas review add <position_id> --lesson`）。战绩视图：
+> `darvas review list [code]`（汇总=每股笔数/胜负/累计盈亏/最新教训；单股=每笔明细，
+> 未写复盘给出录入命令提示）。再纳入闭环：poolsync 入池查 TrackRecordByCode，
+> 曾交易未拉黑者 → watch.note 留痕"先读教训再纳入"。教训不自动生成（不引入
+> 自动模型，人工写）。测试：repo_review_test 三用例（UPSERT/汇总明细/战绩）+
+> pool_test 再纳入提示用例（含新股对照）。
 
 ---
 

@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"darvas/internal/contract"
@@ -182,5 +183,45 @@ func TestClosePositionPnl(t *testing.T) {
 	}
 	if n, _ := st.TradeRepo.LossCountByCode(code); n != 0 {
 		t.Fatalf("盈利交易亏损计数=%d want 0", n)
+	}
+}
+
+// TestPoolReentryNote B3 再纳入提示：一亏未拉黑者再入池 → watch.note 留痕战绩与"先读教训"。
+func TestPoolReentryNote(t *testing.T) {
+	st := newPoolStore(t)
+	code := "sh600519"
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
+	// 首次入池 → 退出（模拟曾跟踪过）
+	st.PoolRepo.UpsertWatch(contract.Watch{Code: code, AddedDate: "2026-08-01", Stage: contract.StageExited})
+	// 一笔亏损交易（LossCount=1 < maxloss=2，未拉黑）
+	if _, err := st.DB().Exec(`INSERT INTO position(code, opened_date, qty, avg_cost, stop_price, status,
+		closed_date, close_reason, realized_pnl) VALUES (?, '2026-08-10', 100, 24, 23, 'closed', '2026-08-20', 'stop', -500)`,
+		code); err != nil {
+		t.Fatal(err)
+	}
+	// 再成为候选 → 重新入池，note 应带历史战绩提示
+	seedCandidate(t, st, "2026-10-16", code, 100)
+	m := New(st)
+	if _, err := m.Sync(context.Background(), "2026-10-16"); err != nil {
+		t.Fatal(err)
+	}
+	w, _ := st.PoolRepo.WatchByCode(code)
+	if w == nil || w.Stage != contract.StageWatching {
+		t.Fatalf("一亏未拉黑应可再入池, got %+v", w)
+	}
+	if !strings.Contains(w.Note, "历史战绩1笔(亏1)") || !strings.Contains(w.Note, "review list") {
+		t.Fatalf("再入池 note 应带战绩提示, got %q", w.Note)
+	}
+
+	// 对照：从未交易的股票入池 → note 为空（不打扰）
+	fresh := "sz000002"
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(fresh, "")})
+	seedCandidate(t, st, "2026-10-16", fresh, 100)
+	if _, err := m.Sync(context.Background(), "2026-10-16"); err != nil {
+		t.Fatal(err)
+	}
+	w2, _ := st.PoolRepo.WatchByCode(fresh)
+	if w2 == nil || w2.Note != "" {
+		t.Fatalf("新股入池 note 应为空, got %q", w2.Note)
 	}
 }
