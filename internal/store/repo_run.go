@@ -92,6 +92,46 @@ func (r *RunRepo) LatestRunDate() (string, error) {
 	return d, nil
 }
 
+// DateOverview 有数据日期的概览行（GUI 全站日期选择）。
+type DateOverview struct {
+	Date       string `json:"date"`
+	Runs       int    `json:"runs"`        // 该日心跳数
+	Candidates int    `json:"candidates"`  // 该日候选数
+	HasPlan    bool   `json:"has_plan"`    // 是否有交易计划
+	HasEquity  bool   `json:"has_equity"`  // 是否有权益快照
+}
+
+// DatesOverview 有数据的日期列表（GUI U1 全站日期维度）：
+// UNION 去重自 daily_run/candidate/trade_plan/equity_snapshot 四张按日表，降序，
+// 每日附注（心跳数/候选数/是否有计划/是否有权益快照）。
+// bars 全量在库不缺，缺的是按日快照；历史日期可 darvas run --date X 幂等回填。
+func (r *RunRepo) DatesOverview() ([]DateOverview, error) {
+	rows, err := r.db.Query(`WITH ds AS (
+			SELECT CAST(date AS TEXT) AS d FROM daily_run
+			UNION SELECT CAST(screen_date AS TEXT) FROM candidate
+			UNION SELECT CAST(plan_date AS TEXT) FROM trade_plan
+			UNION SELECT CAST(date AS TEXT) FROM equity_snapshot)
+		SELECT d,
+			(SELECT COUNT(*) FROM daily_run WHERE CAST(date AS TEXT) = d),
+			(SELECT COUNT(*) FROM candidate WHERE CAST(screen_date AS TEXT) = d),
+			EXISTS(SELECT 1 FROM trade_plan WHERE CAST(plan_date AS TEXT) = d),
+			EXISTS(SELECT 1 FROM equity_snapshot WHERE CAST(date AS TEXT) = d)
+		FROM ds ORDER BY d DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DateOverview
+	for rows.Next() {
+		var o DateOverview
+		if err := rows.Scan(&o.Date, &o.Runs, &o.Candidates, &o.HasPlan, &o.HasEquity); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 func nullString(s string) any {
 	if s == "" {
 		return nil

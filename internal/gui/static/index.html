@@ -69,6 +69,7 @@ a.code:hover { color: var(--accent); }
     <div class="tab" data-view="stock">个股箱体</div>
     <div class="tab" data-view="trades">交易记录</div>
   </div>
+  <select id="globalDate" title="有快照数据的日期（心跳/候选/计划/权益任一）" onchange="onGlobalDate()"></select>
   <div class="meta" id="topMeta"></div>
 </div>
 <div class="wrap">
@@ -92,14 +93,24 @@ a.code:hover { color: var(--accent); }
   </div>
 </div>
 
-<!-- ============ 跟踪池 ============ -->
+<!-- ============ 跟踪池（含候选快照/信号日志子页） ============ -->
 <div id="view-watch" style="display:none">
   <div class="toolbar">
+    <div class="subtabs" style="margin-bottom:0">
+      <span class="stagechip active" data-pool="watch" onclick="switchPool(this)">跟踪池</span>
+      <span class="stagechip" data-pool="candidates" onclick="switchPool(this)">候选快照</span>
+      <span class="stagechip" data-pool="signals" onclick="switchPool(this)">信号日志</span>
+    </div>
     <span id="stageChips"></span>
     <div class="spacer"></div>
-    <input class="searchbox" id="watchSearch" placeholder="代码/名称过滤" oninput="renderWatch()">
+    <span id="poolDateNote" class="muted"></span>
+    <input class="searchbox" id="watchSearch" placeholder="代码/名称过滤" oninput="renderPoolSearch()">
   </div>
-  <div class="card"><div id="watchTable"><div class="empty">加载中…</div></div></div>
+  <div class="card">
+    <div id="watchTable"><div class="empty">加载中…</div></div>
+    <div id="candTable" style="display:none"><div class="empty">加载中…</div></div>
+    <div id="sigTable" style="display:none"><div class="empty">加载中…</div></div>
+  </div>
 </div>
 
 <!-- ============ 个股箱体 ============ -->
@@ -112,6 +123,8 @@ a.code:hover { color: var(--accent); }
       <option value="500">500日</option>
       <option value="1000">1000日</option>
     </select>
+    <span class="muted">或区间</span>
+    <input type="date" id="stockFrom"> ~ <input type="date" id="stockTo">
     <button class="primary" onclick="loadStock()">查看</button>
     <div class="spacer"></div>
     <span id="stockMeta" class="muted"></span>
@@ -129,14 +142,22 @@ a.code:hover { color: var(--accent); }
     </div>
   </div>
   <div class="card">
-    <h3>箱体阶梯</h3>
+    <h3 id="boxTitle">箱体阶梯</h3>
     <div id="boxTable"><div class="empty">输入代码查看</div></div>
   </div>
 </div>
 
 <!-- ============ 交易记录 ============ -->
 <div id="view-trades" style="display:none">
-  <div class="card"><h3>权益曲线</h3><canvas id="equityCanvas" height="110"></canvas>
+  <div class="card">
+    <div class="toolbar" style="margin-bottom:8px">
+      <h3 style="margin:0">权益曲线</h3>
+      <div class="spacer"></div>
+      <span class="stagechip" data-range="30" onclick="setTradeRange(this)">近30日</span>
+      <span class="stagechip" data-range="90" onclick="setTradeRange(this)">近90日</span>
+      <span class="stagechip active" data-range="all" onclick="setTradeRange(this)">全部</span>
+    </div>
+    <canvas id="equityCanvas" height="110"></canvas>
     <div id="equityMeta" class="muted" style="font-size:12px; margin-top:4px;"></div></div>
   <div class="card">
     <div class="subtabs">
@@ -177,6 +198,27 @@ function tbl(head, rows) {
 const td = (v, cls) => `<td${cls?` class="${cls}"`:""}>${v}</td>`;
 const codeTd = c => `<td><a class="code" onclick="gotoStock('${c}')">${c}</a></td>`;
 
+// ---------------------------------------------------------------- 全站日期维度（U1）
+let datesData = [], curDate = "";
+async function loadDates() {
+  try { datesData = (await getJSON("/api/dates")).dates || []; } catch (e) { datesData = []; }
+  const sel = $("globalDate");
+  if (!datesData.length) {
+    sel.innerHTML = '<option value="">（暂无按日快照数据）</option>';
+    return;
+  }
+  sel.innerHTML = datesData.map(d =>
+    `<option value="${d.date}">${d.date}（心跳${d.runs}·候选${d.candidates}${d.has_plan ? "·计划" : ""}${d.has_equity ? "·权益" : ""}）</option>`).join("");
+  curDate = datesData[0].date;
+  sel.value = curDate;
+}
+function onGlobalDate() {
+  curDate = $("globalDate").value;
+  candData = sigData = null; // 按日快照缓存失效，重取
+  if (curView === "dashboard") loadDashboard();
+  if (curView === "watch") loadPoolView();
+}
+
 // ---------------------------------------------------------------- 视图切换
 let curView = "dashboard";
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
@@ -184,7 +226,7 @@ document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
   curView = t.dataset.view;
   ["dashboard","watch","stock","trades"].forEach(v => $("view-"+v).style.display = v===curView ? "" : "none");
   if (curView === "dashboard") loadDashboard();
-  if (curView === "watch") loadWatch();
+  if (curView === "watch") loadPoolView();
   if (curView === "trades") loadTrades();
 });
 function gotoStock(code) {
@@ -196,16 +238,22 @@ function gotoStock(code) {
 // ---------------------------------------------------------------- 仪表盘
 const TASKS = ["ingest","boxscan","screen","poolsync","signal","plan","report"];
 async function loadDashboard() {
-  const d = $("dashDate").value;
+  const d = $("dashDate").value || curDate;
   let url = "/api/dashboard";
   if (d) url += "?date=" + d;
   let j;
   try { j = await getJSON(url); } catch (e) { $("taskGrid").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-  if (!d) $("dashDate").value = j.date;
+  $("dashDate").value = j.date;
+  if (curDate && curDate !== j.date) { curDate = j.date; $("globalDate").value = datesData.some(x => x.date === j.date) ? j.date : $("globalDate").value; }
   $("dashHint").textContent = j.runs.length ? `${j.date} 心跳 ${j.runs.length}/7` : j.date;
   $("topMeta").textContent = "数据日 " + j.date;
 
-  // 心跳灯
+  // 心跳灯（U4：无心跳日给出回填引导，不摆空表）
+  if (!j.runs.length) {
+    $("taskGrid").innerHTML = `<div class="empty">该日未运行流水线。<br>历史交易日可回填（幂等，可重复执行）：<code>darvas run --date ${j.date}</code></div>`;
+    $("taskErr").textContent = "";
+  } else {
+
   const byTask = {}; j.runs.forEach(r => byTask[r.Task] = r);
   $("taskGrid").innerHTML = TASKS.map(t => {
     const r = byTask[t];
@@ -222,10 +270,11 @@ async function loadDashboard() {
       <div class="tinfo">${txt} ${info}</div></div>`;
   }).join("");
   $("taskErr").textContent = j.runs.filter(r => r.Error).map(r => `${r.Task}: ${r.Error}`).join("\n");
+  }
 
   // 权益卡
   const e = j.equity;
-  $("equityCard").innerHTML = !e ? '<div class="empty">无权益快照</div>' : `
+  $("equityCard").innerHTML = !e ? '<div class="empty">无权益快照：跑完流水线（<code>darvas run</code>）后自动生成</div>' : `
     <div class="big">${money(e.Total)}</div>
     <div class="kv"><span class="muted">现金</span><b>${money(e.Cash)}</b></div>
     <div class="kv"><span class="muted">持仓市值</span><b>${money(e.MarketValue)}</b></div>
@@ -250,28 +299,100 @@ async function loadDashboard() {
   }
 }
 
-// ---------------------------------------------------------------- 跟踪池
-let watchData = [], watchStage = "all";
+// ---------------------------------------------------------------- 跟踪池 / 候选快照 / 信号日志
+let watchData = [], watchStage = "all", poolTab = "watch", candData = null, sigData = null;
 const STAGES = ["holding","pending","watching","exited"];
+const sigCN = {breakout:"突破买入", pyramid:"金字塔加码", stop:"止损卖出", failed_breakout:"突破失败卖出"};
+const candReasons = [["liquidity_pass","流动性"],["rs_pass","相对强度"],["vol_pass","放量"],["box_pass","箱体"]];
+
+// loadPoolView 池视图入口（跟踪池为当前态；候选/信号为按日快照，跟全站日期联动）
+async function loadPoolView() {
+  $("poolDateNote").textContent = poolTab === "watch" ? "" : "数据日 " + (curDate || "（缺省=最近）");
+  if (poolTab === "watch") return loadWatch();
+  if (poolTab === "candidates") return loadCandidates();
+  return loadSignals();
+}
+function switchPool(chip) {
+  document.querySelectorAll('#view-watch .subtabs .stagechip').forEach(c => c.classList.toggle("active", c === chip));
+  poolTab = chip.dataset.pool;
+  ["watchTable","candTable","sigTable"].forEach(id => $(id).style.display = id === {watch:"watchTable",candidates:"candTable",signals:"sigTable"}[poolTab] ? "" : "none");
+  $("stageChips").style.display = poolTab === "watch" ? "" : "none";
+  loadPoolView();
+}
+
 async function loadWatch() {
   try { watchData = (await getJSON("/api/watch")).items; } catch (e) { $("watchTable").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
   const counts = {all: watchData.length};
   watchData.forEach(w => counts[w.stage] = (counts[w.stage]||0)+1);
   $("stageChips").innerHTML = [["all","全部"],...STAGES.map(s=>[s,stageCN[s]])]
-    .map(([k,n]) => `<span class="stagechip${watchStage===k?" active":""}" onclick="watchStage='${k}';loadWatch()">${n} ${counts[k]||0}</span>`).join("");
+    .map(([k,n]) => `<span class="stagechip${watchStage===k?" active":""}" onclick="watchStage='${k}';renderWatch()">${n} ${counts[k]||0}</span>`).join("");
   renderWatch();
 }
-function renderWatch() {
+function renderPoolSearch() {
+  if (poolTab === "watch") renderWatch();
+  else if (poolTab === "candidates") renderCandidates();
+  else renderSignals();
+}
+function poolFilter(list, codeKey, nameKey) {
   const q = $("watchSearch").value.trim().toLowerCase();
-  const rows = watchData
-    .filter(w => watchStage==="all" || w.stage===watchStage)
-    .filter(w => !q || w.code.includes(q) || (w.name||"").toLowerCase().includes(q))
+  const f = list.filter(x => !q || x[codeKey].includes(q) || ((x[nameKey]||"")).toLowerCase().includes(q));
+  if (q) f.sort((a, b) => (a[codeKey] === q ? 0 : 1) - (b[codeKey] === q ? 0 : 1)); // 代码精确匹配优先（U5）
+  return f;
+}
+function renderWatch() {
+  if (!watchData.length) { $("watchTable").innerHTML = '<div class="empty">跟踪池为空：screen 初选通过后由 poolsync 入池（<code>darvas run</code>）</div>'; return; }
+  const rows = poolFilter(watchData.filter(w => watchStage==="all" || w.stage===watchStage), "code", "name")
     .map(w => "<tr>" + codeTd(w.code) + td(esc(w.name)) +
       td(`<span class="badge" style="background:${w.stage==='holding'?'#22c55e33':w.stage==='pending'?'#eab30833':w.stage==='watching'?'#3b82f633':'#64748b33'}">${stageCN[w.stage]||w.stage}</span>`) +
       td(w.added_date) + td(w.box_count, "num") +
       td(w.box_top ? `${fmt(w.box_top)} ~ ${fmt(w.box_bottom)} <span class="muted">${boxCN[w.box_status]||w.box_status}</span>` : '<span class="muted">-</span>') +
-      td(w.last_close ? fmt(w.last_close) : "-", "num") + "</tr>");
-  $("watchTable").innerHTML = tbl(["代码","名称","状态","入池日","#阶梯数","当前箱体","#最新收盘"], rows);
+      td(w.last_close ? fmt(w.last_close) : "-", "num") +
+      td(w.stage === "exited" && w.exit_reason ? esc(w.exit_reason) : '<span class="muted">-</span>', "muted") + "</tr>");
+  $("watchTable").innerHTML = tbl(["代码","名称","状态","入池日","#阶梯数","当前箱体","#最新收盘","出池原因"], rows);
+}
+
+async function loadCandidates() {
+  try { candData = await getJSON("/api/candidates" + (curDate ? "?date=" + curDate : "")); }
+  catch (e) { $("candTable").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  $("poolDateNote").textContent = `数据日 ${candData.date || "无"}`;
+  renderCandidates();
+}
+function renderCandidates() {
+  if (!candData || !candData.items.length) {
+    $("candTable").innerHTML = `<div class="empty">${candData && candData.date ? `该日（${candData.date}）无候选快照。历史交易日可回填：<code>darvas run --date ${candData.date}</code>` : "暂无候选快照：跑完 screen 任务后生成（<code>darvas run</code>）"}</div>`;
+    return;
+  }
+  const j = candData;
+  const q = $("watchSearch").value.trim().toLowerCase();
+  const names = j.names || {};
+  const items = j.items.filter(c => !q || c.Code.includes(q) || (names[c.Code]||"").toLowerCase().includes(q));
+  if (q) items.sort((a,b) => (a.Code === q ? 0 : 1) - (b.Code === q ? 0 : 1));
+  const rws = items.map(c => "<tr>" + codeTd(c.Code) + td(esc(names[c.Code]||"")) +
+    td(fmt(c.Score, 0), "num") +
+    candReasons.map(([k,n]) => td(c.Reasons && c.Reasons[k] ? `<span class="up">✓</span>` : `<span class="muted">✗</span>`)).join("") +
+    td(esc(c.FundamentalFlag || "unknown"), "muted") + "</tr>");
+  $("candTable").innerHTML = tbl(["代码","名称","#分数","流动性","RS","放量","箱体","基本面"], rws);
+}
+
+async function loadSignals() {
+  try { sigData = await getJSON("/api/signals" + (curDate ? "?date=" + curDate : "")); }
+  catch (e) { $("sigTable").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  $("poolDateNote").textContent = `数据日 ${sigData.date || "无"}`;
+  renderSignals();
+}
+function renderSignals() {
+  if (!sigData || !sigData.items.length) {
+    $("sigTable").innerHTML = `<div class="empty">${sigData && sigData.date ? `该日（${sigData.date}）无信号。历史交易日可回填：<code>darvas run --date ${sigData.date}</code>` : "暂无信号：signal 任务判定四类信号（突破/加码/止损/突破失败）"}</div>`;
+    return;
+  }
+  const j = sigData, names = j.names || {};
+  const q = $("watchSearch").value.trim().toLowerCase();
+  const items = j.items.filter(s => !q || s.Code.includes(q) || (names[s.Code]||"").toLowerCase().includes(q));
+  if (q) items.sort((a,b) => (a.Code === q ? 0 : 1) - (b.Code === q ? 0 : 1));
+  const rows = items.map(s => "<tr>" + codeTd(s.Code) + td(esc(names[s.Code]||"")) +
+    td(sigCN[s.Type] || s.Type, s.Type==="breakout"||s.Type==="pyramid" ? "up" : "down") +
+    td(fmt(s.ClosePx), "num") + td(fmt(s.BoxLevel), "num") + td(s.Date) + "</tr>");
+  $("sigTable").innerHTML = tbl(["代码","名称","类型","#收盘价","#箱体轨","日期"], rows);
 }
 
 // ---------------------------------------------------------------- 个股箱体图
@@ -279,9 +400,18 @@ let stockState = null;
 async function loadStock() {
   const code = $("stockCode").value.trim();
   if (!code) return;
-  const days = $("stockDays").value;
+  const from = $("stockFrom").value, to = $("stockTo").value;
+  let url = `/api/stock/${encodeURIComponent(code)}`;
+  if (from || to) {
+    const p = [];
+    if (from) p.push("from=" + from);
+    if (to) p.push("to=" + to);
+    url += "?" + p.join("&");
+  } else {
+    url += "?days=" + $("stockDays").value;
+  }
   let j;
-  try { j = await getJSON(`/api/stock/${encodeURIComponent(code)}?days=${days}`); }
+  try { j = await getJSON(url); }
   catch (e) { $("stockMeta").textContent = e.message; $("boxTable").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
   stockState = j;
   const bits = [`${j.code} ${j.name || ""}`];
@@ -290,7 +420,10 @@ async function loadStock() {
   bits.push(`${j.bars.length}根K线 ${j.bars[0].Date} ~ ${j.bars[j.bars.length-1].Date}`);
   $("stockMeta").textContent = bits.join(" ｜ ");
   drawStock();
-  // 箱体表
+  // 箱体表（U5：标注箱体是最近一次 boxscan 的结果）
+  let boxAsOf = "";
+  j.boxes.forEach(b => [b.TopConfirmed, b.BottomConfirmed, b.BrokenDate].forEach(x => { if (x && x > boxAsOf) boxAsOf = x; }));
+  $("boxTitle").textContent = `箱体阶梯（最近一次 boxscan 结果${boxAsOf ? "，最新确认日 " + boxAsOf : ""}）`;
   const rows = j.boxes.filter(b => b.Status !== "invalid").map(b => "<tr>" +
     td(b.ID,"num") + td(boxCN[b.Status]||b.Status, b.Status==="broken_up"?"up":b.Status==="broken_down"?"down":"") +
     td(fmt(b.Top),"num") + td(fmt(b.Bottom),"num") +
@@ -411,14 +544,22 @@ function drawStock() {
 }
 
 // ---------------------------------------------------------------- 交易记录
-let tradesData = null;
+let tradesData = null, tradesRangeDays = 0; // 0=全部；30/90=近N日（U2）
+function setTradeRange(chip) {
+  document.querySelectorAll('#view-trades .toolbar .stagechip').forEach(c => c.classList.toggle("active", c === chip));
+  tradesRangeDays = chip.dataset.range === "all" ? 0 : Number(chip.dataset.range);
+  loadTrades();
+}
+function daysAgoISO(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
 function switchTrade(chip) {
   document.querySelectorAll(".subtabs .stagechip").forEach(c => c.classList.toggle("active", c === chip));
   ["plans","fills","positions"].forEach(k => $("trade"+k[0].toUpperCase()+k.slice(1)).style.display = chip.dataset.trade===k ? "" : "none");
 }
 async function loadTrades() {
+  let url = "/api/trades";
+  if (tradesRangeDays > 0) url += "?from=" + daysAgoISO(tradesRangeDays);
   let j;
-  try { j = await getJSON("/api/trades"); } catch (e) { $("tradePlans").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  try { j = await getJSON(url); } catch (e) { $("tradePlans").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
   tradesData = j;
 
   // 权益曲线
@@ -431,7 +572,7 @@ async function loadTrades() {
   const eq = j.equity;
   if (!eq.length) {
     ctx.fillStyle = "#94a3b8"; ctx.textAlign = "center"; ctx.font = "13px sans-serif";
-    ctx.fillText("无权益快照", W/2, H/2);
+    ctx.fillText(tradesRangeDays > 0 ? "该范围无权益快照（可切『全部』查看）" : "无权益快照：跑完流水线（darvas run）自动生成", W/2, H/2);
   } else {
     let lo = Infinity, hi = -Infinity;
     eq.forEach(e => { lo = Math.min(lo, e.Total); hi = Math.max(hi, e.Total); });
@@ -466,16 +607,17 @@ async function loadTrades() {
     return `<div class="planhead"><b>${p.plan.PlanDate}</b><span class="muted">执行日 ${p.plan.ExecuteDate}</span>` +
       `<span class="muted">权益基准 ${money(p.plan.EquityBase)}</span><span class="muted">持仓数 ${p.plan.OpenPositionCount}</span></div>` +
       tbl(["代码","名称","方向","#触发价","#委托价","#数量","#腿","状态"], rows);
-  }).join("") : '<div class="empty">暂无计划（跑 darvas run 生成）</div>';
+  }).join("") : `<div class="empty">${tradesRangeDays > 0 ? "该范围内无计划订单" : "暂无计划订单：跑完流水线（<code>darvas run</code>）且信号/池非空时生成"}</div>`;
 
-  // 成交记录
-  $("tradeFills").innerHTML = tbl(["日期","代码","名称","方向","#价格","#数量","#手续费"],
+  // 成交记录（U4：无成交给录入引导）
+  $("tradeFills").innerHTML = j.fills.length ? tbl(["日期","代码","名称","方向","#价格","#数量","#手续费"],
     j.fills.map(f => "<tr>" + td(f.Date) + codeTd(f.Code) + td(esc(j.names[f.Code]||"")) +
       td(sideCN[f.Side]||f.Side, f.Side==="buy"?"up":"down") +
-      td(fmt(f.Price),"num") + td(fmt(f.Qty,0),"num") + td(fmt(f.Fee),"num") + "</tr>"));
+      td(fmt(f.Price),"num") + td(fmt(f.Qty,0),"num") + td(fmt(f.Fee),"num") + "</tr>"))
+    : `<div class="empty">${tradesRangeDays > 0 ? "该范围内无成交" : "尚未录入成交：运行 <code>darvas fills [file] --yes</code> 粘贴券商成交文本（预览可去掉 --yes）"}</div>`;
 
-  // 持仓
-  $("tradePositions").innerHTML = tbl(["代码","名称","开仓日","状态","#数量","#成本","#现价","#止损","浮盈亏","#盈亏%","平仓日","原因"],
+  // 持仓（U4：无持仓给流程引导）
+  $("tradePositions").innerHTML = j.positions.length ? tbl(["代码","名称","开仓日","状态","#数量","#成本","#现价","#止损","浮盈亏","#盈亏%","平仓日","原因"],
     j.positions.map(p => {
       const pnl = p.Status==="open" ? p.pnl : 0;
       const cls = p.Status==="open" ? (pnl>=0?"up":"down") : "muted";
@@ -486,12 +628,13 @@ async function loadTrades() {
         td(p.Status==="open"?fmt(pnl):"-","num "+cls) +
         td(p.Status==="open"?pct(p.pnl_pct):"-","num "+cls) +
         td(p.ClosedDate||"-","muted") + td(esc(p.CloseReason||"-"),"muted") + "</tr>";
-    }));
+    }))
+    : '<div class="empty">暂无持仓：突破信号 → 计划单 → <code>darvas fills</code> 回录成交后自动建档</div>';
 }
 
 // ---------------------------------------------------------------- 启动
 window.addEventListener("resize", () => { if (curView==="stock") drawStock(); if (curView==="trades") loadTrades(); });
-loadDashboard();
+loadDates().then(loadDashboard);
 </script>
 </body>
 </html>

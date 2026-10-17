@@ -67,3 +67,10 @@ func (r *SignalRepo) SignalsOn(date string) ([]contract.Signal, error) {
 	}
 	return out, rows.Err()
 }
+
+// LatestSignalDate 最近一次信号日（GUI /api/signals 缺省日期；无数据返回空）。
+func (r *SignalRepo) LatestSignalDate() (string, error) {
+	var d string
+	err := r.db.QueryRow(`SELECT COALESCE(CAST(MAX(date) AS TEXT),'') FROM signal`).Scan(&d)
+	return d, err
+}

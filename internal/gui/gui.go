@@ -41,7 +41,10 @@ func New(st *store.Store) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/dashboard", s.handleDashboard)
+	mux.HandleFunc("GET /api/dates", s.handleDates)
 	mux.HandleFunc("GET /api/watch", s.handleWatch)
+	mux.HandleFunc("GET /api/candidates", s.handleCandidates)
+	mux.HandleFunc("GET /api/signals", s.handleSignals)
 	mux.HandleFunc("GET /api/stock/{code}", s.handleStock)
 	mux.HandleFunc("GET /api/trades", s.handleTrades)
 	sub, err := fs.Sub(staticFS, "static")
@@ -150,6 +153,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
+	if runs == nil { // 无心跳日：nil 序列化成 JSON null 会崩前端 .map（bug④）
+		runs = []contract.TaskResult{}
+	}
 	plan, orders, err := s.st.TradeRepo.PlanOn(date)
 	if err != nil {
 		writeErr(w, 500, err.Error())
@@ -181,6 +187,92 @@ func orders2codes(orders []contract.PlanOrder) []string {
 	return out
 }
 
+// handleDates GET /api/dates → 有数据的日期列表（GUI U1 全站日期维度）：
+// UNION 自 daily_run/candidate/trade_plan/equity_snapshot，降序，每日附注。
+func (s *Server) handleDates(w http.ResponseWriter, r *http.Request) {
+	dates, err := s.st.RunRepo.DatesOverview()
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	if dates == nil {
+		dates = []store.DateOverview{}
+	}
+	writeJSON(w, map[string]any{"dates": dates})
+}
+
+// handleCandidates GET /api/candidates?date= → 候选池按日快照（GUI U3）。
+// date 缺省=最近一次候选快照日；无任何快照返回空列表。
+func (s *Server) handleCandidates(w http.ResponseWriter, r *http.Request) {
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		d, err := s.st.PoolRepo.LatestCandidateDate()
+		if err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		date = d
+	}
+	items := []contract.Candidate{}
+	if date != "" {
+		var err error
+		items, err = s.st.PoolRepo.CandidatesOn(date)
+		if err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+	}
+	if items == nil {
+		items = []contract.Candidate{}
+	}
+	codes := make([]string, 0, len(items))
+	for _, c := range items {
+		codes = append(codes, c.Code)
+	}
+	names, err := s.namesFor(codes)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"date": date, "items": items, "names": names})
+}
+
+// handleSignals GET /api/signals?date= → 信号按日浏览（GUI U3）。
+// date 缺省=最近一次信号日；无任何信号返回空列表。
+func (s *Server) handleSignals(w http.ResponseWriter, r *http.Request) {
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		d, err := s.st.SignalRepo.LatestSignalDate()
+		if err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		date = d
+	}
+	items := []contract.Signal{}
+	if date != "" {
+		var err error
+		items, err = s.st.SignalRepo.SignalsOn(date)
+		if err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+	}
+	if items == nil {
+		items = []contract.Signal{}
+	}
+	codes := make([]string, 0, len(items))
+	for _, g := range items {
+		codes = append(codes, g.Code)
+	}
+	names, err := s.namesFor(codes)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"date": date, "items": items, "names": names})
+}
+
 // handleWatch GET /api/watch → 跟踪池看板（含名称/当前箱体/最新收盘）。
 func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.st.PoolRepo.WatchOverview()
@@ -199,27 +291,38 @@ type StockResponse struct {
 	Code     string               `json:"code"`
 	Name     string               `json:"name"`
 	Days     int                  `json:"days"`
+	From     string               `json:"from"`
+	To       string               `json:"to"`
 	Bars     []contract.DailyBar  `json:"bars"`
 	Boxes    []contract.Box       `json:"boxes"`
 	Watch    *contract.Watch      `json:"watch"`
 	Position *contract.Position   `json:"position"`
 }
 
-// handleStock GET /api/stock/{code}?days=250（缺省250，上限1000）。
+// handleStock GET /api/stock/{code}?days=250 或 ?from=&to=（GUI U2 时间范围查询）。
+// days 缺省250上限1000；from/to 给定则按区间取（上限1000根，超出截尾保最近）。
 func (s *Server) handleStock(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	if code == "" {
 		writeErr(w, 400, "missing code")
 		return
 	}
-	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	q := r.URL.Query()
+	from, to := q.Get("from"), q.Get("to")
+	days, _ := strconv.Atoi(q.Get("days"))
 	if days <= 0 {
 		days = 250
 	}
 	if days > 1000 {
 		days = 1000
 	}
-	bars, err := s.st.BarRepo.BarsWindow(code, "2999-12-31", days)
+	var bars []contract.DailyBar
+	var err error
+	if from != "" || to != "" {
+		bars, err = s.st.BarRepo.BarsRange(code, from, to, 1000)
+	} else {
+		bars, err = s.st.BarRepo.BarsWindow(code, "2999-12-31", days)
+	}
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -248,7 +351,7 @@ func (s *Server) handleStock(w http.ResponseWriter, r *http.Request) {
 	}
 	name, _ := s.namesFor([]string{code}) // 单码查询
 	writeJSON(w, StockResponse{
-		Code: code, Name: name[code], Days: days,
+		Code: code, Name: name[code], Days: days, From: from, To: to,
 		Bars: bars, Boxes: boxes, Watch: watch, Position: pos,
 	})
 }
@@ -264,16 +367,21 @@ type PositionView struct {
 
 // TradesResponse 交易记录：计划/成交/持仓/权益曲线。
 type TradesResponse struct {
-	Plans     []store.PlanView     `json:"plans"`
-	Fills     []contract.Fill      `json:"fills"`
-	Positions []PositionView       `json:"positions"`
+	From      string                    `json:"from"`
+	To        string                    `json:"to"`
+	Plans     []store.PlanView          `json:"plans"`
+	Fills     []contract.Fill           `json:"fills"`
+	Positions []PositionView            `json:"positions"`
 	Equity    []contract.EquitySnapshot `json:"equity"`
-	Names     map[string]string    `json:"names"`
+	Names     map[string]string         `json:"names"`
 }
 
-// handleTrades GET /api/trades → 交易记录四合一。
+// handleTrades GET /api/trades?from=&to= → 交易记录四合一（GUI U2 时间范围）。
+// fills/plans/equity 按范围过滤（缺省=全部）；positions 为当前态不按日过滤。
 func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request) {
-	plans, err := s.st.TradeRepo.PlansRecent(10)
+	q := r.URL.Query()
+	from, to := q.Get("from"), q.Get("to")
+	plans, err := s.st.TradeRepo.PlansRange(from, to, 0)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -281,7 +389,7 @@ func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request) {
 	if plans == nil {
 		plans = []store.PlanView{}
 	}
-	fills, err := s.st.TradeRepo.FillsAll()
+	fills, err := s.st.TradeRepo.FillsRange(from, to)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -313,7 +421,7 @@ func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request) {
 		}
 		posViews = append(posViews, v)
 	}
-	equity, err := s.st.TradeRepo.EquityAll()
+	equity, err := s.st.TradeRepo.EquityRange(from, to)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -327,6 +435,7 @@ func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, TradesResponse{
+		From: from, To: to,
 		Plans: plans, Fills: fills, Positions: posViews, Equity: equity, Names: names,
 	})
 }

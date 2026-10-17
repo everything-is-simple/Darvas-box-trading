@@ -366,10 +366,13 @@ type Scheduler interface {
 | 端点 | 入参 | 返回（JSON字段） | 对应视图 |
 |------|------|------|---------|
 | `GET /api/dashboard` | `?date=`（缺省=LatestRunDate） | `{date, runs[], plan, orders[], names, equity}` | 仪表盘：7任务心跳+计划订单+权益卡 |
-| `GET /api/watch` | - | `{items: WatchOverview[]}`（code/name/stage/added_date/box_count/box_top/box_bottom/box_status/last_close） | 跟踪池看板 |
-| `GET /api/stock/{code}` | `?days=250`（上限1000） | `{code, name, days, bars[], boxes[], watch, position}` | 个股K线+箱体叠加+阶梯表 |
-| `GET /api/trades` | - | `{plans[], fills[], positions[], equity[], names}`（positions 含浮盈亏 pnl/pnl_pct） | 交易记录：计划/成交/持仓+权益曲线 |
-| `GET /` | - | index.html（embed） | 单文件前端（四视图，canvas自绘，无外部JS库） |
+| `GET /api/dates` | - | `{dates: DateOverview[]}`（date/runs/candidates/has_plan/has_equity；UNION daily_run/candidate/trade_plan/equity_snapshot，降序） | 全站日期下拉（有数据的日期+每日附注） |
+| `GET /api/watch` | - | `{items: WatchOverview[]}`（code/name/stage/added_date/box_count/box_top/box_bottom/box_status/last_close/exit_reason；含 exited 行） | 跟踪池看板 |
+| `GET /api/candidates` | `?date=`（缺省=最近候选快照日） | `{date, items: Candidate[], names}` | 候选池按日快照（score/reasons明细） |
+| `GET /api/signals` | `?date=`（缺省=最近信号日） | `{date, items: Signal[], names}` | 信号按日浏览 |
+| `GET /api/stock/{code}` | `?days=250`（上限1000）或 `?from=&to=`（区间，上限1000根） | `{code, name, days, from, to, bars[], boxes[], watch, position}` | 个股K线+箱体叠加+阶梯表（区间窗口） |
+| `GET /api/trades` | `?from=&to=`（缺省=全部） | `{from, to, plans[], fills[], positions[], equity[], names}`（positions 含浮盈亏 pnl/pnl_pct；fills/plans/equity 按范围过滤，positions 当前态不滤） | 交易记录：计划/成交/持仓+权益曲线（范围切换） |
+| `GET /` | - | index.html（embed） | 单文件前端（四视图+日期下拉+池子页，canvas自绘，无外部JS库） |
 
 原 Wails 方法表（RunTask/PasteFills/MarkFundamental 等写操作）转入 M8+ 候选：届时以 POST 端点形式补齐，须带审计留痕。
 

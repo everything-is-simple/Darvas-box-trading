@@ -64,6 +64,13 @@ func (r *PoolRepo) CandidatesOn(date string) ([]contract.Candidate, error) {
 	return out, rows.Err()
 }
 
+// LatestCandidateDate 最近一次候选快照日（GUI /api/candidates 缺省日期；无数据返回空）。
+func (r *PoolRepo) LatestCandidateDate() (string, error) {
+	var d string
+	err := r.db.QueryRow(`SELECT COALESCE(CAST(MAX(screen_date) AS TEXT),'') FROM candidate`).Scan(&d)
+	return d, err
+}
+
 // UpsertWatch 维护「每只股票一行活跃 watch」状态机（ERD §2.2）：
 //   - 存在未退出行 → 更新 stage/current_box_id/box_count 等（保留 id/added_date/candidate_id）；
 //   - 已退出或不存在 → 插入新行（支持退出后重新入池）。
@@ -167,6 +174,7 @@ type WatchOverview struct {
 	BottomConfirmed string  `json:"bottom_confirmed"`
 	BrokenDate      string  `json:"broken_date"`
 	LastClose       float64 `json:"last_close"`
+	ExitReason      string  `json:"exit_reason"` // 仅 exited 行有值（出池轨迹展示）
 }
 
 // WatchOverview 全部跟踪池看板行（每 code 取最新 watch 行，含 exited）。
@@ -176,7 +184,8 @@ func (r *PoolRepo) WatchOverview() ([]WatchOverview, error) {
 			COALESCE(b.top,0), COALESCE(b.bottom,0), COALESCE(b.status,''),
 			CAST(COALESCE(b.top_confirmed,'') AS TEXT), CAST(COALESCE(b.bottom_confirmed,'') AS TEXT),
 			CAST(COALESCE(b.broken_date,'') AS TEXT),
-			COALESCE((SELECT d.close FROM daily_bar d WHERE d.code = w.code ORDER BY d.date DESC LIMIT 1), 0)
+			COALESCE((SELECT d.close FROM daily_bar d WHERE d.code = w.code ORDER BY d.date DESC LIMIT 1), 0),
+			COALESCE(w.exit_reason,'')
 		FROM watch w
 		JOIN (SELECT code, MAX(id) AS mid FROM watch GROUP BY code) latest ON w.id = latest.mid
 		LEFT JOIN security s ON s.code = w.code
@@ -192,7 +201,7 @@ func (r *PoolRepo) WatchOverview() ([]WatchOverview, error) {
 		var w WatchOverview
 		if err := rows.Scan(&w.Code, &w.Name, &w.Stage, &w.AddedDate, &w.BoxCount,
 			&w.BoxTop, &w.BoxBottom, &w.BoxStatus,
-			&w.TopConfirmed, &w.BottomConfirmed, &w.BrokenDate, &w.LastClose); err != nil {
+			&w.TopConfirmed, &w.BottomConfirmed, &w.BrokenDate, &w.LastClose, &w.ExitReason); err != nil {
 			return nil, err
 		}
 		out = append(out, w)

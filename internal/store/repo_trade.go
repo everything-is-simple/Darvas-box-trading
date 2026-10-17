@@ -187,6 +187,27 @@ func (r *TradeRepo) FillsAll() ([]contract.Fill, error) {
 	return scanFills(rows)
 }
 
+// FillsRange 按日期范围取成交（GUI U2 时间范围查询；from/to 传空=不限）。
+func (r *TradeRepo) FillsRange(from, to string) ([]contract.Fill, error) {
+	q, args := `SELECT id, COALESCE(plan_order_id,0), code, CAST(date AS TEXT), side, price, qty, fee,
+		COALESCE(raw_text,'') FROM trade_fill WHERE 1=1`, []any{}
+	if from != "" {
+		q += " AND date >= ?"
+		args = append(args, from)
+	}
+	if to != "" {
+		q += " AND date <= ?"
+		args = append(args, to)
+	}
+	q += " ORDER BY date, id"
+	rows, err := r.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanFills(rows)
+}
+
 // FillsOn 取某日成交。
 func (r *TradeRepo) FillsOn(date string) ([]contract.Fill, error) {
 	rows, err := r.db.Query(`SELECT id, COALESCE(plan_order_id,0), code, CAST(date AS TEXT), side, price, qty, fee,
@@ -383,13 +404,37 @@ type PlanView struct {
 }
 
 // PlansRecent 最近 n 个交易计划（含订单与状态，GUI 交易记录视图）。
-// 无订单的计划也返回（空计划日展示"无操作"）。两段查询：先头后单，避免JOIN行平铺。
 func (r *TradeRepo) PlansRecent(n int) ([]PlanView, error) {
 	if n <= 0 {
 		n = 10
 	}
-	headRows, err := r.db.Query(`SELECT id, CAST(plan_date AS TEXT), CAST(execute_date AS TEXT),
-		equity_base, open_position_count FROM trade_plan ORDER BY plan_date DESC LIMIT ?`, n)
+	return r.plansQuery("", "", n)
+}
+
+// PlansRange 按日期范围取计划（GUI U2 时间范围查询；from/to 空=不限；limit 0=不限）。
+func (r *TradeRepo) PlansRange(from, to string, limit int) ([]PlanView, error) {
+	return r.plansQuery(from, to, limit)
+}
+
+// plansQuery 计划头+订单两段查询（无订单的计划也返回，空计划日展示"无操作"；
+// 先头后单避免 JOIN 行平铺）。from/to 空=不限，limit<=0=不限。
+func (r *TradeRepo) plansQuery(from, to string, limit int) ([]PlanView, error) {
+	q, args := `SELECT id, CAST(plan_date AS TEXT), CAST(execute_date AS TEXT),
+		equity_base, open_position_count FROM trade_plan WHERE 1=1`, []any{}
+	if from != "" {
+		q += " AND plan_date >= ?"
+		args = append(args, from)
+	}
+	if to != "" {
+		q += " AND plan_date <= ?"
+		args = append(args, to)
+	}
+	q += " ORDER BY plan_date DESC"
+	if limit > 0 {
+		q += " LIMIT ?"
+		args = append(args, limit)
+	}
+	headRows, err := r.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -415,16 +460,16 @@ func (r *TradeRepo) PlansRecent(n int) ([]PlanView, error) {
 
 	// 订单按计划日期归并回各自 PlanView（计划数≤n，线性查找足够）
 	ph := make([]string, len(out))
-	args := make([]any, len(out))
+	orderArgs := make([]any, len(out))
 	for i := range out {
 		ph[i] = "?"
-		args[i] = out[i].Plan.PlanDate
+		orderArgs[i] = out[i].Plan.PlanDate
 	}
 	orderRows, err := r.db.Query(`SELECT o.id, CAST(p.plan_date AS TEXT), o.code, o.side, o.order_kind,
 		o.trigger_price, o.limit_price, o.qty, COALESCE(o.leg_no,0), o.reason_json, o.status
 		FROM plan_order o JOIN trade_plan p ON p.id = o.trade_plan_id
 		WHERE CAST(p.plan_date AS TEXT) IN (`+strings.Join(ph, ",")+`)
-		ORDER BY p.plan_date DESC, o.side, o.code`, args...)
+		ORDER BY p.plan_date DESC, o.side, o.code`, orderArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -455,8 +500,23 @@ func (r *TradeRepo) PlansRecent(n int) ([]PlanView, error) {
 
 // EquityAll 全部快照按日期升序（权益曲线 / 审计）。
 func (r *TradeRepo) EquityAll() ([]contract.EquitySnapshot, error) {
-	rows, err := r.db.Query(`SELECT CAST(date AS TEXT), cash, market_value, total, peak_total, drawdown
-		FROM equity_snapshot ORDER BY date`)
+	return r.EquityRange("", "")
+}
+
+// EquityRange 按日期范围取权益快照（升序；GUI U2 范围切换 / M7.2 周报；from/to 空=不限）。
+func (r *TradeRepo) EquityRange(from, to string) ([]contract.EquitySnapshot, error) {
+	q, args := `SELECT CAST(date AS TEXT), cash, market_value, total, peak_total, drawdown
+		FROM equity_snapshot WHERE 1=1`, []any{}
+	if from != "" {
+		q += " AND date >= ?"
+		args = append(args, from)
+	}
+	if to != "" {
+		q += " AND date <= ?"
+		args = append(args, to)
+	}
+	q += " ORDER BY date"
+	rows, err := r.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -470,4 +530,12 @@ func (r *TradeRepo) EquityAll() ([]contract.EquitySnapshot, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// StalePendingCount 执行日已过仍 pending 的订单数（M7.2 周报纪律审计）。
+func (r *TradeRepo) StalePendingCount(today string) (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM plan_order o JOIN trade_plan p ON p.id = o.trade_plan_id
+		WHERE o.status = 'pending' AND p.execute_date < ?`, today).Scan(&n)
+	return n, err
 }

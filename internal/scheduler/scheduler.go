@@ -102,18 +102,22 @@ func (s *Scheduler) Start() error {
 		s.mu.Unlock()
 		return fmt.Errorf("scheduler already started")
 	}
-	s.stopCh = make(chan struct{})
+	stopCh := make(chan struct{})
 	stopped := make(chan struct{})
+	s.stopCh = stopCh
 	s.stopped = stopped
 	s.mu.Unlock()
 
+	// 循环内必须使用 Start 时捕获的局部 stopCh：Stop() 会把字段置 nil，
+	// 若每轮 select 重读字段，错过 close 的循环将永远阻塞在 nil 通道上
+	// （bug⑧：serve 模式 Ctrl+C 挂死 / TestStartStopSmoke 偶发超时）。
 	go func() {
 		defer close(stopped)
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-s.stopCh:
+			case <-stopCh:
 				return
 			case <-ticker.C:
 				s.tick()

@@ -96,8 +96,8 @@ Darvas-box-trading/
 │   ├── scheduler/                # 时间表调度+补跑
 │   ├── reporter/                 # HTML/Excel日报周报
 │   └── gui/                      # 本地HTTP UI（net/http + embed）
-│       ├── gui.go                # Server/路由/JSON API（dashboard/watch/stock/trades）
-│       └── static/index.html     # 单文件前端（四视图，canvas自绘K线/箱体/权益曲线）
+│       ├── gui.go                # Server/路由/JSON API（dashboard/dates/watch/candidates/signals/stock/trades）
+│       └── static/index.html     # 单文件前端（四视图+全站日期下拉+池子页，canvas自绘K线/箱体/权益曲线）
 ├── scripts/                      # build.bat / backup.bat
 ├── var/                          # 运行时目录（gitignore）
 │   ├── darvas.db                 # SQLite（程序同目录或此处，可配置）

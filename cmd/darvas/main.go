@@ -66,6 +66,8 @@ func main() {
 		runParam(*db, positional)
 	case "run":
 		runPipeline(*db, *date)
+	case "boxscan", "screen", "poolsync", "signal", "plan", "report":
+		runRerun(*db, *date, cmd)
 	case "fills":
 		runFills(*db, positional, *yes)
 	case "ui":
@@ -110,6 +112,8 @@ func usage() {
   darvas ladder  <code>                      个股箱体阶梯（M2）
   darvas param   get|set                     参数读写
   darvas run    [--date]                     完整盘后流水线（M5）
+  darvas boxscan|screen|poolsync|signal|plan|report [--date]
+                                             单任务幂等补跑（docs/04 §7）
   darvas fills  [file] [--yes]               成交粘贴录入（M4.5，无file读stdin）
   darvas ui     [--addr]                     本地GUI（浏览器四视图，M6）
   darvas serve  [--addr]                     常驻模式（调度+GUI+备份，M7.1）
@@ -486,6 +490,20 @@ func openReport(path string) error {
 	default:
 		return exec.Command("xdg-open", abs).Start()
 	}
+}
+
+// runRerun 单任务幂等补跑（docs/04 §7：boxscan/screen/poolsync/signal/plan/report）。
+// 与 scheduler.runOverdue 共用 pipeline.RerunTask 引擎；留痕 daily_run。
+func runRerun(db, date, task string) {
+	st, err := store.Open(dbPath(db))
+	must(err)
+	defer st.Close()
+	root := st.ParamRepo.GetString("tdx.root", tdxRoot())
+	reader := tdx.NewReader(root)
+	pipe := pipeline.New(st, ingest.New(reader, st, ""))
+	res, err := pipe.RerunTask(context.Background(), date, task)
+	must(err)
+	printResult(res)
 }
 
 // runUI 启动本地HTTP GUI（M6，docs/02 §2 GUI降级预案：embed静态资产+JSON API）。

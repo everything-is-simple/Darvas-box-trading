@@ -162,6 +162,32 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
   ④ 静态服务加 Cache-Control: no-cache（embed 无 mtime，防浏览器缓存旧页面）
 - 写操作（fills/param/run/pool 人工操作）仍走 CLI，GUI 只读（docs/04 §6）
 
+### M6.5 · UI 四视图改进（U1-U6，2026-10-17）✅
+
+> 背景：此前仅 2026-10-16 一天有按日快照数据，无「指定日」维度。本轮按用户要求全面改造。
+
+| # | 任务 | 内容 | 状态 |
+|---|------|------|------|
+| U1 | 全站日期维度 | `GET /api/dates`（daily_run/candidate/trade_plan/equity_snapshot 四表 UNION 去重降序 + 每日附注心跳数/候选数/有计划）；topbar 全局日期下拉，仪表盘/候选/信号随选日联动；空心跳日提示「`darvas run --date X` 幂等回填」 | ✅ |
+| U2 | 时间范围查询 | `/api/trades?from=&to=`（fills/plans/equity 范围过滤）+ 权益曲线近30/90/全部 chips；`/api/stock/{code}?from=&to=` 区间K线 | ✅ |
+| U3 | 历史快照 | `GET /api/candidates?date=`（缺省最近候选日）、`GET /api/signals?date=`（缺省最近信号日）；跟踪池视图拆三子页：跟踪池（含 exited + 出池原因）/ 候选快照（分数+四条件+基本面）/ 信号日志 | ✅ |
+| U4 | 空状态引导 | 无成交/持仓/计划/权益时显示可操作引导文案（如「darvas fills [file] --yes」），不摆空表 | ✅ |
+| U5 | 交互细节 | 日期选择联动清缓存重载；箱体阶梯表标注「最近一次 boxscan 结果，最新确认日」；搜索代码精确匹配优先排序；个股视图 from~to 日期输入 | ✅ |
+| U6 | 验收 | `darvas run --date` 回填 2026-10-13/14/15 + 浏览器断言（日期列表/四视图切换/范围过滤） | ✅ |
+
+**M6.5 附带交付**：
+- store 扩展：`DatesOverview/FillsRange/EquityRange/PlansRange/BarsRange/LatestCandidateDate/LatestSignalDate`；
+  `WatchOverview` 增 exit_reason 列（均带单测）
+- GUI 扩展：`/api/dates`、`/api/candidates`、`/api/signals` 三端点 + stock/trades 范围参数（docs/04 §6 已同步）
+- **修复潜伏bug⑧**：scheduler Start 循环每轮重读 `s.stopCh` 字段，Stop 先置 nil 再 close →
+  循环恰在 tick 中错过 close 后永远阻塞在 nil 通道（serve 模式 Ctrl+C 挂死 / TestStartStopSmoke
+  偶发 10min 超时）→ 循环改用 Start 捕获的局部通道，`-race -count=5` 通过
+- CLI 补齐 docs/04 §7 已规范的单任务补跑子命令：`darvas boxscan|screen|poolsync|signal|plan|report [--date]`
+  （共用 pipeline.RerunTask 引擎；回填历史日后可用其重跑 boxscan+poolsync 恢复当前态）
+- 回填语义备忘：历史日回填按升序串行；boxscan 为确定性重放（UpsertBoxes 按 top,bottom 复用），
+  回填后需对最新交易日 `rerun boxscan + poolsync` 收敛当前态；signal/plan 为 append/追加型，
+  对已跑过的日期**勿重复执行**（会产生重复信号/订单）
+
 ---
 
 ## M7 · 周而复始（稳定性+运维）

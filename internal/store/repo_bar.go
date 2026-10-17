@@ -121,6 +121,45 @@ func (r *BarRepo) BarsWindow(code string, endDate string, n int) ([]contract.Dai
 	return out, rows.Err()
 }
 
+// BarsRange 取 code 在 [from, to] 区间的K线（升序；GUI U2 时间范围查询）。
+// from/to 传空=不限；上限 max 根防区间过大（超出则截尾保留最近 max 根）。
+func (r *BarRepo) BarsRange(code, from, to string, max int) ([]contract.DailyBar, error) {
+	if max <= 0 {
+		max = 1000
+	}
+	q, args := `SELECT CAST(date AS TEXT), open, high, low, close, volume, amount
+		FROM daily_bar WHERE code = ?`, []any{code}
+	if from != "" {
+		q += " AND date >= ?"
+		args = append(args, from)
+	}
+	if to != "" {
+		q += " AND date <= ?"
+		args = append(args, to)
+	}
+	q += " ORDER BY date DESC LIMIT ?"
+	args = append(args, max)
+	rows, err := r.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []contract.DailyBar
+	for rows.Next() {
+		var b contract.DailyBar
+		b.Code = code
+		if err := rows.Scan(&b.Date, &b.Open, &b.High, &b.Low, &b.Close, &b.Volume, &b.Amount); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	// 反转为升序
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, rows.Err()
+}
+
 // CloseOn 查某日收盘价。
 func (r *BarRepo) CloseOn(code, date string) (float64, bool, error) {
 	var c float64
