@@ -115,6 +115,10 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 > 附带修复两个潜伏bug：①DATE列被modernc驱动转RFC3339（全repo CAST(date AS TEXT)统一修复，
 > 此前 signal.withinDays 的 failed_breakout 判定实际失效）；
 > ②UpsertBoxes 重算替换会撞 position/watch/signal 外键（改为按(top,bottom)匹配复用ID+引用保护删除）。
+> **B1 修正（2026-10-18，原书校对）**：首腿（breakout）初始止损由"突破箱体下轨下方"改为
+> **被突破箱体上轨（突破点）下方**（stop = box.top × sell.discount，紧止损；riskPerUnit 变小→
+> qty 变大，受单股上限约束）。腿2/3（pyramid）止损=新箱体下轨下方不变；止损上移规则不变。
+> 存量订单/持仓不追溯。planner_test 断言 stop=23.28/qty=6900 + 新增腿2对照用例。
 
 ---
 

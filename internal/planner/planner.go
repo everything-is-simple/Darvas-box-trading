@@ -4,7 +4,9 @@
 // 输出：trade_plan + plan_order（停损买/卖单，含触发价、委托价、数量、腿号）
 //
 // 数量公式（FR-404）：qty = floor(equity × risk% / (trigger − stop) / 100) × 100（A股整手）
-//   - breakout/pyramid → 停损买单：trigger = box.top × buy.premium，stop = box.bottom × sell.discount
+//   - breakout → 腿1停损买单：trigger = box.top × buy.premium，stop = box.top × sell.discount
+//     （B1修正2026-10-18：首腿紧止损=被突破箱体上轨/突破点下方，原书§4.1；旧实现误挂箱体下轨下方）
+//   - pyramid → 腿2/3停损买单：trigger = box.top × buy.premium，stop = box.bottom × sell.discount
 //   - stop/failed_breakout → 止损卖单：trigger = box.bottom × sell.discount，qty = 持仓全部（一次全出）
 package planner
 
@@ -132,7 +134,8 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 
 // raiseStops 止损上移（M4.4）：对每只持仓，若最新箱体下轨已3日确认
 // 且 新止损 = 下轨×sellDisc 高于现止损 → UpdateStop（触发器兜底拒绝下降）。
-// 入场箱体本身不参与（其下轨即初始止损）。返回上移笔数。
+// 入场箱体本身不参与（B1修正后：腿1初始止损=其上轨下方、腿2/3初始止损=其下轨下方，
+// 均不随入场箱体自身重算）。返回上移笔数。
 func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) int {
 	moves := 0
 	for i := range positions {
@@ -167,7 +170,12 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, equity, leg1, leg23, maxPos, buyPrem, sellDisc float64,
 	maxLegs int, posByCode map[string]*contract.Position, planDate, execDate string) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
+	// 初始止损（B1修正，原书§4.1）：腿1=被突破箱体上轨（突破点）下方——紧止损；
+	// 腿2/3=新箱体下轨下方（新箱体确立后止损上移至其下轨，符合原书阶梯规则）。
 	stop := box.Bottom * sellDisc
+	if s.Type == contract.SignalBreakout {
+		stop = box.Top * sellDisc
+	}
 	riskPerUnit := trigger - stop
 	if riskPerUnit <= 0 || box.Bottom <= 0 {
 		return nil // 无下轨或触发≤止损，不生成买单

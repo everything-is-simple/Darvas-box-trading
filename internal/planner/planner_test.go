@@ -44,16 +44,64 @@ func TestPlannerBuyOrderQty(t *testing.T) {
 		t.Fatal("expected ≥1 buy order from breakout signal")
 	}
 	o := orders[0]
-	// trigger = 24 × 1.03 = 24.72；stop = 17 × 0.97 = 16.49；riskPerUnit = 8.23
+	// B1修正（2026-10-18）：trigger = 24×1.03 = 24.72；stop = 24×0.97 = 23.28（首腿=被突破箱体上轨下方，
+	// 非下轨下方）；riskPerUnit = 1.44（紧止损）
 	if !approx(o.TriggerPrice, 24.72, 0.01) {
 		t.Errorf("trigger=%.2f want ≈24.72", o.TriggerPrice)
 	}
-	// qty = floor(1000000×0.01/8.23/100)×100 = floor(1.215)×100... 实际 floor(1000000*0.01/8.23)=1215, /100=12, ×100=1200
-	if o.Qty <= 0 || o.Qty%100 != 0 {
-		t.Errorf("qty=%d must be positive multiple of 100", o.Qty)
+	if stop, ok := o.Reason["stop"].(float64); !ok || !approx(stop, 23.28, 0.01) {
+		t.Errorf("reason.stop=%v want ≈23.28（首腿止损=上轨×0.97）", o.Reason["stop"])
+	}
+	// qty = floor(1000000×0.01/1.44/100)×100 = 6900（< 单股上限 floor(100万×20%/24.72/100)×100 = 8000）
+	if o.Qty != 6900 {
+		t.Errorf("qty=%d want 6900（紧止损→风险预算内股数变大）", o.Qty)
 	}
 	if o.Side != "buy" || o.OrderKind != "stop_buy" || o.LegNo != 1 {
 		t.Errorf("order side/kind/leg=%s/%s/%d want buy/stop_buy/1", o.Side, o.OrderKind, o.LegNo)
+	}
+}
+
+// TestPlannerPyramidStopB1 B1修正对照验收：金字塔腿2止损仍=新箱体下轨下方（原书：新箱体
+// 确立后止损上移至其下轨；只有首腿改挂突破箱体上轨下方）。腿2 = 20×0.97 = 19.40。
+func TestPlannerPyramidStopB1(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	// 新箱体（confirmed）：top=30 bottom=20
+	boxes := []contract.Box{{
+		Code: code, Top: 30, Bottom: 20, TopConfirmed: "2026-10-10",
+		BottomConfirmed: "2026-10-14", Status: contract.BoxConfirmed,
+	}}
+	ids, err := st.BoxRepo.UpsertBoxes(boxes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// pyramid 信号（无持仓 → 腿2）
+	if err := st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalPyramid,
+		BoxID: ids[0], BoxLevel: 30, ClosePx: 31,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("orders=%d want 1", len(orders))
+	}
+	o := orders[0]
+	if o.LegNo != 2 {
+		t.Errorf("leg=%d want 2（pyramid无持仓→确认单）", o.LegNo)
+	}
+	if stop, ok := o.Reason["stop"].(float64); !ok || !approx(stop, 19.40, 0.01) {
+		t.Errorf("reason.stop=%v want ≈19.40（腿2止损=新箱体下轨×0.97，B1不改此腿）", o.Reason["stop"])
 	}
 }
 
@@ -108,7 +156,9 @@ func TestPlannerSellOrderQty(t *testing.T) {
 
 // TestPlannerExecuteDate P1修复验收（2026-10-17）：执行日=下一交易日（ADR-2），非日历+1。
 // ① 回放场景：sh000001 有未来K线 → 周五10-09 → 周一10-12（旧逻辑给10-10周六死单，
-//    实证 sh600052 2026-10-09 信号 → exec 10-10 expired）；
+//
+//	实证 sh600052 2026-10-09 信号 → exec 10-10 expired）；
+//
 // ② 跨长假：09-30 → 10-08（国庆，旧逻辑给10-01假日死单）；
 // ③ 实盘边界：planDate=最新数据日（周五10-16，无未来K线）→ 兜底跳周末 → 周一10-19。
 func TestPlannerExecuteDate(t *testing.T) {
@@ -169,7 +219,7 @@ func seedBars(t *testing.T, st *store.Store, code string) {
 	day := "2026-10-"
 	for i, spec := range [][5]float64{{24, 17, 23.9}, {23.5, 17, 23.5}, {23.8, 17, 23.5}, {23.6, 17, 23.3}, {23.9, 17.2, 23.5}, {23.7, 17.3, 23.5}, {23.6, 17.1, 23.4}} {
 		bars = append(bars, contract.DailyBar{
-			Code: code, Date: day + pad2(i + 9), // 10-09..10-15
+			Code: code, Date: day + pad2(i+9), // 10-09..10-15
 			Open: spec[2], High: spec[0], Low: spec[1], Close: spec[2], Volume: 1000, Amount: 6e7,
 		})
 	}
@@ -185,7 +235,7 @@ func scanBoxesForSeed(code string) []contract.Box {
 	day := "2026-10-"
 	specs := [][5]float64{{24, 17, 23.9}, {23.5, 17, 23.5}, {23.8, 17, 23.5}, {23.6, 17, 23.3}, {23.9, 17.2, 23.5}, {23.7, 17.3, 23.5}, {23.6, 17.1, 23.4}}
 	for i, s := range specs {
-		bars = append(bars, contract.DailyBar{Code: code, Date: day + pad2(i + 9), Open: s[2], High: s[0], Low: s[1], Close: s[2], Volume: 1000, Amount: 6e7})
+		bars = append(bars, contract.DailyBar{Code: code, Date: day + pad2(i+9), Open: s[2], High: s[0], Low: s[1], Close: s[2], Volume: 1000, Amount: 6e7})
 	}
 	return eng.Scan(bars, contract.BoxParams{VolMultiplier: 2.0, VolWindow: 5, BreakPremium: 1.03, MinBoxWidth: 0.05})
 }
