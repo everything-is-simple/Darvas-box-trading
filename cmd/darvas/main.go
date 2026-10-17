@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"darvas/internal/box"
 	"darvas/internal/contract"
 	"darvas/internal/datasource/tdx"
 	"darvas/internal/ingest"
@@ -29,7 +31,10 @@ func main() {
 	date := fs.String("date", time.Now().Format("2006-01-02"), "交易日 YYYY-MM-DD")
 	db := fs.String("db", "", "数据库路径（默认 exe同目录/var/darvas.db）")
 	since := fs.String("since", "2024-01-01", "全量导入起始日")
-	fs.Parse(os.Args[2:])
+	// Go flag 遇首个非 flag 即停止；这里把 flag 与位置参数分离，使
+	// `darvas ladder <code> --db <path>` 这样的混合顺序也能正确解析。
+	flagArgs, positional := splitFlags(os.Args[2:])
+	fs.Parse(flagArgs)
 
 	switch cmd {
 	case "version":
@@ -39,20 +44,46 @@ func main() {
 	case "doctor":
 		runDoctor(*db)
 	case "ladder":
-		code := fs.Arg(0)
+		var code string
+		if len(positional) > 0 {
+			code = positional[0]
+		}
 		if code == "" {
 			fmt.Println("用法: darvas ladder <code>  例: sh600519")
 			os.Exit(2)
 		}
-		fmt.Printf("[M2] 箱体阶梯引擎建设中，code=%s\n", code)
+		runLadder(*db, code)
 	case "param":
-		runParam(*db, fs.Args())
+		runParam(*db, positional)
 	case "run":
 		fmt.Printf("[M5] 完整流水线建设中（当前可用: ingest）—— date=%s\n", *date)
 	default:
 		usage()
 		os.Exit(2)
 	}
+}
+
+// splitFlags 把参数序列拆成（flag 参数，位置参数）。
+// 以 "-" 开头的视为 flag（含其后续值），其余为位置参数。
+func splitFlags(args []string) (flags, positional []string) {
+	i := 0
+	for i < len(args) {
+		a := args[i]
+		if len(a) > 0 && a[0] == '-' {
+			flags = append(flags, a)
+			// -flag=value 单参；-flag value（非布尔）取下一个为值
+			if !strings.Contains(a, "=") && i+1 < len(args) && !(len(args[i+1]) > 0 && args[i+1][0] == '-') {
+				flags = append(flags, args[i+1])
+				i += 2
+				continue
+			}
+			i++
+			continue
+		}
+		positional = append(positional, a)
+		i++
+	}
+	return
 }
 
 func usage() {
@@ -179,6 +210,83 @@ func printResult(res contract.TaskResult) {
 	fmt.Printf("[%s] status=%s rows=%d 耗时=%dms\n", res.Task, res.Status, res.AffectedRows, res.DurationMS)
 	if res.Error != "" {
 		fmt.Println("error:", res.Error)
+	}
+}
+
+// runLadder 读 DB 中该 code 的全部 K 线 → 跑箱体引擎 → 持久化 + 打印阶梯。
+// 这是 boxscan 的单股缩影（docs/04-api-contract.md §7 CLI），亦供 M2.6 真实数据人工核对。
+func runLadder(db, code string) {
+	st, err := store.Open(dbPath(db))
+	must(err)
+	defer st.Close()
+
+	// 从 param 表读箱体参数（与 0001_init.sql 种子一致）
+	params := contract.BoxParams{
+		VolMultiplier: st.ParamRepo.GetFloat("box.volmult", 2.0),
+		VolWindow:     st.ParamRepo.GetInt("box.volwindow", 50),
+		BreakPremium:  st.ParamRepo.GetFloat("buy.premium", 1.03),
+		MinBoxWidth:   0.05,
+	}
+
+	// 读全部 K 线（endDate 取远期，n 取大值以取尽）
+	bars, err := st.BarRepo.BarsWindow(code, "2999-12-31", 100000)
+	must(err)
+	if len(bars) == 0 {
+		fmt.Printf("无 %s 的行情数据：请先 `darvas ingest --since full` 导入\n", code)
+		return
+	}
+
+	eng := box.New()
+	boxes := eng.Scan(bars, params)
+
+	// 持久化（boxscan 重算替换语义，docs/02 §6）
+	ids, err := st.BoxRepo.UpsertBoxes(boxes)
+	must(err)
+	_ = ids
+
+	fmt.Printf("%s  K线 %d 根（%s ~ %s）  箱体 %d 个\n",
+		code, len(bars), bars[0].Date, bars[len(bars)-1].Date, len(boxes))
+	fmt.Println("ID   状态         上轨      下轨      上轨确认    下轨确认    前驱  突破日")
+	fmt.Println("───  ──────────  ────────  ────────  ──────────  ──────────  ────  ──────────")
+	for _, b := range boxes {
+		fmt.Printf("%-4d %-12s %8.2f  %8.2f  %-10s  %-10s  %4d  %s\n",
+			b.ID, b.Status, b.Top, b.Bottom,
+			dashIfEmpty(b.TopConfirmed), dashIfEmpty(b.BottomConfirmed),
+			b.PrevBoxID, dashIfEmpty(b.BrokenDate))
+	}
+	// 阶梯摘要（仅 confirmed/broken，跳过 invalid/forming）
+	var ladder []contract.Box
+	for _, b := range boxes {
+		if b.Status == contract.BoxConfirmed || b.Status == contract.BoxBrokenUp || b.Status == contract.BoxBrokenDown {
+			ladder = append(ladder, b)
+		}
+	}
+	fmt.Printf("\n阶梯节点 %d 个: ", len(ladder))
+	for _, b := range ladder {
+		fmt.Printf("[%.0f/%.0f %s] ", b.Bottom, b.Top, ladderShort(b.Status))
+	}
+	fmt.Println()
+}
+
+func dashIfEmpty(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+func ladderShort(s contract.BoxStatus) string {
+	switch s {
+	case contract.BoxConfirmed:
+		return "✓"
+	case contract.BoxBrokenUp:
+		return "↑"
+	case contract.BoxBrokenDown:
+		return "↓"
+	case contract.BoxInvalid:
+		return "✗"
+	default:
+		return string(s)
 	}
 }
 

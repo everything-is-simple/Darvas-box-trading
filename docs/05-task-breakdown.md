@@ -36,11 +36,13 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 
 ## M1 · 数据层（ingest + store + tdx）
 
-> **实测发现（2026-10-17，M0骨架验证）**：modernc纯Go驱动 + 逐条Exec + 每code独立事务，
-> 全量导入速率约 **800 bars/sec**（15分钟仅完成1371/11942只），不达NFR-1（<10min）。
-> M1.1须优先解决：① 多行 VALUES 批量插入（每批500行）② 跨code合并事务（每50只commit一次）
-> ③ PRAGMA synchronous=NORMAL / cache_size 调优 ④ 进度日志改 stdout 行缓冲。
-> 目标：全量<10min、增量<30s。数据通路与新鲜度校验已验证可用。
+> **M1.1 性能优化落地（2026-10-17）**：modernc纯Go驱动下逐条Exec全量导入仅 ~800 bars/sec。
+> 经基准对比（`internal/store/bench_test.go`）选定最优策略组合：
+> ① **多行 VALUES batch=100**（实测 35k bars/sec，为 batch=500 的 3 倍——modernc 对大参数绑定有惩罚）；
+> ② **跨 code 缓冲合并事务**（每 2000 只 flush 一次，全量仅 ~6 次 commit）；
+> ③ **导入期 DROP (date) 二级索引、结束后排序重建**（散列 code 随机插入的核心提速）；
+> ④ **PRAGMA synchronous=NORMAL / cache_size=64MB / temp_store=MEMORY**（store.Open 设置）。
+> 目标：全量11942文件<10min、增量<30s、幂等零重复。
 
 | # | 任务 | 内容 | 验收 |
 |---|------|------|------|
@@ -60,14 +62,19 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 
 ## M2 · 箱体引擎（box）★理论核心，最重测试
 
-| # | 任务 | 内容 | 验收 |
-|---|------|------|------|
-| 2.1 | 三日法则状态机 | `Engine.Scan`纯函数：上轨候选→3日确认→下轨候选→3日确认；作废重计规则 | 表驱动单测≥30用例（含书中案例） |
-| 2.2 | 突破判定 | 收盘>top×1.03 + 放量 + 非一字板 → broken_up；收盘<bottom → broken_down | 构造K线断言 |
-| 2.3 | 阶梯链 | 新箱体prev_box_id指向被突破箱体；下轨≈前上轨容差校验 | 断言链结构 |
-| 2.4 | BoxRepo | UpsertBoxes/LatestBox/Ladder | 单测 |
-| 2.5 | BoxScanner增量 | 预过滤（创60日新高或放量）+ 池内全量重放 | 增量=全量结果（抽验） |
-| 2.6 | 真实数据标定 | 茅台/随机20只：人工对照K线核对箱体阶梯合理性 | 标定记录入docs |
+| # | 任务 | 内容 | 验收 | 状态 |
+|---|------|------|------|------|
+| 2.1 | 三日法则状态机 | `Engine.Scan`纯函数：上轨候选→3日确认→下轨候选→3日确认；作废重计规则 | 表驱动单测≥30用例（含书中案例） | ✅ 35用例全绿 |
+| 2.2 | 突破判定 | 收盘>top×1.03 + 放量 + 非一字板 → broken_up；收盘<bottom → broken_down | 构造K线断言 | ✅ |
+| 2.3 | 阶梯链 | 新箱体prev_box_id指向最近confirmed箱体；invalid被跳过 | 断言链结构 | ✅ |
+| 2.4 | BoxRepo | UpsertBoxes(局部ID→DB ID修复)/LatestBox/Ladder | 单测5用例 | ✅ |
+| 2.5 | BoxScanner增量 | 预过滤（创60日新高或放量）+ 池内全量重放 | 增量=全量结果（抽验） | ⏳ M2.5 |
+| 2.6 | 真实数据标定 | 茅台/随机20只：人工对照K线核对箱体阶梯合理性 | 标定记录入docs | ⏳ M2.6 |
+
+> M2.1-2.4 已实现：`internal/box/engine.go`（确定性纯函数，ADR-1）+
+> `internal/box/engine_test.go`（35用例：空输入/上轨确认/重置/下轨确认/作废/突破放量/
+> 无量/一字板/跌破/阶梯链/invalid跳过/确定性/书中$17/$24→$24/$27→$31/$35案例/默认参数路径）。
+> BoxRepo `internal/store/repo_box.go`（阶梯链 prev_box_id 局部ID→DB ID 修复、NULL=无前驱）。
 
 ---
 

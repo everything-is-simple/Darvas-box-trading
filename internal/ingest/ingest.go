@@ -5,37 +5,80 @@ package ingest
 import (
 	"context"
 	"log"
-	"strings"
 	"time"
 
 	"darvas/internal/contract"
 	"darvas/internal/store"
 )
 
+// flushEveryCodes 跨 code 合并事务的提交粒度：每读取该数量的代码后
+// 把累积的 bars/securities 一次性写入（docs/05 M1.1）。
+// 2000 只×约700根 ≈ 140万行/事务，全量仅 ~6 次 commit，
+// 配合多行 VALUES(100行/语句) 把 DB 写入压到基准测得的 ~35k bars/sec。
+const flushEveryCodes = 2000
+
 // Ingester 导入器（docs/04-api-contract.md §3.2）。
 type Ingester struct {
-	reader contract.DayFileReader
-	st     *store.Store
-	// FullSince 全量导入起始日：箱体引擎+52周新高+RS窗口最多需要约2年历史
-	FullSince string
-	// SinceDriver 增量读取时的兜底起点
-	log *log.Logger
+	reader    contract.DayFileReader
+	st        *store.Store
+	FullSince string // 全量导入起始日：箱体引擎+52周新高+RS窗口最多需要约2年历史
+	log       *log.Logger
 }
 
-// New 构造。fullSince 为空时默认 "2024-01-01"。
+// New 构造。fullSince 为空或 "full"（CLI 标志）时默认 "2024-01-01"
+// （箱体引擎+52周新高+RS窗口最多需要约2年历史）。
 func New(reader contract.DayFileReader, st *store.Store, fullSince string) *Ingester {
-	if fullSince == "" {
+	if fullSince == "" || fullSince == "full" || fullSince == "FULL" {
 		fullSince = "2024-01-01"
 	}
 	return &Ingester{
-		reader:     reader,
-		st:         st,
-		FullSince:  fullSince,
-		log:        log.New(log.Writer(), "[ingest] ", log.LstdFlags),
+		reader:    reader,
+		st:        st,
+		FullSince: fullSince,
+		log:       log.New(log.Writer(), "[ingest] ", log.LstdFlags),
 	}
 }
 
+// accWrite 跨 code 累积缓冲：攒满 flushEveryCodes 个代码后一次性 flush。
+type accWrite struct {
+	bars []contract.DailyBar
+	secs []contract.Security
+}
+
+func (a *accWrite) add(code string, bars []contract.DailyBar, firstDate string) {
+	if len(bars) > 0 {
+		a.bars = append(a.bars, bars...)
+		a.secs = append(a.secs, store.DeriveSecurity(code, firstDate))
+	} else {
+		// 无行情也登记证券（保证 security 表覆盖全部代码）
+		a.secs = append(a.secs, store.DeriveSecurity(code, ""))
+	}
+}
+
+// flush 把缓冲写入 DB（bars 走多行 VALUES 单事务，securities 走批量 INSERT OR IGNORE）。
+func (g *Ingester) flush(a *accWrite) (int64, error) {
+	if len(a.bars) == 0 {
+		if err := g.st.SecRepo.UpsertSecurities(a.secs); err != nil {
+			return 0, err
+		}
+		a.secs = a.secs[:0]
+		return 0, nil
+	}
+	if err := g.st.SecRepo.UpsertSecurities(a.secs); err != nil {
+		return 0, err
+	}
+	n, err := g.st.BarRepo.UpsertBars(a.bars)
+	a.bars = a.bars[:0]
+	a.secs = a.secs[:0]
+	return n, err
+}
+
 // FullImport 全量导入（幂等，INSERT OR REPLACE）。
+// 性能策略（docs/05 M1.1）：
+//   - 索引降级：导入期 DROP (date) 二级索引，结束后排序重建（散列 code 随机插入提速一个数量级）；
+//   - 跨 code 缓冲：每 flushEveryCodes 只代码合并一次事务写入；
+//   - 多行 VALUES：由 BarRepo.UpsertBars 每 100 行拼一条 INSERT（基准甜点）；
+//   - PRAGMA 调优：synchronous=NORMAL/cache_size 由 store.Open 设置。
 func (g *Ingester) FullImport(ctx context.Context) (contract.TaskResult, error) {
 	start := time.Now()
 	res := contract.TaskResult{Task: "ingest", Date: today()}
@@ -44,42 +87,72 @@ func (g *Ingester) FullImport(ctx context.Context) (contract.TaskResult, error) 
 		res.Status, res.Error = "failed", err.Error()
 		return res, err
 	}
+	// 导入期降级索引（失败不阻断，最坏只是慢）
+	if ierr := g.st.BulkLoadToggle(true); ierr != nil {
+		g.log.Printf("warn: bulk toggle on: %v", ierr)
+	}
 	var total int64
+	acc := &accWrite{}
+	pending := 0
 	for i, code := range codes {
 		select {
 		case <-ctx.Done():
+			g.st.BulkLoadToggle(false) // 尽力恢复索引
 			res.Status, res.Error = "failed", ctx.Err().Error()
 			return res, ctx.Err()
 		default:
 		}
-		bars, err := g.reader.ReadBars(code, g.FullSince)
-		if err != nil {
-			continue // 单文件失败不阻断全量（质量报告统计）
+		bars, rerr := g.reader.ReadBars(code, g.FullSince)
+		if rerr != nil {
+			// 单文件读取失败不阻断全量（质量报告统计）；仍登记证券
+			acc.add(code, nil, "")
+		} else {
+			firstDate := ""
+			if len(bars) > 0 {
+				firstDate = bars[0].Date
+			}
+			acc.add(code, bars, firstDate)
 		}
-		if len(bars) == 0 {
-			continue
+		pending++
+		if pending >= flushEveryCodes {
+			n, ferr := g.flush(acc)
+			if ferr != nil {
+				g.log.Printf("flush at code %d/%d: %v", i+1, len(codes), ferr)
+			}
+			total += n
+			pending = 0
 		}
-		if err := g.upsertSecurity(code, bars[0].Date); err != nil {
-			g.log.Printf("security %s: %v", code, err)
-		}
-		n, err := g.st.BarRepo.UpsertBars(bars)
-		if err != nil {
-			g.log.Printf("bars %s: %v", code, err)
-			continue
-		}
-		total += n
-		if (i+1)%500 == 0 {
+		if (i+1)%2000 == 0 {
 			g.log.Printf("progress %d/%d codes, %d bars", i+1, len(codes), total)
 		}
+	}
+	// 尾部残余
+	if pending > 0 {
+		n, ferr := g.flush(acc)
+		if ferr != nil {
+			g.log.Printf("flush tail: %v", ferr)
+		}
+		total += n
+	}
+	// 重建索引（即使前面 toggle 失败也尝试，CREATE IF NOT EXISTS 幂等）
+	if ierr := g.st.BulkLoadToggle(false); ierr != nil {
+		g.log.Printf("warn: bulk toggle off (index rebuild): %v", ierr)
 	}
 	res.Status = "ok"
 	res.AffectedRows = total
 	res.DurationMS = time.Since(start).Milliseconds()
-	g.log.Printf("full import done: %d codes, %d bars, %s", len(codes), total, time.Since(start).Round(time.Second))
+	rate := 0.0
+	sec := time.Since(start).Seconds()
+	if sec > 0 {
+		rate = float64(total) / sec
+	}
+	g.log.Printf("full import done: %d codes, %d bars, %s (%.0f bars/sec)",
+		len(codes), total, time.Since(start).Round(time.Second), rate)
 	return res, nil
 }
 
-// SyncIncremental 增量导入：只读「文件修改时间在当日零点之后」的文件，自库内最新日期续读。
+// SyncIncremental 增量导入：只读「文件修改时间在当日零点之后」的文件，
+// 自库内最新日期续读。同样走跨 code 缓冲批量写入（docs/01 D2）。
 func (g *Ingester) SyncIncremental(ctx context.Context, date string) (contract.TaskResult, error) {
 	start := time.Now()
 	res := contract.TaskResult{Task: "ingest", Date: date}
@@ -91,6 +164,8 @@ func (g *Ingester) SyncIncremental(ctx context.Context, date string) (contract.T
 		return res, err
 	}
 	var total, files int64
+	acc := &accWrite{}
+	pending := 0
 	for _, code := range codes {
 		select {
 		case <-ctx.Done():
@@ -98,32 +173,43 @@ func (g *Ingester) SyncIncremental(ctx context.Context, date string) (contract.T
 			return res, ctx.Err()
 		default:
 		}
-		mt, err := g.reader.ModTime(code)
-		if err != nil || mt.Before(midnight) {
+		mt, merr := g.reader.ModTime(code)
+		if merr != nil || mt.Before(midnight) {
 			continue // 今日未更新的文件跳过
 		}
 		files++
-		latest, err := g.st.BarRepo.LatestDate(code)
-		if err != nil || latest == "" {
+		latest, lerr := g.st.BarRepo.LatestDate(code)
+		if lerr != nil || latest == "" {
 			latest = g.FullSince
 		}
-		bars, err := g.reader.ReadBars(code, latest)
-		if err != nil || len(bars) == 0 {
-			continue
+		bars, rerr := g.reader.ReadBars(code, latest)
+		if rerr != nil {
+			acc.add(code, nil, "")
+		} else {
+			acc.add(code, bars, "")
 		}
-		if err := g.upsertSecurity(code, ""); err != nil {
-			g.log.Printf("security %s: %v", code, err)
+		pending++
+		if pending >= flushEveryCodes {
+			n, ferr := g.flush(acc)
+			if ferr != nil {
+				g.log.Printf("incr flush: %v", ferr)
+			}
+			total += n
+			pending = 0
 		}
-		n, err := g.st.BarRepo.UpsertBars(bars)
-		if err != nil {
-			continue
+	}
+	if pending > 0 {
+		n, ferr := g.flush(acc)
+		if ferr != nil {
+			g.log.Printf("incr flush tail: %v", ferr)
 		}
 		total += n
 	}
 	res.Status = "ok"
 	res.AffectedRows = total
 	res.DurationMS = time.Since(start).Milliseconds()
-	g.log.Printf("incremental %s: %d files updated, %d bars, %s", date, files, total, time.Since(start).Round(time.Second))
+	g.log.Printf("incremental %s: %d files updated, %d bars, %s",
+		date, files, total, time.Since(start).Round(time.Second))
 	return res, nil
 }
 
@@ -145,54 +231,6 @@ func (g *Ingester) Verify(ctx context.Context, date string) (contract.DataQualit
 	}
 	q.UpdatedCount = one
 	return q, nil
-}
-
-// upsertSecurity 从代码推导证券基础属性（FR-103：板块/类型识别）。
-func (g *Ingester) upsertSecurity(code, firstDate string) error {
-	market := "sh"
-	if strings.HasPrefix(code, "sz") {
-		market = "sz"
-	}
-	num := strings.TrimPrefix(strings.TrimPrefix(code, "sh"), "sz")
-	kind, board := classify(market, num)
-	_, err := g.st.DB().Exec(`INSERT INTO security(code, market, kind, board, list_date)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(code) DO NOTHING`,
-		code, market, kind, board, nullEmpty(firstDate))
-	return err
-}
-
-// classify 按市场前缀+数字代码分类（docs/00-darvas-theory.md §7 A股适配）。
-func classify(market, num string) (kind, board string) {
-	if len(num) != 6 {
-		return "other", "other"
-	}
-	// 指数：sh000xxx / sz399xxx
-	if (market == "sh" && strings.HasPrefix(num, "000")) ||
-		(market == "sz" && strings.HasPrefix(num, "399")) {
-		return "index", "index"
-	}
-	switch {
-	case strings.HasPrefix(num, "60"): // 沪主板
-		return "stock", "main"
-	case strings.HasPrefix(num, "68"): // 科创板
-		return "stock", "star"
-	case strings.HasPrefix(num, "30"): // 创业板
-		return "stock", "gem"
-	case strings.HasPrefix(num, "00"): // 深主板（000/001/002/003）
-		return "stock", "main"
-	case strings.HasPrefix(num, "20"): // B股
-		return "stock", "b"
-	default:
-		return "other", "other"
-	}
-}
-
-func nullEmpty(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }
 
 func today() string { return time.Now().Format("2006-01-02") }
