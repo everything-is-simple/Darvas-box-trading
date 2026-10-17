@@ -97,10 +97,12 @@ func DeriveSecurity(code, firstDate string) contract.Security {
 	}
 }
 
-// ActiveStockCodes 返回全部活跃股票代码（排除指数/other），供 boxscan/screen 遍历。
-// 按 code 升序，便于稳定迭代与进度日志。
+// ActiveStockCodes 返回全部活跃股票代码（docs/00 §7 股票池：沪深主板+创业板+科创板），
+// 排除指数/other/B股，供 boxscan/screen 遍历。按 code 升序，便于稳定迭代与进度日志。
 func (r *SecRepo) ActiveStockCodes() ([]string, error) {
-	rows, err := r.db.Query(`SELECT code FROM security WHERE kind = 'stock' AND status = 'active' ORDER BY code`)
+	rows, err := r.db.Query(`SELECT code FROM security
+		WHERE kind = 'stock' AND board IN ('main', 'gem', 'star') AND status = 'active'
+		ORDER BY code`)
 	if err != nil {
 		return nil, err
 	}
