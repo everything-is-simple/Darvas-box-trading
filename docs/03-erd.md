@@ -111,7 +111,7 @@ erDiagram
     trade_plan {
         INTEGER id PK
         DATE plan_date "生成日T"
-        DATE execute_date "执行日T+1"
+        DATE execute_date "执行日=下一交易日(ADR-2:sh000001日线,无未来K线时跳周末兜底)"
         REAL equity_base "计算仓位用的权益"
         INTEGER open_position_count
         DATE created_at

@@ -68,7 +68,8 @@ func (r *TradeRepo) AddOrders(planID int64, orders []contract.PlanOrder) error {
 func (r *TradeRepo) PlanOn(date string) (*contract.TradePlan, []contract.PlanOrder, error) {
 	var p contract.TradePlan
 	var pid int64
-	err := r.db.QueryRow(`SELECT id, plan_date, execute_date, equity_base, open_position_count
+	err := r.db.QueryRow(`SELECT id, CAST(plan_date AS TEXT), CAST(execute_date AS TEXT),
+			equity_base, open_position_count
 		FROM trade_plan WHERE plan_date = ?`, date).
 		Scan(&pid, &p.PlanDate, &p.ExecuteDate, &p.EquityBase, &p.OpenPositionCount)
 	if err == sql.ErrNoRows {

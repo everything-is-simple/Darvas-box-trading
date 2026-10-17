@@ -207,6 +207,15 @@ func (r *BarRepo) PrevDate(code, before string) (string, error) {
 	return d, err
 }
 
+// NextDate 该证券在 after 之后（严格大于）的最近日期（planner 取下一交易日，ADR-2）。
+// 无未来数据时返回空串（实盘当日 plan 场景，由调用方兜底）。
+func (r *BarRepo) NextDate(code, after string) (string, error) {
+	var d string
+	err := r.db.QueryRow(`SELECT COALESCE(MIN(date),'') FROM daily_bar WHERE code = ? AND date > ?`,
+		code, after).Scan(&d)
+	return d, err
+}
+
 // HasBar 是否存在该日数据。
 func (r *BarRepo) HasBar(code, date string) (bool, error) {
 	var one int

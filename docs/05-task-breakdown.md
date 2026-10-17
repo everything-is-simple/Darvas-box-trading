@@ -105,8 +105,10 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 
 > M4 已实现：`internal/store/repo_signal.go`+`repo_trade.go`（SignalRepo/TradeRepo）+
 > `internal/signal/signal.go`（四类信号：stop优先>failed>breakout/pyramid）+
-> `internal/planner/planner.go`（qty=floor(equity×risk%/(trigger-stop)/100)×100、单股上限、腿号、T+1执行日）。
-> planner单测2例验证买/卖单数量公式。
+> `internal/planner/planner.go`（qty=floor(equity×risk%/(trigger-stop)/100)×100、单股上限、腿号、
+> 执行日=下一交易日：sh000001日线取NextDate(ADR-2)，实盘无未来K线时跳周末兜底。
+> 2026-10-17修复：此前日历+1近似导致周五信号→周六死单，实证sh600052 2026-10-09→exec 10-10 expired）。
+> planner单测验证买/卖单数量公式、止损上移、执行日=下一交易日（含跨国庆长假与实盘兜底）。
 > **M4收尾（2026-10-17）**：`internal/ledger/ledger.go`（ParseFill三格式/ApplyFills订单状态机/
 > Snapshot/AuditEquation）+ migration 0002（trade_fill.side）+ CLI `fills` 子命令 +
 > doctor 账本检查项 + planner.raiseStops 止损上移接线（M4.4）。

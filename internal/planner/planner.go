@@ -33,7 +33,8 @@ func New(st *store.Store) *Planner {
 	return &Planner{st: st, log: log.New(log.Writer(), "[plan] ", log.LstdFlags)}
 }
 
-// Build 生成次日交易计划（六问答案）。
+// Build 生成下一交易日交易计划（六问答案；执行日按 ADR-2 取 sh000001 下一交易日，
+// 实盘无未来数据时跳周末兜底，见 nextTradingDate）。
 func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResult, error) {
 	start := time.Now()
 	res := contract.TaskResult{Task: "plan", Date: planDate}
@@ -77,7 +78,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	// DB 触发器保证只升不降（降则 ABORT），此处仅在候选值更高时调用。
 	stopMoves := p.raiseStops(positions, sellDisc)
 
-	executeDate := nextDay(planDate)
+	executeDate := p.nextTradingDate(planDate)
 	var orders []contract.PlanOrder
 	for _, s := range sigs {
 		box, _ := p.st.BoxRepo.LatestBox(s.Code)
@@ -224,11 +225,28 @@ func (p *Planner) sellOrder(s contract.Signal, box *contract.Box, sellDisc float
 	}
 }
 
-// nextDay 下一日历日（T+1 执行日；精确交易日历由调度器/日历模块处理，此处近似）。
-func nextDay(date string) string {
+// nextTradingDate 下一交易日（ADR-2 交易日历来自数据本身）：优先取 sh000001 日线中
+// planDate 之后的最近日期（回放/补跑场景未来K线已入库，跨节假日的执行日精确）；
+// 无未来数据时（实盘当日 16:40 plan，DB 仅含至 planDate）退化为跳过周末的下一工作日
+// ——节假日无法从历史数据预判（ADR-2 不内置日历库），假日偏差由 ExpireStaleOrders
+// 过期机制兜底，不产生错误成交。
+// 修复（2026-10-17）：此前用日历日+1 近似，周五信号会产生周六死单（sh600052 2026-10-09 → exec 10-10）。
+func (p *Planner) nextTradingDate(planDate string) string {
+	if d, err := p.st.BarRepo.NextDate("sh000001", planDate); err == nil && d != "" {
+		return d
+	}
+	return nextWeekday(planDate)
+}
+
+// nextWeekday 下一工作日（跳过周六日；仅作实盘无未来数据时的兜底）。
+func nextWeekday(date string) string {
 	t, err := time.Parse("2006-01-02", date)
 	if err != nil {
 		return date
 	}
-	return t.AddDate(0, 0, 1).Format("2006-01-02")
+	for t = t.AddDate(0, 0, 1); ; t = t.AddDate(0, 0, 1) {
+		if wd := t.Weekday(); wd != time.Saturday && wd != time.Sunday {
+			return t.Format("2006-01-02")
+		}
+	}
 }
