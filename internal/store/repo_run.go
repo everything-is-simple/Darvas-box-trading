@@ -57,6 +57,41 @@ func (r *RunRepo) LastOKRun(date, task string) (contract.TaskResult, bool, error
 	return res, true, nil
 }
 
+// RunsOn 取某日全部任务心跳（GUI 仪表盘；时长用 julianday 差值在SQL侧算好）。
+func (r *RunRepo) RunsOn(date string) ([]contract.TaskResult, error) {
+	rows, err := r.db.Query(`SELECT task, CAST(date AS TEXT), status,
+		CAST(COALESCE((julianday(finished_at)-julianday(started_at))*86400000, 0) AS INTEGER),
+		COALESCE(affected_rows,0), COALESCE(error,'')
+		FROM daily_run WHERE date = ?
+		ORDER BY CASE task
+			WHEN 'ingest' THEN 1 WHEN 'boxscan' THEN 2 WHEN 'screen' THEN 3
+			WHEN 'poolsync' THEN 4 WHEN 'signal' THEN 5 WHEN 'plan' THEN 6
+			WHEN 'report' THEN 7 ELSE 8 END`, date)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []contract.TaskResult
+	for rows.Next() {
+		var res contract.TaskResult
+		if err := rows.Scan(&res.Task, &res.Date, &res.Status, &res.DurationMS, &res.AffectedRows, &res.Error); err != nil {
+			return nil, err
+		}
+		out = append(out, res)
+	}
+	return out, rows.Err()
+}
+
+// LatestRunDate 最近一次心跳的日期（GUI 仪表盘默认展示日）。
+func (r *RunRepo) LatestRunDate() (string, error) {
+	var d string
+	err := r.db.QueryRow(`SELECT CAST(MAX(date) AS TEXT) FROM daily_run`).Scan(&d)
+	if err != nil {
+		return "", err
+	}
+	return d, nil
+}
+
 func nullString(s string) any {
 	if s == "" {
 		return nil
