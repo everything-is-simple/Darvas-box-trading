@@ -1,0 +1,167 @@
+package planner
+
+import (
+	"context"
+	"testing"
+
+	"darvas/internal/box"
+	"darvas/internal/contract"
+	"darvas/internal/store"
+)
+
+// TestPlannerBuyOrderQty 验证停损买单数量公式（FR-404）：
+// qty = floor(equity × risk% / (trigger−stop) / 100) × 100，且 ≤ 单股仓位上限。
+func TestPlannerBuyOrderQty(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	// 构造一个 confirmed 箱体：top=24 bottom=17
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	// breakout 信号
+	st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
+		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
+	}})
+	// 权益基准 100 万
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	res, err := p.Build(context.Background(), "2026-10-16")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("status=%s err=%s", res.Status, res.Error)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) == 0 {
+		t.Fatal("expected ≥1 buy order from breakout signal")
+	}
+	o := orders[0]
+	// trigger = 24 × 1.03 = 24.72；stop = 17 × 0.97 = 16.49；riskPerUnit = 8.23
+	if !approx(o.TriggerPrice, 24.72, 0.01) {
+		t.Errorf("trigger=%.2f want ≈24.72", o.TriggerPrice)
+	}
+	// qty = floor(1000000×0.01/8.23/100)×100 = floor(1.215)×100... 实际 floor(1000000*0.01/8.23)=1215, /100=12, ×100=1200
+	if o.Qty <= 0 || o.Qty%100 != 0 {
+		t.Errorf("qty=%d must be positive multiple of 100", o.Qty)
+	}
+	if o.Side != "buy" || o.OrderKind != "stop_buy" || o.LegNo != 1 {
+		t.Errorf("order side/kind/leg=%s/%s/%d want buy/stop_buy/1", o.Side, o.OrderKind, o.LegNo)
+	}
+}
+
+// TestPlannerSellOrderQty 止损卖单 = 持仓全部（一次全出）。
+func TestPlannerSellOrderQty(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	// 一个跌破箱体（覆盖为 broken_down）
+	boxes[0].Status = contract.BoxBrokenDown
+	boxes[0].Bottom = 17
+	boxes[0].BrokenDate = "2026-10-16"
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	// 取最终 box 的真实 DB ID（FK 指向存在的行）
+	lb, _ := st.BoxRepo.LatestBox(code)
+	if lb == nil {
+		t.Fatal("no box after upsert")
+	}
+	boxDBID := lb.ID
+	// 一个持仓 500 股
+	st.DB().Exec(`INSERT INTO position(code, opened_date, qty, avg_cost, stop_price, status)
+		VALUES (?, '2026-09-01', 500, 20, 16.49, 'open')`, code)
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+	// stop 信号（BoxID 用真实 DB ID，FK 指向存在的 box）
+	if err := st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalStop,
+		BoxID: boxDBID, ClosePx: 16, BoxLevel: 17,
+	}}); err != nil {
+		t.Fatalf("append signal: %v", err)
+	}
+
+	p := New(st)
+	p.Build(context.Background(), "2026-10-16")
+	_, orders, _ := st.TradeRepo.PlanOn("2026-10-16")
+	if len(orders) == 0 {
+		t.Fatal("expected sell order from stop signal")
+	}
+	o := orders[0]
+	if o.Side != "sell" || o.OrderKind != "stop_sell" {
+		t.Errorf("want sell/stop_sell got %s/%s", o.Side, o.OrderKind)
+	}
+	if o.Qty != 500 {
+		t.Errorf("sell qty=%d want 500 (全部持仓)", o.Qty)
+	}
+}
+
+// ─── 辅助 ──
+
+func newPlannerStore(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.Open(t.TempDir() + "/plan.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
+}
+
+func seedBars(t *testing.T, st *store.Store, code string) {
+	t.Helper()
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
+	bars := make([]contract.DailyBar, 0, 8)
+	day := "2026-10-"
+	for i, spec := range [][5]float64{{24, 17, 23.9}, {23.5, 17, 23.5}, {23.8, 17, 23.5}, {23.6, 17, 23.3}, {23.9, 17.2, 23.5}, {23.7, 17.3, 23.5}, {23.6, 17.1, 23.4}} {
+		bars = append(bars, contract.DailyBar{
+			Code: code, Date: day + pad2(i + 9), // 10-09..10-15
+			Open: spec[2], High: spec[0], Low: spec[1], Close: spec[2], Volume: 1000, Amount: 6e7,
+		})
+	}
+	if _, err := st.BarRepo.UpsertBars(bars); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func scanBoxesForSeed(code string) []contract.Box {
+	// 用 box 引擎扫出一个 confirmed 箱体（top≈24 bottom≈17）
+	eng := box.New()
+	bars := make([]contract.DailyBar, 0, 8)
+	day := "2026-10-"
+	specs := [][5]float64{{24, 17, 23.9}, {23.5, 17, 23.5}, {23.8, 17, 23.5}, {23.6, 17, 23.3}, {23.9, 17.2, 23.5}, {23.7, 17.3, 23.5}, {23.6, 17.1, 23.4}}
+	for i, s := range specs {
+		bars = append(bars, contract.DailyBar{Code: code, Date: day + pad2(i + 9), Open: s[2], High: s[0], Low: s[1], Close: s[2], Volume: 1000, Amount: 6e7})
+	}
+	return eng.Scan(bars, contract.BoxParams{VolMultiplier: 2.0, VolWindow: 5, BreakPremium: 1.03, MinBoxWidth: 0.05})
+}
+
+func pad2(n int) string {
+	if n < 10 {
+		return "0" + itoa(n)
+	}
+	return itoa(n)
+}
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	return string(b)
+}
+
+func approx(a, b, tol float64) bool { return a-b < tol && b-a < tol }

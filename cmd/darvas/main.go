@@ -8,7 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -16,10 +18,11 @@ import (
 	"darvas/internal/contract"
 	"darvas/internal/datasource/tdx"
 	"darvas/internal/ingest"
+	"darvas/internal/pipeline"
 	"darvas/internal/store"
 )
 
-const version = "0.1.0-m0"
+const version = "0.2.0-m2"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -56,7 +59,7 @@ func main() {
 	case "param":
 		runParam(*db, positional)
 	case "run":
-		fmt.Printf("[M5] 完整流水线建设中（当前可用: ingest）—— date=%s\n", *date)
+		runPipeline(*db, *date)
 	default:
 		usage()
 		os.Exit(2)
@@ -294,5 +297,48 @@ func must(err error) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "错误:", err)
 		os.Exit(1)
+	}
+}
+
+// runPipeline 跑完整盘后流水线（docs/01 §4.1）并打开日报。
+func runPipeline(db, date string) {
+	st, err := store.Open(dbPath(db))
+	must(err)
+	defer st.Close()
+	root := st.ParamRepo.GetString("tdx.root", tdxRoot())
+	reader := tdx.NewReader(root)
+	ing := ingest.New(reader, st, "")
+	pipe := pipeline.New(st, ing)
+	ctx := context.Background()
+	results, err := pipe.RunDaily(ctx, date)
+	must(err)
+	fmt.Printf("=== 盘后流水线 %s 完成 ===\n", date)
+	for _, r := range results {
+		status := r.Status
+		if r.Error != "" {
+			status = r.Status + " (" + r.Error + ")"
+		}
+		fmt.Printf("  %-10s %-7s rows=%-8d %dms\n", r.Task, status, r.AffectedRows, r.DurationMS)
+	}
+	// 打开日报
+	rp := pipe.ReportPath(date)
+	if _, err := os.Stat(rp); err == nil {
+		fmt.Printf("日报: %s\n", rp)
+		_ = openReport(rp)
+	} else {
+		fmt.Println("日报未生成（report 任务可能失败）")
+	}
+}
+
+// openReport 用系统默认浏览器打开 HTML。
+func openReport(path string) error {
+	abs, _ := filepath.Abs(path)
+	switch runtime.GOOS {
+	case "windows":
+		return exec.Command("cmd", "/c", "start", "", abs).Start()
+	case "darwin":
+		return exec.Command("open", abs).Start()
+	default:
+		return exec.Command("xdg-open", abs).Start()
 	}
 }

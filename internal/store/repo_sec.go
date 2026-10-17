@@ -96,3 +96,40 @@ func DeriveSecurity(code, firstDate string) contract.Security {
 		ListDate: firstDate,
 	}
 }
+
+// ActiveStockCodes 返回全部活跃股票代码（排除指数/other），供 boxscan/screen 遍历。
+// 按 code 升序，便于稳定迭代与进度日志。
+func (r *SecRepo) ActiveStockCodes() ([]string, error) {
+	rows, err := r.db.Query(`SELECT code FROM security WHERE kind = 'stock' AND status = 'active' ORDER BY code`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// ActiveWatchCodes 返回跟踪池中未退出的股票代码（boxscan 增量必扫集合）。
+func (r *SecRepo) ActiveWatchCodes() ([]string, error) {
+	rows, err := r.db.Query(`SELECT DISTINCT code FROM watch WHERE stage IN ('watching','pending','holding')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}

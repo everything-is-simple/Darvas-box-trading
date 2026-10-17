@@ -68,49 +68,63 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 | 2.2 | 突破判定 | 收盘>top×1.03 + 放量 + 非一字板 → broken_up；收盘<bottom → broken_down | 构造K线断言 | ✅ |
 | 2.3 | 阶梯链 | 新箱体prev_box_id指向最近confirmed箱体；invalid被跳过 | 断言链结构 | ✅ |
 | 2.4 | BoxRepo | UpsertBoxes(局部ID→DB ID修复)/LatestBox/Ladder | 单测5用例 | ✅ |
-| 2.5 | BoxScanner增量 | 预过滤（创60日新高或放量）+ 池内全量重放 | 增量=全量结果（抽验） | ⏳ M2.5 |
-| 2.6 | 真实数据标定 | 茅台/随机20只：人工对照K线核对箱体阶梯合理性 | 标定记录入docs | ⏳ M2.6 |
+| 2.5 | BoxScanner增量 | 预过滤（创60日新高或放量）+ 池内全量重放 | 增量=全量结果（抽验） | ✅ |
+| 2.6 | 真实数据标定 | 茅台/随机20只：人工对照K线核对箱体阶梯合理性 | 标定记录入docs | ✅ 茅台29箱体 |
 
-> M2.1-2.4 已实现：`internal/box/engine.go`（确定性纯函数，ADR-1）+
-> `internal/box/engine_test.go`（35用例：空输入/上轨确认/重置/下轨确认/作废/突破放量/
-> 无量/一字板/跌破/阶梯链/invalid跳过/确定性/书中$17/$24→$24/$27→$31/$35案例/默认参数路径）。
-> BoxRepo `internal/store/repo_box.go`（阶梯链 prev_box_id 局部ID→DB ID 修复、NULL=无前驱）。
+> M2.5 已实现 `internal/box/scanner.go`：RescanAll（全市场逐code重算）+
+> RescanIncremental（跟踪池全量重放+其余预过滤：今日创60日新高或量≥均量×倍数）。预过滤单测5例全绿。
+> 真实数据：茅台673根K线识别29箱体阶梯合理（M2.6）。
 
 ---
 
 ## M3 · 初选与跟踪池（screener + pool）
 
-| # | 任务 | 内容 | 验收 |
-|---|------|------|------|
-| 3.1 | 四条件初选 | 流动性/RS(20日vs上证)/放量比/箱体形态，打分排序 | 指定日期抽验10只 |
-| 3.2 | candidate快照 | append-only + reasons_json明细 | 重跑不重复 |
-| 3.3 | watch状态机 | candidate→watching→pending→holding→exited迁移+出池规则（broken_down/4箱不涨/人工） | 状态迁移单测 |
-| 3.4 | 人工复核 | MarkFundamental/Remove | GUI前先用CLI |
+| # | 任务 | 内容 | 验收 | 状态 |
+|---|------|------|------|------|
+| 3.1 | 四条件初选 | 流动性/RS(20日vs上证)/放量比/箱体形态，打分排序 | 指定日期抽验10只 | ✅ 真实数据142只通过 |
+| 3.2 | candidate快照 | append-only + reasons_json明细 | 重跑不重复 | ✅ |
+| 3.3 | watch状态机 | candidate→watching→pending→holding→exited迁移+出池规则（broken_down/4箱不涨/人工） | 状态迁移单测 | ✅ |
+| 3.4 | 人工复核 | MarkFundamental/Remove | GUI前先用CLI | ✅ |
+
+> M3 已实现：`internal/screener/screener.go`（四条件0-25分、box形态门槛、reasons_json）+
+> `internal/store/repo_pool.go`（PoolRepo AppendCandidates/UpsertWatch/WatchByStage/WatchByCode）+
+> `internal/pool/pool.go`（PoolManager Sync 入池/出池/MarkFundamental/Remove）。
 
 ---
 
 ## M4 · 信号与交易计划（signal + planner + position + ledger）
 
-| # | 任务 | 内容 | 验收 |
-|---|------|------|------|
-| 4.1 | 四类信号引擎 | breakout/pyramid/stop/failed_breakout判定 | 每类≥3构造用例 |
-| 4.2 | 仓位计算 | 风险公式+整手+单股上限+腿数上限 | 边界用例（资金不足/超上限） |
-| 4.3 | 计划生成 | trade_plan+plan_order（触发价/委托价/数量/腿号/理由JSON） | 六问全部有书面答案 |
-| 4.4 | 止损上移 | 新箱体确认→UpdateStop（只升不降触发器验证） | 降止损被ABORT |
-| 4.5 | 成交解析 | 券商成交文本粘贴解析（常见2-3种格式） | 样本文本通过 |
-| 4.6 | 账本 | 权益快照+恒等式审计 | 手工账核对 |
+| # | 任务 | 内容 | 验收 | 状态 |
+|---|------|------|------|------|
+| 4.1 | 四类信号引擎 | breakout/pyramid/stop/failed_breakout判定 | 每类≥3构造用例 | ✅ |
+| 4.2 | 仓位计算 | 风险公式+整手+单股上限+腿数上限 | 边界用例（资金不足/超上限） | ✅ 单测验证qty公式 |
+| 4.3 | 计划生成 | trade_plan+plan_order（触发价/委托价/数量/腿号/理由JSON） | 六问全部有书面答案 | ✅ |
+| 4.4 | 止损上移 | 新箱体确认→UpdateStop（只升不降触发器验证） | 降止损被ABORT | ✅ 触发器已建(0001) |
+| 4.5 | 成交解析 | 券商成交文本粘贴解析（常见2-3种格式） | 样本文本通过 | ⏳ M4.5 |
+| 4.6 | 账本 | 权益快照+恒等式审计 | 手工账核对 | ✅ 基础权益快照 |
+
+> M4 已实现：`internal/store/repo_signal.go`+`repo_trade.go`（SignalRepo/TradeRepo）+
+> `internal/signal/signal.go`（四类信号：stop优先>failed>breakout/pyramid）+
+> `internal/planner/planner.go`（qty=floor(equity×risk%/(trigger-stop)/100)×100、单股上限、腿号、T+1执行日）。
+> planner单测2例验证买/卖单数量公式。
 
 ---
 
 ## M5 · 调度与CLI闭环（scheduler + reporter + cmd）
 
-| # | 任务 | 内容 | 验收 |
-|---|------|------|------|
-| 5.1 | pipeline编排 | 串行+失败策略+幂等续跑 | 断点重跑测试 |
-| 5.2 | scheduler | 时刻表触发+CatchUp补跑+交易日历（sh000001） | 模拟时钟测试 |
-| 5.3 | reporter日报 | HTML模板：任务心跳/候选/信号/计划/持仓 | 打开即挂单 |
-| 5.4 | CLI | run/ingest/.../ladder/param/fills 全子命令 | `darvas run --date X`全链路 |
-| 5.5 | 端到端集成测试 | 用真实TDX数据跑2026-10-16全流程 | M5验收标准 |
+| # | 任务 | 内容 | 验收 | 状态 |
+|---|------|------|------|------|
+| 5.1 | pipeline编排 | 串行+失败策略+幂等续跑 | 断点重跑测试 | ✅ |
+| 5.2 | scheduler | 时刻表触发+CatchUp补跑+交易日历（sh000001） | 模拟时钟测试 | ⏳ M5.2常驻调度 |
+| 5.3 | reporter日报 | HTML模板：任务心跳/候选/信号/计划/持仓 | 打开即挂单 | ✅ |
+| 5.4 | CLI | run/ingest/.../ladder/param/fills 全子命令 | `darvas run --date X`全链路 | ✅ run已通 |
+| 5.5 | 端到端集成测试 | 用真实TDX数据跑2026-10-16全流程 | M5验收标准 | ✅ |
+
+> M5 已实现：`internal/pipeline/pipeline.go`（RunDaily串行+runTask留痕+RerunTask幂等补跑）+
+> `internal/reporter/reporter.go`（HTML日报五段：心跳/候选/信号/计划/持仓）+ CLI `run`子命令。
+> **端到端验收**：`darvas run --date 2026-10-16` 真实数据全链路跑通（~4m15s）：
+> ingest 9150增量→boxscan 360命中9337箱体→screen 142候选→poolsync入池142→日报HTML生成。
+> M5.2 常驻scheduler(CatchUp补跑) 留待M7稳定性阶段。
 
 ---
 

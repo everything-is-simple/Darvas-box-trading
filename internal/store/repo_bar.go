@@ -141,6 +141,15 @@ func (r *BarRepo) AvgVolume(code string, endDate string, n int) (float64, error)
 	return v, err
 }
 
+// AvgAmount 截至 endDate 的 n 日均成交额（元，screener 流动性条件 FR-301）。
+func (r *BarRepo) AvgAmount(code string, endDate string, n int) (float64, error) {
+	var v float64
+	err := r.db.QueryRow(`SELECT COALESCE(AVG(amount), 0) FROM (
+		SELECT amount FROM daily_bar WHERE code = ? AND date <= ? ORDER BY date DESC LIMIT ?)`,
+		code, endDate, n).Scan(&v)
+	return v, err
+}
+
 // LatestDate 某证券的最新交易日（交易日历与新鲜度校验依据，ADR-2）。
 // 无数据时返回空串（COALESCE 避免 NULL 扫描错误）。
 func (r *BarRepo) LatestDate(code string) (string, error) {

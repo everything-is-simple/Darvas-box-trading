@@ -22,6 +22,9 @@ type Store struct {
 	*BarRepo
 	*SecRepo
 	*BoxRepo
+	*PoolRepo
+	*SignalRepo
+	*TradeRepo
 	*RunRepo
 	*ParamRepo
 }
@@ -60,6 +63,9 @@ func Open(dsn string) (*Store, error) {
 	s.BarRepo = NewBarRepo(db)
 	s.SecRepo = NewSecRepo(db)
 	s.BoxRepo = NewBoxRepo(db)
+	s.PoolRepo = NewPoolRepo(db)
+	s.SignalRepo = NewSignalRepo(db)
+	s.TradeRepo = NewTradeRepo(db)
 	s.RunRepo = NewRunRepo(db)
 	s.ParamRepo = NewParamRepo(db)
 	return s, nil
