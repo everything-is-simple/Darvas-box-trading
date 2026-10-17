@@ -18,13 +18,14 @@ import (
 	"darvas/internal/box"
 	"darvas/internal/contract"
 	"darvas/internal/datasource/tdx"
+	"darvas/internal/gui"
 	"darvas/internal/ingest"
 	"darvas/internal/ledger"
 	"darvas/internal/pipeline"
 	"darvas/internal/store"
 )
 
-const version = "0.2.0-m2"
+const version = "0.3.0-m6"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -37,6 +38,7 @@ func main() {
 	db := fs.String("db", "", "数据库路径（默认 exe同目录/var/darvas.db）")
 	since := fs.String("since", "2024-01-01", "全量导入起始日")
 	yes := fs.Bool("yes", false, "fills: 解析后直接入库（跳过确认）")
+	addr := fs.String("addr", "127.0.0.1:8787", "ui: HTTP监听地址")
 	// Go flag 遇首个非 flag 即停止；这里把 flag 与位置参数分离，使
 	// `darvas ladder <code> --db <path>` 这样的混合顺序也能正确解析。
 	flagArgs, positional := splitFlags(os.Args[2:])
@@ -65,6 +67,8 @@ func main() {
 		runPipeline(*db, *date)
 	case "fills":
 		runFills(*db, positional, *yes)
+	case "ui":
+		runUI(*db, *addr)
 	default:
 		usage()
 		os.Exit(2)
@@ -104,6 +108,7 @@ func usage() {
   darvas param   get|set                     参数读写
   darvas run    [--date]                     完整盘后流水线（M5）
   darvas fills  [file] [--yes]               成交粘贴录入（M4.5，无file读stdin）
+  darvas ui     [--addr]                     本地GUI（浏览器四视图，M6）
 
 每日时间表（docs/01-requirements.md §4）:
   15:30 ingest → 16:00 boxscan → 16:10 screen → 16:20 poolsync
@@ -477,4 +482,13 @@ func openReport(path string) error {
 	default:
 		return exec.Command("xdg-open", abs).Start()
 	}
+}
+
+// runUI 启动本地HTTP GUI（M6，docs/02 §2 GUI降级预案：embed静态资产+JSON API）。
+// 起服务后自动打开系统浏览器；Ctrl+C 退出。
+func runUI(db, addr string) {
+	st, err := store.Open(dbPath(db))
+	must(err)
+	defer st.Close()
+	must(gui.Run(st, addr, true))
 }

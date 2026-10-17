@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Darvas 箱体交易系统</title>
+<style>
+:root {
+  --bg: #0f172a; --card: #1e293b; --card2: #243247; --line: #334155;
+  --text: #e2e8f0; --muted: #94a3b8; --accent: #3b82f6;
+  --up: #ef4444; --down: #22c55e; --warn: #eab308; --bad: #ef4444; --ok: #22c55e;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif; }
+.topbar { display: flex; align-items: center; gap: 18px; padding: 10px 20px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10; }
+.logo { font-weight: 700; font-size: 16px; color: var(--accent); white-space: nowrap; }
+.tabs { display: flex; gap: 4px; flex: 1; }
+.tab { padding: 6px 16px; border-radius: 6px; cursor: pointer; color: var(--muted); user-select: none; }
+.tab:hover { color: var(--text); background: var(--card2); }
+.tab.active { color: #fff; background: var(--accent); }
+.topbar .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 16px 20px 40px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+.card h3 { font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 10px; letter-spacing: .05em; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 6px 8px; border-bottom: 1px solid #1e293b55; white-space: nowrap; }
+tr:hover td { background: #ffffff08; }
+.num { text-align: right; font-family: Consolas, monospace; }
+.muted { color: var(--muted); }
+.up { color: var(--up); } .down { color: var(--down); }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.grid2 { display: grid; grid-template-columns: 340px 1fr; gap: 14px; }
+.grid2 > .card { margin-bottom: 0; }
+input, select, button { background: var(--card2); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 5px 10px; font-size: 13px; }
+button { cursor: pointer; } button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.toolbar .spacer { flex: 1; }
+.taskgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.task { background: var(--card2); border-radius: 8px; padding: 8px 10px; font-size: 12px; }
+.task .tname { font-weight: 600; margin-bottom: 2px; }
+.task .tinfo { color: var(--muted); font-size: 11px; }
+.kv { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+.kv b { font-family: Consolas, monospace; font-weight: 600; }
+.big { font-size: 22px; font-family: Consolas, monospace; font-weight: 700; }
+.stagechip { padding: 2px 10px; border-radius: 10px; cursor: pointer; font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
+.stagechip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+canvas { display: block; width: 100%; }
+#tooltip { position: fixed; display: none; background: #0b1220f2; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 12px; pointer-events: none; z-index: 99; font-family: Consolas, monospace; white-space: nowrap; }
+.empty { color: var(--muted); text-align: center; padding: 26px 0; }
+.subtabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.planhead { padding: 8px 10px; background: var(--card2); border-radius: 6px; margin: 10px 0 6px; font-size: 13px; display: flex; gap: 18px; flex-wrap: wrap; }
+code { font-family: Consolas, monospace; background: var(--card2); padding: 1px 5px; border-radius: 4px; }
+.searchbox { width: 200px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 18px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+a.code { color: var(--text); cursor: pointer; text-decoration: underline dotted; }
+a.code:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">📦 Darvas 箱体交易</div>
+  <div class="tabs">
+    <div class="tab active" data-view="dashboard">仪表盘</div>
+    <div class="tab" data-view="watch">跟踪池</div>
+    <div class="tab" data-view="stock">个股箱体</div>
+    <div class="tab" data-view="trades">交易记录</div>
+  </div>
+  <div class="meta" id="topMeta"></div>
+</div>
+<div class="wrap">
+
+<!-- ============ 仪表盘 ============ -->
+<div id="view-dashboard">
+  <div class="toolbar">
+    <input type="date" id="dashDate">
+    <button class="primary" onclick="loadDashboard()">查询</button>
+    <div class="spacer"></div>
+    <span class="muted" id="dashHint"></span>
+  </div>
+  <div class="card">
+    <h3>每日流水线心跳（15:30 → 16:45）</h3>
+    <div class="taskgrid" id="taskGrid"><div class="empty">加载中…</div></div>
+    <div id="taskErr" style="color:var(--bad); font-size:12px; margin-top:8px; white-space:pre-wrap;"></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>权益快照</h3><div id="equityCard"><div class="empty">加载中…</div></div></div>
+    <div class="card"><h3 id="planTitle">计划订单</h3><div id="planCard"><div class="empty">加载中…</div></div></div>
+  </div>
+</div>
+
+<!-- ============ 跟踪池 ============ -->
+<div id="view-watch" style="display:none">
+  <div class="toolbar">
+    <span id="stageChips"></span>
+    <div class="spacer"></div>
+    <input class="searchbox" id="watchSearch" placeholder="代码/名称过滤" oninput="renderWatch()">
+  </div>
+  <div class="card"><div id="watchTable"><div class="empty">加载中…</div></div></div>
+</div>
+
+<!-- ============ 个股箱体 ============ -->
+<div id="view-stock" style="display:none">
+  <div class="toolbar">
+    <input id="stockCode" placeholder="代码 如 sh600519" style="width:160px" onkeydown="if(event.key==='Enter')loadStock()">
+    <select id="stockDays">
+      <option value="120">120日</option>
+      <option value="250" selected>250日</option>
+      <option value="500">500日</option>
+      <option value="1000">1000日</option>
+    </select>
+    <button class="primary" onclick="loadStock()">查看</button>
+    <div class="spacer"></div>
+    <span id="stockMeta" class="muted"></span>
+  </div>
+  <div class="card">
+    <canvas id="stockCanvas" height="460"></canvas>
+    <div class="legend">
+      <span><i style="background:#ef4444"></i>阳线(涨)</span>
+      <span><i style="background:#22c55e"></i>阴线(跌)</span>
+      <span><i style="background:#3b82f644; border:1px solid #3b82f6"></i>confirmed 箱体</span>
+      <span><i style="background:#ef444430; border:1px solid #ef4444"></i>broken_up 向上突破</span>
+      <span><i style="background:#22c55e30; border:1px solid #22c55e"></i>broken_down 跌破</span>
+      <span><i style="background:#eab30830; border:1px dashed #eab308"></i>forming 形成中</span>
+      <span style="color:#f97316">―― 止损位</span>
+    </div>
+  </div>
+  <div class="card">
+    <h3>箱体阶梯</h3>
+    <div id="boxTable"><div class="empty">输入代码查看</div></div>
+  </div>
+</div>
+
+<!-- ============ 交易记录 ============ -->
+<div id="view-trades" style="display:none">
+  <div class="card"><h3>权益曲线</h3><canvas id="equityCanvas" height="110"></canvas>
+    <div id="equityMeta" class="muted" style="font-size:12px; margin-top:4px;"></div></div>
+  <div class="card">
+    <div class="subtabs">
+      <span class="stagechip active" data-trade="plans" onclick="switchTrade(this)">计划订单</span>
+      <span class="stagechip" data-trade="fills" onclick="switchTrade(this)">成交记录</span>
+      <span class="stagechip" data-trade="positions" onclick="switchTrade(this)">持仓</span>
+    </div>
+    <div id="tradePlans"></div>
+    <div id="tradeFills" style="display:none"></div>
+    <div id="tradePositions" style="display:none"></div>
+  </div>
+</div>
+
+</div>
+<div id="tooltip"></div>
+<script>
+"use strict";
+// ---------------------------------------------------------------- 工具
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (n, d=2) => (n===null||n===undefined||isNaN(n)) ? "-" : Number(n).toLocaleString("zh-CN", {minimumFractionDigits:d, maximumFractionDigits:d});
+const money = n => (n===null||n===undefined||isNaN(n)) ? "-" : "¥" + fmt(n, 0);
+const pct = n => (n===null||n===undefined||isNaN(n)) ? "-" : (n>=0?"+":"") + fmt(n, 2) + "%";
+const stageCN = {watching:"观察", pending:"待突破", holding:"持仓", exited:"已出池"};
+const boxCN = {confirmed:"已确认", forming:"形成中", broken_up:"向上突破", broken_down:"跌破", invalid:"作废"};
+const sideCN = {buy:"买", sell:"卖"};
+async function getJSON(url) {
+  const r = await fetch(url);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+  return j;
+}
+function tbl(head, rows) {
+  if (!rows.length) return '<div class="empty">暂无数据</div>';
+  return "<table><thead><tr>" + head.map(h => `<th${h.startsWith("#")?" class='num'":""}>${h.slice(h.startsWith("#")?1:0)}</th>`).join("") +
+    "</tr></thead><tbody>" + rows.join("") + "</tbody></table>";
+}
+const td = (v, cls) => `<td${cls?` class="${cls}"`:""}>${v}</td>`;
+const codeTd = c => `<td><a class="code" onclick="gotoStock('${c}')">${c}</a></td>`;
+
+// ---------------------------------------------------------------- 视图切换
+let curView = "dashboard";
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === t));
+  curView = t.dataset.view;
+  ["dashboard","watch","stock","trades"].forEach(v => $("view-"+v).style.display = v===curView ? "" : "none");
+  if (curView === "dashboard") loadDashboard();
+  if (curView === "watch") loadWatch();
+  if (curView === "trades") loadTrades();
+});
+function gotoStock(code) {
+  $("stockCode").value = code;
+  document.querySelector('.tab[data-view="stock"]').click();
+  loadStock();
+}
+
+// ---------------------------------------------------------------- 仪表盘
+const TASKS = ["ingest","boxscan","screen","poolsync","signal","plan","report"];
+async function loadDashboard() {
+  const d = $("dashDate").value;
+  let url = "/api/dashboard";
+  if (d) url += "?date=" + d;
+  let j;
+  try { j = await getJSON(url); } catch (e) { $("taskGrid").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  if (!d) $("dashDate").value = j.date;
+  $("dashHint").textContent = j.runs.length ? `${j.date} 心跳 ${j.runs.length}/7` : j.date;
+  $("topMeta").textContent = "数据日 " + j.date;
+
+  // 心跳灯
+  const byTask = {}; j.runs.forEach(r => byTask[r.Task] = r);
+  $("taskGrid").innerHTML = TASKS.map(t => {
+    const r = byTask[t];
+    let color = "#64748b", txt = "未运行", info = "";
+    if (r) {
+      if (r.Status === "ok") color = "var(--ok)";
+      else if (r.Status === "failed") color = "var(--bad)";
+      else if (r.Status === "running") color = "var(--warn)";
+      else color = "#94a3b8";
+      txt = r.Status;
+      info = `${fmt(r.DurationMS,0)}ms · ${fmt(r.AffectedRows,0)}行`;
+    }
+    return `<div class="task"><div class="tname"><span class="dot" style="background:${color}"></span>${t}</div>
+      <div class="tinfo">${txt} ${info}</div></div>`;
+  }).join("");
+  $("taskErr").textContent = j.runs.filter(r => r.Error).map(r => `${r.Task}: ${r.Error}`).join("\n");
+
+  // 权益卡
+  const e = j.equity;
+  $("equityCard").innerHTML = !e ? '<div class="empty">无权益快照</div>' : `
+    <div class="big">${money(e.Total)}</div>
+    <div class="kv"><span class="muted">现金</span><b>${money(e.Cash)}</b></div>
+    <div class="kv"><span class="muted">持仓市值</span><b>${money(e.MarketValue)}</b></div>
+    <div class="kv"><span class="muted">峰值</span><b>${money(e.PeakTotal)}</b></div>
+    <div class="kv"><span class="muted">回撤</span><b class="${e.Drawdown<0?'down':''}">${pct(e.Drawdown*100)}</b></div>
+    <div class="kv"><span class="muted">快照日</span><b>${e.Date}</b></div>`;
+
+  // 计划订单
+  $("planTitle").textContent = `计划订单（${j.date} 生成 → 次日执行）`;
+  if (!j.plan) {
+    $("planCard").innerHTML = '<div class="empty">当日无计划（信号/池为空或未运行 plan 任务）</div>';
+  } else {
+    const rows = j.orders.map(o => "<tr>" +
+      codeTd(o.Code) + td(esc(j.names[o.Code] || "")) +
+      td(sideCN[o.Side] || o.Side, o.Side==="buy"?"up":"down") +
+      td(fmt(o.TriggerPrice), "num") + td(fmt(o.LimitPrice), "num") +
+      td(fmt(o.Qty,0), "num") + td(o.LegNo||"-","num") + "</tr>");
+    $("planCard").innerHTML =
+      `<div class="kv"><span class="muted">执行日</span><b>${j.plan.ExecuteDate}</b></div>` +
+      `<div class="kv"><span class="muted">权益基准</span><b>${money(j.plan.EquityBase)}</b></div>` +
+      tbl(["代码","名称","方向","#触发价","#委托价","#数量","#腿"], rows);
+  }
+}
+
+// ---------------------------------------------------------------- 跟踪池
+let watchData = [], watchStage = "all";
+const STAGES = ["holding","pending","watching","exited"];
+async function loadWatch() {
+  try { watchData = (await getJSON("/api/watch")).items; } catch (e) { $("watchTable").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  const counts = {all: watchData.length};
+  watchData.forEach(w => counts[w.stage] = (counts[w.stage]||0)+1);
+  $("stageChips").innerHTML = [["all","全部"],...STAGES.map(s=>[s,stageCN[s]])]
+    .map(([k,n]) => `<span class="stagechip${watchStage===k?" active":""}" onclick="watchStage='${k}';loadWatch()">${n} ${counts[k]||0}</span>`).join("");
+  renderWatch();
+}
+function renderWatch() {
+  const q = $("watchSearch").value.trim().toLowerCase();
+  const rows = watchData
+    .filter(w => watchStage==="all" || w.stage===watchStage)
+    .filter(w => !q || w.code.includes(q) || (w.name||"").toLowerCase().includes(q))
+    .map(w => "<tr>" + codeTd(w.code) + td(esc(w.name)) +
+      td(`<span class="badge" style="background:${w.stage==='holding'?'#22c55e33':w.stage==='pending'?'#eab30833':w.stage==='watching'?'#3b82f633':'#64748b33'}">${stageCN[w.stage]||w.stage}</span>`) +
+      td(w.added_date) + td(w.box_count, "num") +
+      td(w.box_top ? `${fmt(w.box_top)} ~ ${fmt(w.box_bottom)} <span class="muted">${boxCN[w.box_status]||w.box_status}</span>` : '<span class="muted">-</span>') +
+      td(w.last_close ? fmt(w.last_close) : "-", "num") + "</tr>");
+  $("watchTable").innerHTML = tbl(["代码","名称","状态","入池日","#阶梯数","当前箱体","#最新收盘"], rows);
+}
+
+// ---------------------------------------------------------------- 个股箱体图
+let stockState = null;
+async function loadStock() {
+  const code = $("stockCode").value.trim();
+  if (!code) return;
+  const days = $("stockDays").value;
+  let j;
+  try { j = await getJSON(`/api/stock/${encodeURIComponent(code)}?days=${days}`); }
+  catch (e) { $("stockMeta").textContent = e.message; $("boxTable").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  stockState = j;
+  const bits = [`${j.code} ${j.name || ""}`];
+  if (j.watch) bits.push(`跟踪池: ${stageCN[j.watch.Stage] || j.watch.Stage}(第${j.watch.BoxCount}箱)`);
+  if (j.position) bits.push(`持仓 ${j.position.Qty}股 成本${fmt(j.position.AvgCost)} 止损${fmt(j.position.StopPrice)}`);
+  bits.push(`${j.bars.length}根K线 ${j.bars[0].Date} ~ ${j.bars[j.bars.length-1].Date}`);
+  $("stockMeta").textContent = bits.join(" ｜ ");
+  drawStock();
+  // 箱体表
+  const rows = j.boxes.filter(b => b.Status !== "invalid").map(b => "<tr>" +
+    td(b.ID,"num") + td(boxCN[b.Status]||b.Status, b.Status==="broken_up"?"up":b.Status==="broken_down"?"down":"") +
+    td(fmt(b.Top),"num") + td(fmt(b.Bottom),"num") +
+    td(b.TopConfirmed||"-") + td(b.BottomConfirmed||"-") +
+    td(b.BrokenDate||"-") + td(b.PrevBoxID||"-","num") + "</tr>");
+  $("boxTable").innerHTML = tbl(["#ID","状态","#上轨","#下轨","上轨确认","下轨确认","突破日","#前驱"], rows);
+}
+
+function drawStock() {
+  const cv = $("stockCanvas"), j = stockState;
+  if (!j) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.parentElement.clientWidth - 32, H = 460;
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + "px";
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = "#0f172a"; ctx.fillRect(0,0,W,H);
+
+  const bars = j.bars, N = bars.length;
+  if (!N) return;
+  const mL = 8, mR = 58, mT = 12, mB = 40;
+  const volH = 64, gap = 10;
+  const plotW = W - mL - mR, priceH = H - mT - mB - volH - gap;
+  const volTop = mT + priceH + gap, dateTop = H - mB + 6;
+
+  // 价格范围（含可视箱体轨与止损）
+  let lo = Infinity, hi = -Infinity;
+  bars.forEach(b => { if (b.Low < lo) lo = b.Low; if (b.High > hi) hi = b.High; });
+  const firstDate = bars[0].Date;
+  j.boxes.forEach(b => { if (b.Status!=="invalid" && (!b.BrokenDate || b.BrokenDate >= firstDate)) {
+    if (b.Top > 0 && b.Top < lo*3) hi = Math.max(hi, b.Top);
+    if (b.Bottom > 0) lo = Math.min(lo, b.Bottom); }});
+  if (j.position && j.position.StopPrice > 0) { hi = Math.max(hi, j.position.StopPrice); lo = Math.min(lo, j.position.StopPrice); }
+  const pad = (hi - lo) * 0.05 || hi * 0.05 || 1; lo -= pad; hi += pad;
+
+  const x = i => mL + (i + 0.5) * (plotW / N);
+  const y = p => mT + (hi - p) / (hi - lo) * priceH;
+  const dateIdx = d => { for (let i=0;i<N;i++) if (bars[i].Date >= d) return i; return -1; };
+
+  // 网格 + 价格轴
+  ctx.strokeStyle = "#ffffff10"; ctx.fillStyle = "#94a3b8"; ctx.font = "11px Consolas"; ctx.textAlign = "left";
+  for (let k = 0; k <= 5; k++) {
+    const p = lo + (hi-lo)*k/5, yy = y(p);
+    ctx.beginPath(); ctx.moveTo(mL, yy); ctx.lineTo(W-mR, yy); ctx.stroke();
+    ctx.fillText(fmt(p, p>100?0:2), W-mR+6, yy+4);
+  }
+  // 日期轴
+  ctx.textAlign = "center";
+  const step = Math.max(1, Math.ceil(N/7));
+  for (let i = N-1; i >= 0; i -= step) ctx.fillText(bars[i].Date.slice(5), x(i), H-14);
+  // 成交量区界
+  ctx.strokeStyle = "#ffffff10"; ctx.beginPath(); ctx.moveTo(mL, volTop); ctx.lineTo(W-mR, volTop); ctx.stroke();
+
+  // 箱体（先画，垫底）
+  j.boxes.forEach(b => {
+    if (b.Status === "invalid" || !b.Top || !b.Bottom) return;
+    const i1 = b.TopConfirmed ? dateIdx(b.TopConfirmed) : 0;
+    if (i1 < 0 && (b.BrokenDate && b.BrokenDate < firstDate)) return;
+    const i2 = b.BrokenDate ? dateIdx(b.BrokenDate) : N-1;
+    const x1 = mL + Math.max(0, i1<0?0:i1) * (plotW/N) + 1;
+    const x2 = mL + Math.min(N-1, i2<0?N-1:i2) * (plotW/N) + plotW/N - 1;
+    const colors = {confirmed:["#3b82f6","#3b82f622"], broken_up:["#ef4444","#ef44441e"],
+      broken_down:["#22c55e","#22c55e1e"], forming:["#eab308","#eab3081e"]};
+    const [c, f] = colors[b.Status] || ["#64748b","#64748b22"];
+    ctx.fillStyle = f; ctx.strokeStyle = c; ctx.lineWidth = b.Status==="forming" ? 1 : 1.5;
+    ctx.setLineDash(b.Status==="forming" ? [4,3] : []);
+    const yy1 = y(b.Top), yy2 = y(b.Bottom);
+    ctx.fillRect(x1, yy1, x2-x1, yy2-yy1);
+    ctx.strokeRect(x1, yy1, x2-x1, yy2-yy1);
+    ctx.setLineDash([]);
+  });
+
+  // 止损线
+  if (j.position && j.position.StopPrice > 0) {
+    const yy = y(j.position.StopPrice);
+    ctx.strokeStyle = "#f97316"; ctx.setLineDash([6,4]); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(mL, yy); ctx.lineTo(W-mR, yy); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = "#f97316"; ctx.textAlign = "left";
+    ctx.fillText("止损 " + fmt(j.position.StopPrice), mL+4, yy-4);
+  }
+
+  // 成交量
+  let vmax = 0; bars.forEach(b => { if (b.Volume > vmax) vmax = b.Volume; });
+  const bw = Math.max(1, plotW/N*0.7);
+  bars.forEach((b, i) => {
+    const h = vmax ? b.Volume/vmax*(volH-6) : 0;
+    ctx.fillStyle = b.Close >= b.Open ? "#ef444488" : "#22c55e88";
+    ctx.fillRect(x(i)-bw/2, volTop+volH-h, bw, h);
+  });
+
+  // K线
+  bars.forEach((b, i) => {
+    const up = b.Close >= b.Open, c = up ? "#ef4444" : "#22c55e";
+    ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = 1;
+    const cx = x(i);
+    ctx.beginPath(); ctx.moveTo(cx, y(b.High)); ctx.lineTo(cx, y(b.Low)); ctx.stroke();
+    const yo = y(b.Open), yc = y(b.Close);
+    ctx.fillRect(cx-bw/2, Math.min(yo,yc), bw, Math.max(1, Math.abs(yc-yo)));
+  });
+
+  // 最新价标
+  const last = bars[N-1];
+  ctx.fillStyle = last.Close >= last.Open ? "#ef4444" : "#22c55e";
+  ctx.textAlign = "left"; ctx.fillText(fmt(last.Close), W-mR+6, y(last.Close)+4);
+
+  // 十字光标
+  cv.onmousemove = ev => {
+    const rect = cv.getBoundingClientRect();
+    const mx = ev.clientX - rect.left;
+    if (mx < mL || mx > W-mR) { $("tooltip").style.display = "none"; return; }
+    const i = Math.min(N-1, Math.max(0, Math.floor((mx-mL)/(plotW/N))));
+    const b = bars[i];
+    $("tooltip").style.display = "block";
+    $("tooltip").style.left = (ev.clientX+14) + "px";
+    $("tooltip").style.top = (ev.clientY-10) + "px";
+    $("tooltip").innerHTML = `${b.Date}<br>开 ${fmt(b.Open)} 高 ${fmt(b.High)}<br>低 ${fmt(b.Low)} 收 <b style="color:${b.Close>=b.Open?'#ef4444':'#22c55e'}">${fmt(b.Close)}</b><br>量 ${fmt(b.Volume/10000,1)}万手 额 ${fmt(b.Amount/1e8,2)}亿`;
+  };
+  cv.onmouseleave = () => $("tooltip").style.display = "none";
+}
+
+// ---------------------------------------------------------------- 交易记录
+let tradesData = null;
+function switchTrade(chip) {
+  document.querySelectorAll(".subtabs .stagechip").forEach(c => c.classList.toggle("active", c === chip));
+  ["plans","fills","positions"].forEach(k => $("trade"+k[0].toUpperCase()+k.slice(1)).style.display = chip.dataset.trade===k ? "" : "none");
+}
+async function loadTrades() {
+  let j;
+  try { j = await getJSON("/api/trades"); } catch (e) { $("tradePlans").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  tradesData = j;
+
+  // 权益曲线
+  const cv = $("equityCanvas");
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.parentElement.clientWidth - 32, H = 110;
+  cv.width = W*dpr; cv.height = H*dpr; cv.style.height = H+"px";
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = "#0f172a"; ctx.fillRect(0,0,W,H);
+  const eq = j.equity;
+  if (!eq.length) {
+    ctx.fillStyle = "#94a3b8"; ctx.textAlign = "center"; ctx.font = "13px sans-serif";
+    ctx.fillText("无权益快照", W/2, H/2);
+  } else {
+    let lo = Infinity, hi = -Infinity;
+    eq.forEach(e => { lo = Math.min(lo, e.Total); hi = Math.max(hi, e.Total); });
+    const pad = (hi-lo)*0.15 || hi*0.1 || 1; lo -= pad; hi += pad;
+    const x = i => 10 + i*(W-20)/Math.max(1, eq.length-1);
+    const y = v => 8 + (hi-v)/(hi-lo)*(H-30);
+    ctx.strokeStyle = "#ffffff10";
+    for (let k=0;k<=3;k++) { const yy = 8+k*(H-30)/3; ctx.beginPath(); ctx.moveTo(10,yy); ctx.lineTo(W-10,yy); ctx.stroke(); }
+    // 峰值虚线
+    ctx.strokeStyle = "#64748b"; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(10, y(hi-pad)); ctx.lineTo(W-10, y(hi-pad)); ctx.stroke(); ctx.setLineDash([]);
+    // 面积+线
+    ctx.beginPath(); eq.forEach((e,i) => i ? ctx.lineTo(x(i),y(e.Total)) : ctx.moveTo(x(i),y(e.Total)));
+    ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.lineTo(x(eq.length-1), H-16); ctx.lineTo(x(0), H-16); ctx.closePath();
+    ctx.fillStyle = "#3b82f622"; ctx.fill();
+    ctx.fillStyle = "#94a3b8"; ctx.font = "11px Consolas";
+    ctx.textAlign = "left"; ctx.fillText(money(eq[0].Total), 10, H-4);
+    ctx.textAlign = "right"; ctx.fillText(money(eq[eq.length-1].Total) + "  " + eq[eq.length-1].Date, W-10, H-4);
+  }
+  const last = eq[eq.length-1];
+  $("equityMeta").textContent = last ? `最新 ${last.Date} 总权益 ${money(last.Total)} 回撤 ${pct(last.Drawdown*100)}` : "";
+
+  // 计划订单
+  $("tradePlans").innerHTML = j.plans.length ? j.plans.map(p => {
+    const rows = (p.orders||[]).map(o => "<tr>" + codeTd(o.Code) + td(esc(j.names[o.Code]||"")) +
+      td(sideCN[o.Side]||o.Side, o.Side==="buy"?"up":"down") +
+      td(fmt(o.TriggerPrice),"num") + td(fmt(o.LimitPrice),"num") + td(fmt(o.Qty,0),"num") +
+      td(o.LegNo||"-","num") +
+      td(`<span class="badge" style="background:${o.Status==='filled'?'#22c55e33':o.Status==='expired'?'#64748b33':o.Status==='pending'?'#eab30833':'#3b82f633'}">${o.Status}</span>`) +
+      "</tr>");
+    return `<div class="planhead"><b>${p.plan.PlanDate}</b><span class="muted">执行日 ${p.plan.ExecuteDate}</span>` +
+      `<span class="muted">权益基准 ${money(p.plan.EquityBase)}</span><span class="muted">持仓数 ${p.plan.OpenPositionCount}</span></div>` +
+      tbl(["代码","名称","方向","#触发价","#委托价","#数量","#腿","状态"], rows);
+  }).join("") : '<div class="empty">暂无计划（跑 darvas run 生成）</div>';
+
+  // 成交记录
+  $("tradeFills").innerHTML = tbl(["日期","代码","名称","方向","#价格","#数量","#手续费"],
+    j.fills.map(f => "<tr>" + td(f.Date) + codeTd(f.Code) + td(esc(j.names[f.Code]||"")) +
+      td(sideCN[f.Side]||f.Side, f.Side==="buy"?"up":"down") +
+      td(fmt(f.Price),"num") + td(fmt(f.Qty,0),"num") + td(fmt(f.Fee),"num") + "</tr>"));
+
+  // 持仓
+  $("tradePositions").innerHTML = tbl(["代码","名称","开仓日","状态","#数量","#成本","#现价","#止损","浮盈亏","#盈亏%","平仓日","原因"],
+    j.positions.map(p => {
+      const pnl = p.Status==="open" ? p.pnl : 0;
+      const cls = p.Status==="open" ? (pnl>=0?"up":"down") : "muted";
+      return "<tr>" + codeTd(p.Code) + td(esc(p.name||"")) + td(p.OpenedDate) +
+        td(p.Status==="open"?'<span class="badge" style="background:#22c55e33">open</span>':'<span class="badge" style="background:#64748b33">closed</span>') +
+        td(fmt(p.Qty,0),"num") + td(fmt(p.AvgCost),"num") +
+        td(p.Status==="open"?fmt(p.last_close):"-","num") + td(fmt(p.StopPrice),"num") +
+        td(p.Status==="open"?fmt(pnl):"-","num "+cls) +
+        td(p.Status==="open"?pct(p.pnl_pct):"-","num "+cls) +
+        td(p.ClosedDate||"-","muted") + td(esc(p.CloseReason||"-"),"muted") + "</tr>";
+    }));
+}
+
+// ---------------------------------------------------------------- 启动
+window.addEventListener("resize", () => { if (curView==="stock") drawStock(); if (curView==="trades") loadTrades(); });
+loadDashboard();
+</script>
+</body>
+</html>

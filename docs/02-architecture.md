@@ -1,7 +1,7 @@
 # 02 · 项目设计（ARCHITECTURE）
 
-> 版本：v1.0（2026-10-17）
-> 技术栈：**Go + SQLite（纯Go驱动） + Wails v2（WebView2）**，单文件桌面程序
+> 版本：v1.1（2026-10-17）
+> 技术栈：**Go + SQLite（纯Go驱动） + 本地HTTP UI（net/http + embed，无Node构建链）**，单文件桌面程序
 
 ---
 
@@ -12,10 +12,10 @@
 │                     darvas.exe（单可执行文件）                     │
 │                                                                 │
 │  ┌───────────────┐   ┌──────────────────────────────────────┐  │
-│  │   scheduler    │   │            GUI（Wails v2）            │  │
-│  │  每日时间点调度 │→ │  今日流程│股票池│持仓│计划  四视图     │  │
+│  │   scheduler    │   │      GUI（本地HTTP UI :8787）          │  │
+│  │  每日时间点调度 │→ │  仪表盘│跟踪池│个股箱体│交易记录 四视图  │  │
 │  └───────┬───────┘   └──────────────┬───────────────────────┘  │
-│          │                          │ Go方法绑定（非HTTP）       │
+│          │                          │ JSON API（只读）          │
 │          ▼                          ▼                          │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │                  pipeline（盘后流水线编排）                │   │
@@ -54,12 +54,14 @@
 |------|------|------|-----------|
 | 语言 | Go 1.22+ | 单文件编译、跨平台、启动<100ms | Python（部署重） |
 | SQLite驱动 | `modernc.org/sqlite` | **纯Go无CGO** → 单exe、构建零环境依赖 | `mattn/go-sqlite3`（要CGO） |
-| GUI | Wails v2 | 真桌面窗口、HTML前端（表格/图表生态强）、Win10/11自带WebView2 | Fyne（图表弱）、Lorca（依赖Chrome） |
-| 图表 | 前端 `lightweight-charts` + 自绘箱体矩形 | K线+箱体阶梯叠加 | 无 |
+| GUI | **本地HTTP UI（生效）** | `net/http` + embed静态资产，零外部依赖、零构建链，系统默认浏览器打开 | Wails v2（要Node构建链）、Fyne（图表弱）、Lorca（依赖Chrome） |
+| 图表 | 前端canvas自绘（无JS库） | K线+箱体矩形+成交量+权益曲线，离线单exe不引CDN/Node包 | lightweight-charts（外部依赖） |
 | 报告 | HTML模板 + excelize(Excel) | 每日照着挂单，双格式 | PDF |
 | 调度 | 自研轻量调度（goroutine+time） | 只需每日7个时刻+补跑逻辑 | 外部cron（破坏可移植性） |
 
-> GUI风险预案：Wails构建链需要Node。若构建受阻，降级方案为Phase2先交付「本地HTTP UI」（`darvas ui`起localhost服务+系统默认浏览器打开，`systray`驻留托盘），接口层（§5）完全复用。**领域层设计不受GUI选型影响。**
+> GUI决策记录（ADR）：原方案Wails v2，因其构建链需要Node而按§2预案降级为本地HTTP UI，M6已按此交付
+> （`darvas ui`起127.0.0.1:8787 + 系统默认浏览器打开，静态页embed进exe，API只读）。
+> **领域层设计不受GUI选型影响**；若未来切回Wails，仅替换 `internal/gui` 绑定层。
 
 ---
 
@@ -93,7 +95,9 @@ Darvas-box-trading/
 │   ├── ledger/                   # 权益快照/恒等式审计
 │   ├── scheduler/                # 时间表调度+补跑
 │   ├── reporter/                 # HTML/Excel日报周报
-│   └── gui/                      # Wails绑定+前端资产
+│   └── gui/                      # 本地HTTP UI（net/http + embed）
+│       ├── gui.go                # Server/路由/JSON API（dashboard/watch/stock/trades）
+│       └── static/index.html     # 单文件前端（四视图，canvas自绘K线/箱体/权益曲线）
 ├── scripts/                      # build.bat / backup.bat
 ├── var/                          # 运行时目录（gitignore）
 │   ├── darvas.db                 # SQLite（程序同目录或此处，可配置）

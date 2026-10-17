@@ -133,3 +133,52 @@ func (r *SecRepo) ActiveWatchCodes() ([]string, error) {
 	}
 	return out, rows.Err()
 }
+
+// UpdateNames 批量回填证券名称（TDX tnf 代码→名称表，GUI 展示用）。
+// 单事务逐行 UPDATE（约1.2万行<1s）；返回实际更新的行数。
+// tnf 中存在而 security 表没有的代码（可转债/基金等）自然跳过。
+func (r *SecRepo) UpdateNames(names map[string]string) (int64, error) {
+	if len(names) == 0 {
+		return 0, nil
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	stmt, err := tx.Prepare(`UPDATE security SET name = ?, updated_at = datetime('now','localtime')
+		WHERE code = ? AND name <> ?`)
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+	var total int64
+	for code, name := range names {
+		res, err := stmt.Exec(name, code, name)
+		if err != nil {
+			return total, fmt.Errorf("update name %s: %w", code, err)
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			total += n
+		}
+	}
+	return total, tx.Commit()
+}
+
+// Names 取全部非空 code→名称映射（GUI 各视图展示用）。
+func (r *SecRepo) Names() (map[string]string, error) {
+	rows, err := r.db.Query(`SELECT code, name FROM security WHERE name <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var c, n string
+		if err := rows.Scan(&c, &n); err != nil {
+			return nil, err
+		}
+		out[c] = n
+	}
+	return out, rows.Err()
+}

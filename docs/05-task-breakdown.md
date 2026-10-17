@@ -134,18 +134,33 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 
 ---
 
-## M6 · GUI（gui · Wails v2）
+## M6 · GUI（internal/gui · 本地HTTP UI）✅（2026-10-17）
 
-| # | 任务 | 内容 | 验收 |
+> **方案变更（ADR）**：原计划 Wails v2，因构建链需 Node 按预案降级为本地HTTP UI
+> （docs/02 §2）：`net/http` + embed 静态单文件前端 + 4 只读 JSON 端点，零外部依赖。
+> 验收实录：`darvas ui --db var/perf_test.db` 起服务，浏览器 DOM 断言四视图全 PASS
+> （仪表盘 7 心跳全绿 / 跟踪池 142 行含中文名 / sh600519 K线+13 箱体矩形渲染 / 交易记录权益曲线+计划）。
+
+| # | 任务 | 内容 | 状态 |
 |---|------|------|------|
-| 6.1 | Wails骨架 | 项目初始化+方法绑定contract层 | 窗口起 |
-| 6.2 | 今日流程视图 | 7任务心跳+六问摘要+错误详情 | - |
-| 6.3 | 股票池视图 | 候选/跟踪表格+搜索+复核标注 | - |
-| 6.4 | 持仓视图 | 持仓+腿+当前箱体+止损位+浮盈亏 | - |
-| 6.5 | 计划视图 | 明日订单清单（照抄挂单） | - |
-| 6.6 | 个股详情 | K线+箱体阶梯叠加（lightweight-charts） | 对照引擎输出 |
-| 6.7 | 参数与成交 | 参数热调+成交粘贴录入 | - |
-| 6.8 | 单文件打包 | assets embed + build.bat | exe+db拷走即用 |
+| 6.1 | ~~Wails骨架~~ → HTTP UI骨架 | net/http + embed static + `darvas ui` 子命令（--addr :8787 + 自动开浏览器） | ✅ |
+| 6.2 | 仪表盘视图 | 7任务心跳灯（ok/failed/running/未运行 + 耗时/行数/error明细）+ 权益卡 + 当日计划订单 | ✅ |
+| 6.3 | 跟踪池视图 | WatchOverview 表格（代码/中文名/阶段chips/阶梯数/当前箱体/最新收盘）+ 搜索过滤 + 点击跳个股 | ✅ |
+| 6.4 | 持仓视图 | 交易记录视图内：持仓子表（open 算 LastClose 浮盈亏 pnl/pct）+ closed 全历史 | ✅ |
+| 6.5 | 计划视图 | 交易记录视图内：PlansRecent(10) 计划头+订单+状态badge；仪表盘含当日计划 | ✅ |
+| 6.6 | 个股详情 | canvas 自绘 K线（涨红跌绿）+ 箱体矩形叠加（confirmed蓝/broken红绿/forming黄虚线）+ 止损线 + 十字光标tooltip + 成交量 + 箱体阶梯表（不引外部JS库） | ✅ |
+| 6.7 | 权益曲线 | 交易记录视图内：EquityAll sparkline（面积图+峰值虚线+最新值标注） | ✅ |
+| 6.8 | 单文件打包 | 静态资产 embed 进 exe（`go build` 即含前端，无Node） | ✅ |
+
+**M6 附带交付**：
+- tnx 名称解析 `tdx/names.go`（T0002/hq_cache/*.tnf 二进制表：360B/条，code@+0，name@+31 GBK）
+  + `SecRepo.UpdateNames/Names` + ingest 尾部自动同步（真实库回填 9575 名称）
+- store 扩展：`PlansRecent/WatchOverview/LastClose/RunsOn/LatestRunDate`（均带单测）
+- **修复潜伏bug**：① WatchByCode NULL scan（exit_reason/note 缺 COALESCE，真实库必触发）；
+  ② PlansRecent 无订单计划 Orders=nil 序列化 JSON null（前端 .map 崩）→ 初始化空切片；
+  ③ 前端 tbl() 四处调用点误传已 join 的字符串（rows.join 崩）→ 统一传数组；
+  ④ 静态服务加 Cache-Control: no-cache（embed 无 mtime，防浏览器缓存旧页面）
+- 写操作（fills/param/run/pool 人工操作）仍走 CLI，GUI 只读（docs/04 §6）
 
 ---
 

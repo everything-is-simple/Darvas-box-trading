@@ -174,3 +174,18 @@ func (r *BarRepo) CountBars(code string) (int64, error) {
 	err := r.db.QueryRow(`SELECT COUNT(*) FROM daily_bar WHERE code = ?`, code).Scan(&n)
 	return n, err
 }
+
+// LastClose 某证券最近一根K线的收盘价（GUI 持仓浮盈亏/跟踪池最新价）。
+// 无数据返回 (0, false, nil)。PK(code,date) WITHOUT ROWID 表上
+// ORDER BY date DESC LIMIT 1 走索引倒扫，O(log n)。
+func (r *BarRepo) LastClose(code string) (float64, bool, error) {
+	var c float64
+	err := r.db.QueryRow(`SELECT close FROM daily_bar WHERE code = ? ORDER BY date DESC LIMIT 1`, code).Scan(&c)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return c, true, nil
+}

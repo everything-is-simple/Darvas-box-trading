@@ -138,6 +138,7 @@ func (g *Ingester) FullImport(ctx context.Context) (contract.TaskResult, error) 
 	if ierr := g.st.BulkLoadToggle(false); ierr != nil {
 		g.log.Printf("warn: bulk toggle off (index rebuild): %v", ierr)
 	}
+	g.syncNames()
 	res.Status = "ok"
 	res.AffectedRows = total
 	res.DurationMS = time.Since(start).Milliseconds()
@@ -205,12 +206,31 @@ func (g *Ingester) SyncIncremental(ctx context.Context, date string) (contract.T
 		}
 		total += n
 	}
+	g.syncNames()
 	res.Status = "ok"
 	res.AffectedRows = total
 	res.DurationMS = time.Since(start).Milliseconds()
 	g.log.Printf("incremental %s: %d files updated, %d bars, %s",
 		date, files, total, time.Since(start).Round(time.Second))
 	return res, nil
+}
+
+// syncNames 从 TDX tnf 代码→名称表回填 security.name（GUI 展示用）。
+// 名称是可选增强数据：失败仅告警，不影响 ingest 结果状态。
+func (g *Ingester) syncNames() {
+	names, err := g.reader.ReadNames()
+	if err != nil {
+		g.log.Printf("warn: read tnf names: %v（名称留空，不影响行情）", err)
+		return
+	}
+	n, err := g.st.SecRepo.UpdateNames(names)
+	if err != nil {
+		g.log.Printf("warn: update security names: %v", err)
+		return
+	}
+	if n > 0 {
+		g.log.Printf("names synced: %d updated (%d known)", n, len(names))
+	}
 }
 
 // Verify 数据质量校验（FR-104 / 需求D3）：

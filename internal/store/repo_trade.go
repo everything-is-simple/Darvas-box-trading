@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"darvas/internal/contract"
 )
@@ -366,6 +367,90 @@ func (r *TradeRepo) AllPositions() ([]contract.Position, error) {
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// PlanOrderView 订单运行时视图（GUI 交易记录视图：contract.PlanOrder + 持久层字段）。
+type PlanOrderView struct {
+	contract.PlanOrder
+	ID     int64  `json:"id"`
+	Status string `json:"status"` // pending/placed/filled/cancelled/expired
+}
+
+// PlanView 计划头 + 订单清单（GUI 交易记录视图）。
+type PlanView struct {
+	Plan   contract.TradePlan `json:"plan"`
+	Orders []PlanOrderView    `json:"orders"`
+}
+
+// PlansRecent 最近 n 个交易计划（含订单与状态，GUI 交易记录视图）。
+// 无订单的计划也返回（空计划日展示"无操作"）。两段查询：先头后单，避免JOIN行平铺。
+func (r *TradeRepo) PlansRecent(n int) ([]PlanView, error) {
+	if n <= 0 {
+		n = 10
+	}
+	headRows, err := r.db.Query(`SELECT id, CAST(plan_date AS TEXT), CAST(execute_date AS TEXT),
+		equity_base, open_position_count FROM trade_plan ORDER BY plan_date DESC LIMIT ?`, n)
+	if err != nil {
+		return nil, err
+	}
+	defer headRows.Close()
+
+	var out []PlanView
+	for headRows.Next() {
+		var id int64
+		// Orders 初始化为空切片：nil 会序列化成 JSON null，前端 .map 直接崩
+		pv := PlanView{Orders: []PlanOrderView{}}
+		if err := headRows.Scan(&id, &pv.Plan.PlanDate, &pv.Plan.ExecuteDate,
+			&pv.Plan.EquityBase, &pv.Plan.OpenPositionCount); err != nil {
+			return nil, err
+		}
+		out = append(out, pv)
+	}
+	if err := headRows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return out, nil
+	}
+
+	// 订单按计划日期归并回各自 PlanView（计划数≤n，线性查找足够）
+	ph := make([]string, len(out))
+	args := make([]any, len(out))
+	for i := range out {
+		ph[i] = "?"
+		args[i] = out[i].Plan.PlanDate
+	}
+	orderRows, err := r.db.Query(`SELECT o.id, CAST(p.plan_date AS TEXT), o.code, o.side, o.order_kind,
+		o.trigger_price, o.limit_price, o.qty, COALESCE(o.leg_no,0), o.reason_json, o.status
+		FROM plan_order o JOIN trade_plan p ON p.id = o.trade_plan_id
+		WHERE CAST(p.plan_date AS TEXT) IN (`+strings.Join(ph, ",")+`)
+		ORDER BY p.plan_date DESC, o.side, o.code`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer orderRows.Close()
+	for orderRows.Next() {
+		var (
+			o           PlanOrderView
+			rj, status  string
+			planDateStr string
+		)
+		if err := orderRows.Scan(&o.ID, &planDateStr, &o.Code, &o.Side, &o.OrderKind,
+			&o.TriggerPrice, &o.LimitPrice, &o.Qty, &o.LegNo, &rj, &status); err != nil {
+			return nil, err
+		}
+		o.Status = status
+		_ = json.Unmarshal([]byte(rj), &o.Reason)
+		for i := range out {
+			if out[i].Plan.PlanDate == planDateStr {
+				o.PlanDate = out[i].Plan.PlanDate
+				o.ExecuteDate = out[i].Plan.ExecuteDate
+				out[i].Orders = append(out[i].Orders, o)
+				break
+			}
+		}
+	}
+	return out, orderRows.Err()
 }
 
 // EquityAll 全部快照按日期升序（权益曲线 / 审计）。

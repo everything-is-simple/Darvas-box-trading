@@ -8,7 +8,7 @@
 ## 1. 契约分层总览
 
 ```
-┌─ L4 GUI绑定层（Wails Methods）──────── 给前端暴露的只读+操作方法
+┌─ L4 GUI绑定层（本地HTTP JSON API，gui包）── 给前端暴露的只读端点
 ├─ L3 编排层（pipeline/scheduler）────── 任务的顺序、重试、留痕
 ├─ L2 领域层（box/screener/pool/signal/planner/position/ledger）
 ├─ L1 数据层（ingest/datasource/store）
@@ -85,8 +85,13 @@ type DayFileReader interface {
     ListCodes() ([]string, error)                       // sh600519, sz000001, ...
     ReadBars(code string, since string) ([]contract.DailyBar, error)
     ModTime(code string) (time.Time, error)             // 增量导入依据
+    ReadNames() (map[string]string, error)              // 代码→名称（T0002/hq_cache/*.tnf，GUI展示用）
 }
 ```
+
+> ReadNames 实现（tdx/names.go）：解析通达信 `{TDX根}/T0002/hq_cache/{shs,szs}.tnf`
+> 二进制名称表（50字节头 + 360字节/条；code@+0 六位ASCII，name@+31 GBK最长32字节）。
+> 名称是可选增强数据：文件缺失仅告警、名称留空，不影响行情导入。
 
 ### 3.2 导入器（ingest）
 
@@ -114,6 +119,7 @@ type BarRepo interface {
     LatestDates(code string, n int) ([]string, error)
     CloseOn(code, date string) (float64, bool, error)
     AvgVolume(code string, endDate string, n int) (float64, error)
+    LastClose(code string) (float64, bool, error)          // 最新收盘（GUI持仓浮盈亏，M6）
 }
 
 type BoxRepo interface {
@@ -129,6 +135,13 @@ type PoolRepo interface {
     UpsertWatch(w Watch) error
     WatchByStage(stage string) ([]Watch, error)
     WatchByCode(code string) (*Watch, error)
+    WatchOverview() ([]WatchOverview, error)   // 每code最新行+名称+当前箱体+最新收盘（GUI跟踪池视图，M6）
+}
+
+type SecRepo interface {                        // M6 新增（GUI名称展示）
+    UpsertSecurities(secs []Security) error
+    UpdateNames(names map[string]string) (int64, error) // tnf回填，同名幂等
+    Names() (map[string]string, error)                  // code→name（name<>''）
 }
 
 type SignalRepo interface {
@@ -162,6 +175,7 @@ type TradeRepo interface {
     EquityAll() ([]EquitySnapshot, error)
     LatestEquity() (*EquitySnapshot, error)
     SetEquityDefault(date string, total float64) error
+    PlansRecent(n int) ([]PlanView, error)                 // 最近n个计划+订单+状态（GUI交易记录，M6）
 }
 
 // Fill 成交回录（M4.5 起含 side，0002迁移）
@@ -180,6 +194,8 @@ type RunRepo interface {
     StartRun(date, task string) (int64, error)
     FinishRun(id int64, res TaskResult) error
     LastOKRun(date, task string) (*TaskResult, bool, error) // 补跑判断
+    RunsOn(date string) ([]TaskResult, error)               // 当日全部心跳（GUI仪表盘，M6）
+    LatestRunDate() (string, error)                         // 最近有留痕的日期（GUI缺省日期，M6）
 }
 
 type ParamRepo interface {
@@ -327,28 +343,22 @@ type Scheduler interface {
 
 ---
 
-## 6. L4 GUI绑定层（Wails Methods）
+## 6. L4 GUI绑定层（本地HTTP JSON API，internal/gui）
 
-> 前端（HTML/JS）只允许调用以下方法；命名=资源+动词，与CLI子命令一一对应。
+> M6 实际交付：`net/http` + embed 静态单文件前端（`darvas ui` 起 127.0.0.1:8787）。
+> **全部只读**：所有写操作（fills/param/run/pool 人工操作）仍走 CLI，GUI 不越权。
+> 响应约定：nil 集合一律序列化为 `[]`（不得为 null，前端直接 `.map`）；错误返回 `{"error": msg}` + 4xx/5xx。
+> 静态资源响应带 `Cache-Control: no-cache`（embed 无真实 mtime，防浏览器缓存旧页面）。
 
-| 方法 | 入参 | 返回 | 对应能力 |
+| 端点 | 入参 | 返回（JSON字段） | 对应视图 |
 |------|------|------|---------|
-| `GetTodayBrief(date)` | - | `{tasks, signals, plan, equity}` | 今日流程视图（心跳+六问） |
-| `RunTask(date, task)` | - | `TaskResult` | 手动触发单任务（补跑） |
-| `ListCandidates(date)` | - | `Candidate[]` | 候选池表 |
-| `ListWatch(stage)` | - | `Watch[]` | 跟踪池表 |
-| `MarkFundamental(code, flag)` | - | bool | 人工复核 |
-| `RemoveFromWatch(code, reason)` | - | bool | 人工移除 |
-| `GetLadder(code)` | - | `{boxes[], bars[]}` | 个股箱体阶梯+K线（画图） |
-| `ListPositions()` | - | `Position[]`（含腿、当前箱体、止损位） | 持仓视图 |
-| `GetPlan(date)` | - | `{plan, orders[]}` | 明日交易计划 |
-| `PasteFills(rawText)` | - | `Fill[]`（预览，需Confirm） | 成交录入 |
-| `ConfirmFills(fills)` | - | `int`（入库数） | 成交确认 |
-| `GetEquityCurve(from, to)` | - | `EquitySnapshot[]` | 权益曲线 |
-| `GetParams()` / `SetParam(k, v)` | - | `map` / bool | 参数热调 |
-| `OpenReport(date)` | - | `string`（文件路径） | 打开HTML日报 |
+| `GET /api/dashboard` | `?date=`（缺省=LatestRunDate） | `{date, runs[], plan, orders[], names, equity}` | 仪表盘：7任务心跳+计划订单+权益卡 |
+| `GET /api/watch` | - | `{items: WatchOverview[]}`（code/name/stage/added_date/box_count/box_top/box_bottom/box_status/last_close） | 跟踪池看板 |
+| `GET /api/stock/{code}` | `?days=250`（上限1000） | `{code, name, days, bars[], boxes[], watch, position}` | 个股K线+箱体叠加+阶梯表 |
+| `GET /api/trades` | - | `{plans[], fills[], positions[], equity[], names}`（positions 含浮盈亏 pnl/pnl_pct） | 交易记录：计划/成交/持仓+权益曲线 |
+| `GET /` | - | index.html（embed） | 单文件前端（四视图，canvas自绘，无外部JS库） |
 
-**GUI只读领域数据、只经编排层写**：`RunTask`是唯一的写入口，`PasteFills/ConfirmFills/SetParam`三个例外直通对应Repo（均有审计留痕）。
+原 Wails 方法表（RunTask/PasteFills/MarkFundamental 等写操作）转入 M8+ 候选：届时以 POST 端点形式补齐，须带审计留痕。
 
 ---
 
@@ -358,10 +368,11 @@ type Scheduler interface {
 darvas run    [--date]        # 全流水线
 darvas ingest [--date]        # 单任务补跑（其余同理）
 darvas boxscan|screen|poolsync|signal|plan|report|weekly [--date]
-darvas gui                    # 启动桌面GUI（常驻+调度）
+darvas ui     [--addr 127.0.0.1:8787] [--db path]   # 本地HTTP UI（起服务+系统浏览器打开，M6）
 darvas ladder  <code>         # 终端打印箱体阶梯
 darvas param   get|set        # 参数读写
 darvas fills   paste          # 交互式成交录入
+darvas doctor                 # 一致性体检（含账本三重校验）
 ```
 
 ---

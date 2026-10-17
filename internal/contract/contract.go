@@ -228,6 +228,7 @@ type DayFileReader interface {
 	ListCodes() ([]string, error)
 	ReadBars(code string, since string) ([]DailyBar, error)
 	ModTime(code string) (time.Time, error)
+	ReadNames() (map[string]string, error) // 代码→名称（T0002/hq_cache/*.tnf，GUI展示用）
 }
 
 // Ingester 导入器

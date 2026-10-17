@@ -125,7 +125,8 @@ func (r *PoolRepo) WatchByCode(code string) (*contract.Watch, error) {
 	var w contract.Watch
 	var st string
 	var cid, boxID sql.NullInt64
-	err := r.db.QueryRow(`SELECT id, code, candidate_id, CAST(added_date AS TEXT), stage, current_box_id, box_count, exit_reason, note
+	err := r.db.QueryRow(`SELECT id, code, candidate_id, CAST(added_date AS TEXT), stage, current_box_id, box_count,
+		COALESCE(exit_reason,''), COALESCE(note,'')
 		FROM watch WHERE code = ? ORDER BY id DESC LIMIT 1`, code).
 		Scan(&w.ID, &w.Code, &cid, &w.AddedDate, &st, &boxID, &w.BoxCount, &w.ExitReason, &w.Note)
 	if err == sql.ErrNoRows {
@@ -149,4 +150,52 @@ func nullInt64(n int64) any {
 		return nil
 	}
 	return n
+}
+
+// WatchOverview 跟踪池看板行（GUI 跟踪池视图）：
+// watch 最新行 JOIN security（名称）/ box（当前箱体）/ 最新收盘，一次查询成型。
+type WatchOverview struct {
+	Code            string  `json:"code"`
+	Name            string  `json:"name"`
+	Stage           string  `json:"stage"`
+	AddedDate       string  `json:"added_date"`
+	BoxCount        int     `json:"box_count"`
+	BoxTop          float64 `json:"box_top"`
+	BoxBottom       float64 `json:"box_bottom"`
+	BoxStatus       string  `json:"box_status"`
+	TopConfirmed    string  `json:"top_confirmed"`
+	BottomConfirmed string  `json:"bottom_confirmed"`
+	BrokenDate      string  `json:"broken_date"`
+	LastClose       float64 `json:"last_close"`
+}
+
+// WatchOverview 全部跟踪池看板行（每 code 取最新 watch 行，含 exited）。
+// 最新收盘走 daily_bar PK 倒扫相关子查询（PK(code,date) WITHOUT ROWID，O(log n)/行）。
+func (r *PoolRepo) WatchOverview() ([]WatchOverview, error) {
+	rows, err := r.db.Query(`SELECT w.code, COALESCE(s.name,''), w.stage, CAST(w.added_date AS TEXT), w.box_count,
+			COALESCE(b.top,0), COALESCE(b.bottom,0), COALESCE(b.status,''),
+			CAST(COALESCE(b.top_confirmed,'') AS TEXT), CAST(COALESCE(b.bottom_confirmed,'') AS TEXT),
+			CAST(COALESCE(b.broken_date,'') AS TEXT),
+			COALESCE((SELECT d.close FROM daily_bar d WHERE d.code = w.code ORDER BY d.date DESC LIMIT 1), 0)
+		FROM watch w
+		JOIN (SELECT code, MAX(id) AS mid FROM watch GROUP BY code) latest ON w.id = latest.mid
+		LEFT JOIN security s ON s.code = w.code
+		LEFT JOIN box b ON b.id = w.current_box_id
+		ORDER BY CASE w.stage
+			WHEN 'holding' THEN 1 WHEN 'pending' THEN 2 WHEN 'watching' THEN 3 ELSE 4 END, w.code`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WatchOverview
+	for rows.Next() {
+		var w WatchOverview
+		if err := rows.Scan(&w.Code, &w.Name, &w.Stage, &w.AddedDate, &w.BoxCount,
+			&w.BoxTop, &w.BoxBottom, &w.BoxStatus,
+			&w.TopConfirmed, &w.BottomConfirmed, &w.BrokenDate, &w.LastClose); err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
 }
