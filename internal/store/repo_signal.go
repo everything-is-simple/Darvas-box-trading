@@ -15,6 +15,8 @@ type SignalRepo struct{ db *sql.DB }
 func NewSignalRepo(db *sql.DB) *SignalRepo { return &SignalRepo{db: db} }
 
 // AppendSignals 批量追加信号（append-only，docs/03 §2 signal 日志只插不更新）。
+// 同日幂等：同 (date, code, type, box_id) 已存在则跳过——同日重跑（手动补跑/调度重试）
+// 不产生重复行；跨日不查重（首次事件语义由 signal 引擎保证）。
 // Payload map 序列化为 payload_json。
 func (r *SignalRepo) AppendSignals(sigs []contract.Signal) error {
 	if len(sigs) == 0 {
@@ -32,6 +34,15 @@ func (r *SignalRepo) AppendSignals(sigs []contract.Signal) error {
 	}
 	defer stmt.Close()
 	for _, s := range sigs {
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM signal
+			WHERE date=? AND code=? AND type=? AND COALESCE(box_id,0)=COALESCE(?,0))`,
+			s.Date, s.Code, string(s.Type), nullInt64(s.BoxID)).Scan(&exists); err != nil {
+			return fmt.Errorf("check signal %s %s: %w", s.Code, s.Type, err)
+		}
+		if exists {
+			continue
+		}
 		j := "{}"
 		if s.Payload != nil {
 			if b, err := json.Marshal(s.Payload); err == nil {

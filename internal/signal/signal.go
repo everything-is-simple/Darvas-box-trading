@@ -1,10 +1,14 @@
 // Package signal 实现达瓦斯四类信号判定（docs/00 §4-5 / docs/04 §4.4）。
 //
-// 四类信号（contract.SignalEngine.Evaluate 对 watching/pending/holding 池逐股判定）：
-//   breakout        收盘>confirmed箱体上轨×premium 且放量 且非一字板 → 买（watching 突破）
-//   pyramid         持仓股新箱体再突破（leg_no<maxlegs）→ 加码（holding 再突破）
-//   stop            收盘<最新箱体下轨 → 卖（holding 全卖；watching 出池）
-//   failed_breakout 突破后3日内收盘跌回箱体内 → 卖（突破失败离场）
+// 首次事件语义（M7.1 观察期回放发现重复触发 bug 后确立）：
+// 信号是"状态迁移事件"，只在迁移发生当日发一次；条件持续满足不重复发。
+//
+//	breakout        箱体当日迁移为 broken_up（BrokenDate==当日）→ 买（watching 突破）
+//	pyramid         持仓股新箱体当日再突破（leg_no<maxlegs）→ 加码（holding 再突破）
+//	stop            收盘首次跌破最新箱体下轨（昨收≥下轨 且 今收<下轨）→ 卖
+//	failed_breakout 突破后3日内收盘首次跌回箱体上轨之下（昨收≥上轨 且 今收<上轨）→ 卖
+//
+// 另：AppendSignals 同日幂等（同 date+code+type+box 已存在则跳过），重跑/调度重试不重复。
 package signal
 
 import (
@@ -65,33 +69,41 @@ func (e *Engine) Evaluate(ctx context.Context, date string) (contract.TaskResult
 	return res, nil
 }
 
-// evalOne 对单只在池股票判定信号。优先级：stop > failed_breakout > breakout/pyramid。
+// evalOne 对单只在池股票判定信号（首次事件语义）。优先级：stop > failed_breakout > breakout/pyramid。
 func (e *Engine) evalOne(w contract.Watch, date string, premium float64, maxLegs int) *contract.Signal {
 	box, err := e.st.BoxRepo.LatestBox(w.Code)
 	if err != nil || box == nil {
 		return nil
 	}
-	close, ok, _ := e.st.BarRepo.CloseOn(w.Code, date)
-	if !ok {
+	// 最近2根K线：昨日收盘用于判定"首次"（今日满足条件且昨日不满足 → 迁移事件）
+	bars, err := e.st.BarRepo.BarsWindow(w.Code, date, 2)
+	if err != nil || len(bars) < 2 {
+		return nil // 单根K线无昨日参照（有箱体的股票必然有历史，防御性返回）
+	}
+	today, prev := bars[len(bars)-1], bars[len(bars)-2]
+	if today.Date != date {
 		return nil // 当日无数据（停牌等）
 	}
+	close := today.Close
 
-	// stop：收盘<最新箱体下轨（docs/00 §5.1）
-	if box.Bottom > 0 && close < box.Bottom {
+	// stop：今收<最新箱体下轨 且 昨收未破（首次跌破，docs/00 §5.1）
+	if box.Bottom > 0 && close < box.Bottom && prev.Close >= box.Bottom {
 		return &contract.Signal{
 			Date: date, Code: w.Code, Type: contract.SignalStop,
 			BoxID: box.ID, ClosePx: close, BoxLevel: box.Bottom,
-			Payload: map[string]any{"stage": string(w.Stage), "box_bottom": box.Bottom, "close": close},
+			Payload: map[string]any{"stage": string(w.Stage), "box_bottom": box.Bottom,
+				"close": close, "prev_close": prev.Close},
 		}
 	}
 
-	// failed_breakout：最近有 broken_up 箱体且3日内、收盘跌回该箱上轨之下
-	if s := e.checkFailedBreakout(w.Code, date, box, close); s != nil {
+	// failed_breakout：3日内突破的箱体，今收首次跌回其上轨之下
+	if s := e.checkFailedBreakout(w.Code, date, box, close, prev.Close); s != nil {
 		return s
 	}
 
-	// breakout / pyramid：最新箱体 broken_up（今日或近期）→ 突破信号
-	if box.Status == contract.BoxBrokenUp {
+	// breakout / pyramid：箱体今日刚迁移为 broken_up（BrokenDate==今日）→ 突破事件当日一次。
+	// （boxscan 引擎已用当日窗口完成放量/非一字板等形态判定，此处只消费状态迁移。）
+	if box.Status == contract.BoxBrokenUp && box.BrokenDate == date {
 		// 持仓且未达最大腿数 → 加码；否则 → 突破买入
 		var sigType contract.SignalType
 		if w.Stage == contract.StageHolding {
@@ -115,17 +127,19 @@ func (e *Engine) evalOne(w contract.Watch, date string, premium float64, maxLegs
 	return nil
 }
 
-// checkFailedBreakout 突破失败：最近一个 broken_up 箱体在3个交易日内、收盘跌回其上轨之下。
-func (e *Engine) checkFailedBreakout(code, date string, latest *contract.Box, close float64) *contract.Signal {
+// checkFailedBreakout 突破失败：最近一个 broken_up 箱体在3个日历日内、
+// 今收首次跌回其上轨之下（昨收≥上轨 且 今收<上轨 → 首次跌回事件）。
+func (e *Engine) checkFailedBreakout(code, date string, latest *contract.Box, close, prevClose float64) *contract.Signal {
 	if latest == nil || latest.Top <= 0 {
 		return nil
 	}
-	// 最新箱体若刚 broken_up 且今日收盘已跌回上轨之下 → 失败突破
-	if latest.Status == contract.BoxBrokenUp && close < latest.Top && withinDays(latest.BrokenDate, date, 3) {
+	if latest.Status == contract.BoxBrokenUp && close < latest.Top && prevClose >= latest.Top &&
+		withinDays(latest.BrokenDate, date, 3) {
 		return &contract.Signal{
 			Date: date, Code: code, Type: contract.SignalFailed,
 			BoxID: latest.ID, ClosePx: close, BoxLevel: latest.Top,
-			Payload: map[string]any{"broken_date": latest.BrokenDate, "box_top": latest.Top, "close": close},
+			Payload: map[string]any{"broken_date": latest.BrokenDate,
+				"box_top": latest.Top, "close": close, "prev_close": prevClose},
 		}
 	}
 	return nil

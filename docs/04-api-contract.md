@@ -269,11 +269,13 @@ type PoolManager interface {
 ```go
 type SignalEngine interface {
     Evaluate(ctx context.Context, date string) (TaskResult, error)
-    // 对 watching/pending/holding 池逐股判定四类信号：
-    // breakout:  收盘>confirmed箱体上轨×premium 且放量且非一字板
-    // pyramid:   持仓股新箱体再突破（leg_no<maxlegs）
-    // stop:      收盘<最新箱体下轨（持仓→全卖；watching→出池）
-    // failed_breakout: 突破后3日内收盘跌回箱体内
+    // 对 watching/pending/holding 池逐股判定四类信号——首次事件语义：
+    // 信号是"状态迁移事件"，只在迁移发生当日发一次，条件持续满足不重复发。
+    // breakout:  箱体当日迁移为 broken_up（BrokenDate==当日；放量/非一字板由boxscan引擎判定）
+    // pyramid:   持仓股新箱体当日再突破（leg_no<maxlegs）
+    // stop:      收盘首次跌破最新箱体下轨（昨收≥下轨 且 今收<下轨）
+    // failed_breakout: 突破后3日内收盘首次跌回箱体上轨之下（昨收≥上轨 且 今收<上轨）
+    // 另：AppendSignals 同日幂等（同 date+code+type+box 已存在则跳过），重跑/调度重试不重复
 }
 ```
 

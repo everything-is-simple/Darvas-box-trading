@@ -157,7 +157,7 @@ Darvas-box-trading/
 16:00 boxscan     ──K线窗口──▶ box（重算跟踪池全量+候选池增量+全市场滚动N日）
 16:10 screen      ──四条件──▶ candidate_pool（当日快照）
 16:20 poolsync    ──状态机──▶ watch（入池/升阶/出池）
-16:30 signal      ──收盘价vs箱体──▶ signal（breakout/pyramid/stop/failed）
+16:30 signal      ──收盘价vs箱体（首次事件语义：状态迁移当日发一次，同日重跑幂等）──▶ signal（breakout/pyramid/stop/failed）
 16:40 plan        ──信号+持仓+param──▶ trade_plan+plan_order（六问答案）
 16:45 report      ──汇总──▶ daily_20261017.html + db备份
      (次日09:25 人工按plan_order挂券商条件单；成交后paste回录 → trade_fill → ledger)
