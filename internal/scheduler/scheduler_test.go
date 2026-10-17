@@ -232,6 +232,13 @@ func TestWeeklySaturdayOnce(t *testing.T) {
 	s.tick()
 	eq(t, runner.snapshot(), []string{"2026-10-17|weekly"})
 
+	// 模拟 serve 重启（fired 清空）：当天已 ok → 幂等跳过
+	s.mu.Lock()
+	s.fired["weekly"] = ""
+	s.mu.Unlock()
+	s.tick()
+	eq(t, runner.snapshot(), []string{"2026-10-17|weekly"})
+
 	s2, runner2 := newTestEnv(t, friBars, nil) // 周五 10:30 → 永不触发
 	s2.now = func() time.Time { return at("2026-10-16", 10, 30) }
 	s2.tick()

@@ -348,7 +348,8 @@ type Scheduler interface {
   失败任务在**后续触发点**自动重试（ingest 失败→中止本链，等下个触发点，不空转）。
 - **weekly 触发（M7.2）**：`fireWeekly` 独立于每日时刻表——周六本地时刻≥10:00 触发一次
   `weekly` 周报任务（`RerunTask(today,"weekly")`），不查交易日历（周六必非交易日）；
-  当日只消费一次；错过当日不自动回放，用 `darvas weekly --date X` 手动补。
+  当日只消费一次，且先查 `LastOKRun` 幂等跳过（手动跑过/serve重启不重复执行）；
+  错过当日不自动回放，用 `darvas weekly --date X` 手动补。
 - **CatchUp**：① 前一交易日（`BarRepo.PrevDate(sh000001)`）完全无 ok 心跳 → 整日补跑；
   ② 今天已过点未 ok → 链式补跑。更早历史缺口用 `darvas run --date X` 手动补。
 - **交易日历（ADR-2）**：`isTradingDay` = DB `HasBar(sh000001,date)`，未入库时直读

@@ -240,6 +240,11 @@ func (s *Scheduler) fireWeekly(now time.Time) {
 	if !due {
 		return
 	}
+	// 幂等：当天已 ok（如手动 darvas weekly 跑过、serve 重启）→ 跳过（同 runOverdue 语义）
+	if _, ok, err := s.st.RunRepo.LastOKRun(today, "weekly"); err == nil && ok {
+		s.log.Printf("%s weekly 已 ok，跳过（幂等）", today)
+		return
+	}
 	s.log.Printf("触发点到达: weekly@%s（周六周度复盘）", WeeklyClock)
 	res, err := s.runner.RerunTask(s.ctx, today, "weekly")
 	if res.Status == "ok" {
