@@ -195,9 +195,20 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 | # | 任务 | 内容 | 验收 | 状态 |
 |---|------|------|------|------|
 | 7.1 | 无人值守运行 | 常驻模式连续20交易日 | 无漏跑 | ✅ serve已交付（调度+CatchUp+日历+GUI）；20交易日观察期进行中 |
-| 7.2 | 周报 | weekly任务：阶梯全景/周盈亏/纪律审计 | - | ⏳ |
+| 7.2 | 周报 | weekly任务：阶梯全景/周盈亏/纪律审计 | - | ✅ 2026-10-17 weekly四段周报+周六10:00调度+CLI |
 | 7.3 | 备份轮转 | 30份滚动+恢复演练 | 恢复成功 | ✅ 2026-10-17 VACUUM备份+轮转+恢复演练单测 |
 | 7.4 | 移植演练 | 拷贝至另一台Win机器 | 改tdx.root即可跑 | ⏳ |
+
+> **M7.2 已实现（2026-10-17）**：`internal/reporter/weekly.go`（周报四段：
+> ① 持仓箱体阶梯全景 ② 周盈亏=权益首尾增减+当周成交+当周平仓 ③ 权益曲线
+> （快照表+SVG sparkline） ④ 纪律审计=未止损（收盘<止损仍持有）/止损·假突破
+> 信号无卖出成交/过期挂单/账本恒等式（复用ledger.AuditEquation））。
+> - 覆盖区间：锚定日往前7天（from=date-6），输出 `var/reports/weekly_YYYYMMDD.html`。
+> - 调度：scheduler.fireWeekly 周六本地≥10:00 触发一次（独立于交易日历；
+>   CatchUp 启动时补查当日）；错过不自动回放，`darvas weekly --date X` 手动补。
+> - CLI：`darvas weekly [--date]`，缺省锚定最近周六，产出后自动打开浏览器。
+> - store 扩展：`SignalRepo.SignalsRange(from,to)`（带单测）；
+>   scheduler 测试更新周六时点预期 + TestWeeklySaturdayOnce（触发一次/整点/周五不触发）。
 
 > **M7.1/M7.3 已实现（2026-10-17）**：`internal/scheduler`（常驻调度器）+
 > `internal/pipeline/backup.go`（备份轮转）+ CLI `serve` 子命令。要点：

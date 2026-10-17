@@ -138,6 +138,10 @@ func (p *Pipeline) RerunTask(ctx context.Context, date, task string) (contract.T
 		return p.runTask(ctx, date, "report", func() (contract.TaskResult, error) {
 			return p.report.Report(ctx, date)
 		})
+	case "weekly": // M7.2 周报：周六10:00调度或手动补跑，不进每日链（RunDaily 不含）
+		return p.runTask(ctx, date, "weekly", func() (contract.TaskResult, error) {
+			return p.report.Weekly(ctx, date)
+		})
 	default:
 		return contract.TaskResult{Task: task, Date: date, Status: "failed", Error: "unknown task"}, nil
 	}
@@ -146,4 +150,9 @@ func (p *Pipeline) RerunTask(ctx context.Context, date, task string) (contract.T
 // ReportPath 返回某日日报文件路径（CLI openreport 用）。
 func (p *Pipeline) ReportPath(date string) string {
 	return p.report.Path(date)
+}
+
+// WeeklyPath 返回某锚定日周报文件路径（CLI weekly 用）。
+func (p *Pipeline) WeeklyPath(date string) string {
+	return p.report.WeeklyPath(date)
 }

@@ -162,13 +162,14 @@ func TestIngestFailAbortsAndRetriesNextTrigger(t *testing.T) {
 }
 
 func TestNonTradingDaySkips(t *testing.T) {
-	// 周六 2026-10-17：DB 无当日K线、TDX 也无 → 全部触发点跳过
+	// 周六 2026-10-17：DB 无当日K线、TDX 也无 → 每日七任务全部跳过；
+	// 但周六 16:25 已过 10:00 → weekly 周报触发（M7.2）
 	s, runner := newTestEnv(t, friBars, nil)
 	s.now = func() time.Time { return at("2026-10-17", 16, 25) }
 	s.tick()
-	eq(t, runner.snapshot(), nil)
+	eq(t, runner.snapshot(), []string{"2026-10-17|weekly"})
 
-	// 周五 16:25 但 TDX 未下载且当日未入库（DB 只有 10-15 及更早）→ 跳过
+	// 周五 16:25 但 TDX 未下载且当日未入库（DB 只有 10-15 及更早）→ 跳过（周五不触发 weekly）
 	s2, runner2 := newTestEnv(t,
 		[]contract.DailyBar{{Code: "sh000001", Date: "2026-10-15", Close: 3000, Volume: 100}}, nil)
 	s2.now = func() time.Time { return at("2026-10-16", 16, 25) }
@@ -198,18 +199,43 @@ func TestCatchUpPrevTradingDay(t *testing.T) {
 	eq(t, runner.snapshot(), []string{
 		"2026-10-16|ingest", "2026-10-16|boxscan", "2026-10-16|screen",
 		"2026-10-16|poolsync", "2026-10-16|signal", "2026-10-16|plan", "2026-10-16|report",
+		"2026-10-17|weekly", // 周六10:00 CatchUp 时触发 weekly（M7.2）
 	})
 	eq(t, doneDates, []string{"2026-10-16"}) // 收尾钩子（备份）恰好一次
 
-	// 前一日已有 ok 心跳（CatchUp 补过）→ 再次 CatchUp 不重跑
+	// 前一日已有 ok 心跳（CatchUp 补过）→ 再次 CatchUp 不重跑（weekly 已消费触发点）
 	if err := s.CatchUp(); err != nil {
 		t.Fatal(err)
 	}
 	eq(t, runner.snapshot(), []string{
 		"2026-10-16|ingest", "2026-10-16|boxscan", "2026-10-16|screen",
 		"2026-10-16|poolsync", "2026-10-16|signal", "2026-10-16|plan", "2026-10-16|report",
+		"2026-10-17|weekly",
 	})
 	eq(t, doneDates, []string{"2026-10-16"})
+}
+
+// TestWeeklySaturdayOnce weekly 触发时机（M7.2）：周六10:00整点触发、
+// 当日仅一次、10:00 前不触发、周五永不触发。
+func TestWeeklySaturdayOnce(t *testing.T) {
+	s, runner := newTestEnv(t, friBars, nil)
+
+	s.now = func() time.Time { return at("2026-10-17", 9, 59) } // 周六 09:59
+	s.tick()
+	eq(t, runner.snapshot(), nil)
+
+	s.now = func() time.Time { return at("2026-10-17", 10, 0) } // 周六 10:00 整
+	s.tick()
+	eq(t, runner.snapshot(), []string{"2026-10-17|weekly"})
+
+	s.now = func() time.Time { return at("2026-10-17", 10, 30) } // 再巡检不重复
+	s.tick()
+	eq(t, runner.snapshot(), []string{"2026-10-17|weekly"})
+
+	s2, runner2 := newTestEnv(t, friBars, nil) // 周五 10:30 → 永不触发
+	s2.now = func() time.Time { return at("2026-10-16", 10, 30) }
+	s2.tick()
+	eq(t, runner2.snapshot(), nil)
 }
 
 func TestCatchUpTodayMidDay(t *testing.T) {

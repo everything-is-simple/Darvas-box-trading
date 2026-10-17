@@ -93,7 +93,7 @@ Darvas-box-trading/
 │   ├── planner/                  # 六问→订单计划
 │   ├── position/                 # 腿管理/止损上移/仓位计算
 │   ├── ledger/                   # 权益快照/恒等式审计
-│   ├── scheduler/                # 时间表调度+补跑
+│   ├── scheduler/                # 时间表调度+补跑+周六weekly触发
 │   ├── reporter/                 # HTML/Excel日报周报
 │   └── gui/                      # 本地HTTP UI（net/http + embed）
 │       ├── gui.go                # Server/路由/JSON API（dashboard/dates/watch/candidates/signals/stock/trades）

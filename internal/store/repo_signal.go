@@ -68,6 +68,28 @@ func (r *SignalRepo) SignalsOn(date string) ([]contract.Signal, error) {
 	return out, rows.Err()
 }
 
+// SignalsRange 读某闭区间内全部信号（按日期、类型、代码排序；周报纪律审计用）。
+func (r *SignalRepo) SignalsRange(from, to string) ([]contract.Signal, error) {
+	rows, err := r.db.Query(`SELECT CAST(date AS TEXT), code, type, COALESCE(box_id,0), close_px, box_level, payload_json
+		FROM signal WHERE date BETWEEN ? AND ? ORDER BY date, type, code`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []contract.Signal
+	for rows.Next() {
+		var s contract.Signal
+		var t, pj string
+		if err := rows.Scan(&s.Date, &s.Code, &t, &s.BoxID, &s.ClosePx, &s.BoxLevel, &pj); err != nil {
+			return nil, err
+		}
+		s.Type = contract.SignalType(t)
+		_ = json.Unmarshal([]byte(pj), &s.Payload)
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 // LatestSignalDate 最近一次信号日（GUI /api/signals 缺省日期；无数据返回空）。
 func (r *SignalRepo) LatestSignalDate() (string, error) {
 	var d string

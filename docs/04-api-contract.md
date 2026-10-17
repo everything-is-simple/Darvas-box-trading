@@ -335,8 +335,8 @@ type Pipeline interface {
 
 // scheduler：常驻调度
 type Scheduler interface {
-    Start() error      // 时刻表：15:30/16:00/16:10/16:20/16:30/16:40/16:45（周六10:00 weekly 待M7.2接入）
-    CatchUp() error    // 启动时检查daily_run，补跑「交易日已过但未ok」的任务
+    Start() error      // 时刻表：15:30/16:00/16:10/16:20/16:30/16:40/16:45 + 周六10:00 weekly（M7.2已接入）
+    CatchUp() error    // 启动时检查daily_run，补跑「交易日已过但未ok」的任务；周六启动补查weekly
     Stop() error
 }
 ```
@@ -346,6 +346,9 @@ type Scheduler interface {
 - **触发点语义**：每任务一个触发点（`Schedule` 常量表，顺序即依赖链）。触发点到达时
   把「计划时刻已过且尚未ok」的任务按链序一次性补齐；每触发点每日只消费一次，
   失败任务在**后续触发点**自动重试（ingest 失败→中止本链，等下个触发点，不空转）。
+- **weekly 触发（M7.2）**：`fireWeekly` 独立于每日时刻表——周六本地时刻≥10:00 触发一次
+  `weekly` 周报任务（`RerunTask(today,"weekly")`），不查交易日历（周六必非交易日）；
+  当日只消费一次；错过当日不自动回放，用 `darvas weekly --date X` 手动补。
 - **CatchUp**：① 前一交易日（`BarRepo.PrevDate(sh000001)`）完全无 ok 心跳 → 整日补跑；
   ② 今天已过点未 ok → 链式补跑。更早历史缺口用 `darvas run --date X` 手动补。
 - **交易日历（ADR-2）**：`isTradingDay` = DB `HasBar(sh000001,date)`，未入库时直读
@@ -383,9 +386,10 @@ type Scheduler interface {
 ```
 darvas run    [--date]        # 全流水线（尾部自动备份+轮转）
 darvas ingest [--date]        # 单任务补跑（其余同理）
-darvas boxscan|screen|poolsync|signal|plan|report|weekly [--date]
+darvas boxscan|screen|poolsync|signal|plan|report [--date]
+darvas weekly [--date]        # M7.2 周报：缺省锚定最近周六，覆盖往前7天；产出后自动打开
 darvas ui     [--addr 127.0.0.1:8787] [--db path]   # 本地HTTP UI（起服务+系统浏览器打开，M6）
-darvas serve  [--addr 127.0.0.1:8787] [--db path]   # 常驻模式（M7.1）：CatchUp补跑+时刻表调度+备份+GUI
+darvas serve  [--addr 127.0.0.1:8787] [--db path]   # 常驻模式（M7.1）：CatchUp补跑+时刻表调度+周六weekly+备份+GUI
 darvas ladder  <code>         # 终端打印箱体阶梯
 darvas param   get|set        # 参数读写
 darvas fills   paste          # 交互式成交录入

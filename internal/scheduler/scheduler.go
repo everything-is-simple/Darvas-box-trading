@@ -14,7 +14,8 @@
 //     未下载则跳过，待下个触发点重查）。
 //
 // 时区：A股时刻按北京时间；本工具单机本地运行，直接用系统本地时钟（time.Local）。
-// 周六10:00 weekly 任务待 M7.2 周报交付后接入时刻表。
+// 周六10:00 weekly 周报任务（M7.2）已接入：fireWeekly 独立于每日时刻表，
+// 不查交易日历（周六必为非交易日）；错过当日可用 `darvas weekly --date X` 手动补跑。
 package scheduler
 
 import (
@@ -45,6 +46,9 @@ var Schedule = []TaskTime{
 	{"16:40", "plan"},
 	{"16:45", "report"},
 }
+
+// WeeklyClock weekly 周报触发时刻（docs/01 §4.3：周六10:00）。
+const WeeklyClock = "10:00"
 
 // Runner 任务执行器（*pipeline.Pipeline 满足；测试可注入假实现）。
 type Runner interface {
@@ -163,6 +167,9 @@ func (s *Scheduler) CatchUp() error {
 
 	// ② 今天：已过点的触发点立即消费
 	s.fireDue(now)
+
+	// ③ 周六 weekly 周报（M7.2）：CatchUp 启动即检查当日是否该跑
+	s.fireWeekly(now)
 	return nil
 }
 
@@ -172,7 +179,9 @@ func (s *Scheduler) tick() {
 		return
 	}
 	defer s.end()
-	s.fireDue(s.now())
+	now := s.now()
+	s.fireDue(now)
+	s.fireWeekly(now)
 }
 
 func (s *Scheduler) tryBegin() bool {
@@ -212,6 +221,35 @@ func (s *Scheduler) fireDue(now time.Time) {
 	}
 	s.log.Printf("触发点到达: %s", strings.Join(names, ", "))
 	s.runOverdue(s.ctx, today, now)
+}
+
+// fireWeekly 周六 10:00 触发 weekly 周报（M7.2，docs/01 §4.3）。
+// 独立于 Schedule/交易日历（周六必非交易日）；每日期只消费一次。
+// 错过当日（服务未启动）不自动回放，用 `darvas weekly --date X` 手动补。
+func (s *Scheduler) fireWeekly(now time.Time) {
+	if now.Weekday() != time.Saturday {
+		return
+	}
+	today := now.Format("2006-01-02")
+	s.mu.Lock()
+	due := !now.Before(clockOf(today, WeeklyClock)) && s.fired["weekly"] != today
+	if due {
+		s.fired["weekly"] = today
+	}
+	s.mu.Unlock()
+	if !due {
+		return
+	}
+	s.log.Printf("触发点到达: weekly@%s（周六周度复盘）", WeeklyClock)
+	res, err := s.runner.RerunTask(s.ctx, today, "weekly")
+	if res.Status == "ok" {
+		s.log.Printf("%s weekly ok rows=%d %dms", today, res.AffectedRows, res.DurationMS)
+	} else {
+		s.log.Printf("%s weekly %s: %s", today, res.Status, res.Error)
+	}
+	if err != nil {
+		s.log.Printf("weekly 执行异常: %v", err)
+	}
 }
 
 // runOverdue 按 Schedule 顺序补跑「计划时刻已过且未 ok」的任务。

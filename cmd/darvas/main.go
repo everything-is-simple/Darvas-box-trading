@@ -68,6 +68,8 @@ func main() {
 		runPipeline(*db, *date)
 	case "boxscan", "screen", "poolsync", "signal", "plan", "report":
 		runRerun(*db, *date, cmd)
+	case "weekly":
+		runWeekly(*db, *date)
 	case "fills":
 		runFills(*db, positional, *yes)
 	case "ui":
@@ -504,6 +506,29 @@ func runRerun(db, date, task string) {
 	res, err := pipe.RerunTask(context.Background(), date, task)
 	must(err)
 	printResult(res)
+}
+
+// runWeekly M7.2 周报：默认锚定最近周六（docs/01 §4.3 周六10:00的命令行入口）。
+// 未显式指定 --date 时把缺省「今天」翻译为「最近周六」，覆盖往前7天区间。
+func runWeekly(db, date string) {
+	if date == time.Now().Format("2006-01-02") {
+		now := time.Now()
+		off := (int(now.Weekday()) - int(time.Saturday) + 7) % 7
+		date = now.AddDate(0, 0, -off).Format("2006-01-02")
+	}
+	st, err := store.Open(dbPath(db))
+	must(err)
+	defer st.Close()
+	root := st.ParamRepo.GetString("tdx.root", tdxRoot())
+	reader := tdx.NewReader(root)
+	pipe := pipeline.New(st, ingest.New(reader, st, ""))
+	res, err := pipe.RerunTask(context.Background(), date, "weekly")
+	must(err)
+	printResult(res)
+	if wp := pipe.WeeklyPath(date); res.Status == "ok" {
+		fmt.Printf("周报: %s\n", wp)
+		_ = openReport(wp)
+	}
 }
 
 // runUI 启动本地HTTP GUI（M6，docs/02 §2 GUI降级预案：embed静态资产+JSON API）。
