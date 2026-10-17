@@ -197,7 +197,19 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 | 7.1 | 无人值守运行 | 常驻模式连续20交易日 | 无漏跑 | ✅ serve已交付（调度+CatchUp+日历+GUI）；20交易日观察期进行中 |
 | 7.2 | 周报 | weekly任务：阶梯全景/周盈亏/纪律审计 | - | ✅ 2026-10-17 weekly四段周报+周六10:00调度+CLI |
 | 7.3 | 备份轮转 | 30份滚动+恢复演练 | 恢复成功 | ✅ 2026-10-17 VACUUM备份+轮转+恢复演练单测 |
-| 7.4 | 移植演练 | 拷贝至另一台Win机器 | 改tdx.root即可跑 | ⏳ |
+| 7.4 | 移植演练 | 拷贝至另一台Win机器 | 改tdx.root即可跑 | ✅ 2026-10-17 异地目录+备份库演练通过 |
+
+> **M7.4 移植演练实录（2026-10-17）**：以「新机器=异地全新目录」模拟——
+> 拷贝单文件 `darvas.exe`（20MB，静态编译+embed资产，无Go/Node依赖）+
+> 最新 VACUUM 备份 `darvas_20261015.db`（694MB）至 `C:\Users\Administrator\darvas-migrate\`
+> （顺带验证 M7.3 备份可异地恢复）：
+> ① `doctor` 默认路径（exe同目录var）通过：schema v2、11942证券、日历至10-16、
+>    止损触发器在位、恒等式审计通过；
+> ② 故意设错 `tdx.root` → 系统优雅降级（ingest 0 files 仅告警不崩溃）；
+> ③ `param set tdx.root H:/new_tdx64/vipdoc` 一改即恢复：ingest fresh=true
+>    （9150 files）、ladder 正常输出茅台29箱体；
+> ④ `ui` 异地起服务冒烟：/api/dashboard 7心跳 + /api/dates 4日期正常返回。
+> 结论：**新机器只需 ① 拷贝exe+var/备份库 ② 改 tdx.root 一个参数** 即可跑。
 
 > **M7.2 已实现（2026-10-17）**：`internal/reporter/weekly.go`（周报四段：
 > ① 持仓箱体阶梯全景 ② 周盈亏=权益首尾增减+当周成交+当周平仓 ③ 权益曲线
