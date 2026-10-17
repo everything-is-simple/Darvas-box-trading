@@ -5,6 +5,9 @@ var/
 *.db-shm
 *.exe
 
+# 会话工作数据（WorkBuddy记忆等），不属于代码仓库
+.workbuddy/
+
 # IDE
 .idea/
 .vscode/

@@ -107,6 +107,7 @@ var/                   # 运行时（db/备份/报告/日志）
 
 ## 数据与仓库
 
-- 本地工作目录：`I:\Darvas-box-trading`
+- **唯一本地库**：`I:\Darvas-box-trading`（代码、文档、运行时数据、会话记忆全在此目录，H盘工作区已于2026-10-17归并删除）
 - 远端：https://github.com/everything-is-simple/Darvas-box-trading
-- `var/` 与 `*.db` 不入库（.gitignore）
+- `var/`、`*.db`、`.workbuddy/` 不入库（.gitignore）
+- 理论原著电子版在仓库外：`H:\《交易之no.14.year》\2011.usa.达瓦斯.我如何在股市赚了200万\`；`docs/books/` 仅存扫描件页面标记（OCR待做，M0.8）
