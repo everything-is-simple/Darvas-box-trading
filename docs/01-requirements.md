@@ -166,10 +166,14 @@
 | 买入触发溢价 | `buy.premium` | ×1.03 | 突破确认 |
 | 卖出触发折价 | `sell.discount` | ×0.97 | 止损滑价 |
 | 放量倍数 | `box.volmult` | ×2.0 | 达瓦斯成交量确认 |
+| 均量窗口 | `box.volwindow` | 50日 | 放量参照基准 |
 | RS窗口 | `screen.rswindow` | 20日 | 相对强度 |
 | RS阈值 | `screen.rsthreshold` | 1.2 | 强于大盘20% |
 | 流动性门槛 | `screen.turnover` | 5000万 | A股适配 |
+| 箱体最长有效期 | `screen.maxboxage` | 60日 | 横盘过久出池 |
+| 跟踪池横盘箱上限 | `pool.flatboxmax` | 4 | 连续4箱不涨出池 |
 | 最大腿数 | `risk.maxlegs` | 3 | 达瓦斯三段式 |
+| TDX数据根目录 | `tdx.root` | H:/new_tdx64/vipdoc | 运行时路径配置 |
 
 ---
 
