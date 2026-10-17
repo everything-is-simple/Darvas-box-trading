@@ -435,7 +435,9 @@ darvas pool    remove <code> --reason <文本>  # 人工移除（留痕）
 darvas review list [code]     # 已交易股票历史库·战绩视图（B3：无code=每股汇总，有code=每笔明细+复盘）
 darvas review add <position_id> --lesson <文本> [--error-type <文本>] [--rule <followed|violated>]
                               # 复盘录入（三记录制度之三：亏损原因/教训，人工写，重录覆盖）
-darvas fills   paste          # 交互式成交录入
+darvas fills  [file] [--yes]   # 交互式成交录入（粘贴文本/M4.5；file为.csv时走炒股手导入器C）
+darvas fills  <炒股手导出.csv> --yes     # C：GBK解析→入库→执行质量审核报告
+                               # （指令vs执行：漏执行/滑点/数量偏差/计划外；幂等重导全跳过）
 darvas doctor                 # 一致性体检（含账本三重校验）
 ```
 

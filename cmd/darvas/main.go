@@ -133,7 +133,7 @@ func usage() {
   darvas run    [--date]                     完整盘后流水线（M5）
   darvas boxscan|screen|poolsync|signal|plan|report [--date]
                                              单任务幂等补跑（docs/04 §7）
-  darvas fills  [file] [--yes]               成交粘贴录入（M4.5，无file读stdin）
+  darvas fills  [file] [--yes]               成交录入（粘贴文本；.csv=炒股手导出→审核报告）
   darvas ui     [--addr]                     本地GUI（浏览器四视图，M6）
   darvas serve  [--addr]                     常驻模式（调度+GUI+备份，M7.1）
 
@@ -245,29 +245,42 @@ func runDoctor(db string) {
 
 // runFills 成交粘贴录入（M4.5，ADR-4）：file 参数或 stdin 读入 → 解析预览 → 入库。
 // 默认只预览；--yes 直接入库；交互终端（无重定向）时询问确认。
+// C 扩展：file 为 .csv（炒股手导出，GBK）→ ParseChaoGushouCsv 第二数据源，
+// 导入后打印执行质量审核报告（指令 vs 实际执行对照）。
 func runFills(db string, args []string, yes bool) {
-	var raw string
-	if len(args) > 0 {
-		b, err := os.ReadFile(args[0])
-		must(err)
-		raw = string(b)
-	} else {
-		b, err := io.ReadAll(os.Stdin)
-		must(err)
-		raw = string(b)
-	}
-	if strings.TrimSpace(raw) == "" {
-		fmt.Println("用法: darvas fills [file] [--yes]   （或粘贴文本后 Ctrl+Z/Ctrl+D 结束）")
-		os.Exit(2)
-	}
-
 	st, err := store.Open(dbPath(db))
 	must(err)
 	defer st.Close()
 	led := ledger.New(st)
 
-	fills, err := led.ParseFill(raw)
-	must(err)
+	var fills []contract.Fill
+	isCsv := len(args) > 0 && strings.EqualFold(filepath.Ext(args[0]), ".csv")
+	if isCsv {
+		b, err := os.ReadFile(args[0])
+		must(err)
+		fills, err = led.ParseChaoGushouCsv(b)
+		must(err)
+	} else {
+		var raw string
+		if len(args) > 0 {
+			b, err := os.ReadFile(args[0])
+			must(err)
+			raw = string(b)
+		} else {
+			b, err := io.ReadAll(os.Stdin)
+			must(err)
+			raw = string(b)
+		}
+		if strings.TrimSpace(raw) == "" {
+			fmt.Println("用法: darvas fills [file|--yes]   （或粘贴文本后 Ctrl+Z/Ctrl+D 结束；.csv=炒股手导出）")
+			os.Exit(2)
+		}
+		fills, err = led.ParseFill(raw)
+		must(err)
+	}
+	if isCsv {
+		fmt.Println("[数据源] 炒股手训练软件 CSV（GBK，第二数据源）")
+	}
 
 	fmt.Printf("解析出 %d 笔成交:\n", len(fills))
 	fmt.Println("日期        代码      方向  价格      数量    手续费")
@@ -318,6 +331,12 @@ func runFills(db string, args []string, yes bool) {
 		fmt.Println()
 	}
 	fmt.Printf("\n入库 %d 笔（匹配订单 %d，止损上移 %d，重复跳过 %d）\n", applied, matched, stopUp, dup)
+
+	// C：执行质量审核报告（指令 vs 实际执行对照）
+	if isCsv {
+		fmt.Println()
+		fmt.Print(led.FillsAuditReport(fills, results))
+	}
 
 	// 重算当日权益快照并审计
 	dates := map[string]bool{}

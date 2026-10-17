@@ -703,3 +703,42 @@ func (r *TradeRepo) TrackRecordByCode(code string) (trades, losses int, totalPnl
 		Scan(&trades, &losses, &totalPnl)
 	return
 }
+
+// ---------------------------------------------------------------------------
+// 订单审核（C：炒股手成交导入后的执行质量对照）
+// ---------------------------------------------------------------------------
+
+// OrderAuditRow 订单审核视图（执行质量报告：漏执行/偏差对照）。
+type OrderAuditRow struct {
+	ID          int64
+	Code        string
+	Side        string
+	ExecuteDate string
+	TriggerPx   float64
+	LimitPx     float64
+	Qty         int
+	Status      string
+}
+
+// OrdersBetween 取执行日落在 [from,to] 的全部订单（含各状态；审核报告用）。
+func (r *TradeRepo) OrdersBetween(from, to string) ([]OrderAuditRow, error) {
+	rows, err := r.db.Query(`SELECT o.id, o.code, o.side, CAST(p.execute_date AS TEXT),
+			o.trigger_price, o.limit_price, o.qty, o.status
+		FROM plan_order o JOIN trade_plan p ON p.id = o.trade_plan_id
+		WHERE p.execute_date >= ? AND p.execute_date <= ?
+		ORDER BY p.execute_date, o.code`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []OrderAuditRow
+	for rows.Next() {
+		var x OrderAuditRow
+		if err := rows.Scan(&x.ID, &x.Code, &x.Side, &x.ExecuteDate,
+			&x.TriggerPx, &x.LimitPx, &x.Qty, &x.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
