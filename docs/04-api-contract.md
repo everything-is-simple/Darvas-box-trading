@@ -140,23 +140,29 @@ type DataQuality struct {
 type BarRepo interface {
     UpsertBars(bars []DailyBar) (int64, error)
     BarsWindow(code string, endDate string, n int) ([]DailyBar, error) // 最近n根K线（boxscan主路径）
-    LatestDates(code string, n int) ([]string, error)
+    BarsRange(code, from, to string, max int) ([]DailyBar, error)     // 区间K线（GUI U2时间范围，M6）
+    LatestDate(code string) (string, error)                            // 个股最新交易日（doctor日历检查）
+    NextDate(code, after string) (string, error)                       // 下一交易日（执行日计算ADR-2）
+    PrevDate(code, before string) (string, error)                      // 前一交易日（信号昨日状态对比）
     CloseOn(code, date string) (float64, bool, error)
     AvgVolume(code string, endDate string, n int) (float64, error)
+    AvgAmount(code string, endDate string, n int) (float64, error)      // 日均成交额（初选流动性）
     LastClose(code string) (float64, bool, error)          // 最新收盘（GUI持仓浮盈亏，M6）
-    BarCount(code, after, until string) (int, error)        // (after, until]区间K线根数（太晚规则/3周约束交易日计数，B2）
+    BarCount(code, after, until string) (int, error)       // (after, until]区间K线根数（太晚规则/3周约束交易日计数，B2）
+    CountBars(code string) (int64, error)                  // 总根数（doctor）
+    HasBar(code, date string) (bool, error)                // 幂等检查（ingest）
 }
 
 type BoxRepo interface {
     UpsertBoxes(boxes []Box) ([]int64, error)
     LatestBox(code string) (*Box, error)
     Ladder(code string) ([]Box, error)          // 阶梯链
-    ActiveBoxes(status string) ([]Box, error)   // 全市场当前confirmed/forming
 }
 
 type PoolRepo interface {
     AppendCandidates(date string, cands []Candidate) error
     CandidatesOn(date string) ([]Candidate, error)
+    LatestCandidateDate() (string, error)       // 最近初选日（GUI缺省日期）
     UpsertWatch(w Watch) error
     WatchByStage(stage string) ([]Watch, error)
     WatchByCode(code string) (*Watch, error)
@@ -165,15 +171,15 @@ type PoolRepo interface {
     RelaxPendingWatches() error                // 买单过期 pending→watching 回退（B2接线）
 }
 
-type SecRepo interface {                        // M6 新增（GUI名称展示）
-    UpsertSecurities(secs []Security) error
-    UpdateNames(names map[string]string) (int64, error) // tnf回填，同名幂等
-    Names() (map[string]string, error)                  // code→name（name<>''）
-}
+// SecRepo 不在 contract 接口面（证券识别=数据层内部职责，见 repo 注释），
+// 但属 store 包公共 API：UpsertSecurities / UpdateNames(tnf回填) / Names /
+// ActiveStockCodes / ActiveWatchCodes。
 
 type SignalRepo interface {
     AppendSignals(sigs []Signal) error
     SignalsOn(date string) ([]Signal, error)
+    SignalsRange(from, to string) ([]Signal, error)   // GUI U2时间范围
+    LatestSignalDate() (string, error)                 // GUI缺省日期
 }
 
 type TradeRepo interface {
@@ -205,6 +211,17 @@ type TradeRepo interface {
     LatestEquity() (*EquitySnapshot, error)
     SetEquityDefault(date string, total float64) error
     PlansRecent(n int) ([]PlanView, error)                 // 最近n个计划+订单+状态（GUI交易记录，M6）
+    // —— 日期范围查询（GUI U2 / M7.2 周报）——
+    FillsRange(from, to string) ([]Fill, error)               // 成交按日期范围（from/to空=不限）
+    PlansRange(from, to string, limit int) ([]PlanView, error) // 计划按日期范围
+    EquityRange(from, to string) ([]EquitySnapshot, error)     // 权益按日期范围（周报曲线）
+    StalePendingCount(today string) (int, error)                // 执行日已过仍pending（周报纪律审计）
+    // —— B3 已交易股票历史库 / C 执行质量审核 ——
+    AddReview(positionID int64, ruleFollowed, errorType, lesson string) error // 复盘录入（UPSERT by position_id）
+    ReviewSummary(code string) ([]ReviewSummaryRow, error)      // 战绩汇总（code空=全部股票）
+    ReviewDetail(code string) ([]ReviewRow, error)               // 单股明细+复盘（review list）
+    TrackRecordByCode(code string) (trades, losses int, totalPnl float64, err error) // 池再纳入提示
+    OrdersBetween(from, to string) ([]OrderAuditRow, error)      // 区间订单（CSV审核报告四维度）
 }
 
 // Fill 成交回录（M4.5 起含 side，0002迁移）
@@ -225,6 +242,7 @@ type RunRepo interface {
     LastOKRun(date, task string) (*TaskResult, bool, error) // 补跑判断
     RunsOn(date string) ([]TaskResult, error)               // 当日全部心跳（GUI仪表盘，M6）
     LatestRunDate() (string, error)                         // 最近有留痕的日期（GUI缺省日期，M6）
+    DatesOverview() ([]DateOverview, error)                 // 有数据的日期列表（GUI U1 全站日期维度）
 }
 
 type ParamRepo interface {
@@ -232,6 +250,7 @@ type ParamRepo interface {
     GetInt(key string, def int) int
     GetString(key string, def string) string
     Set(key, value string) error                          // 留old_value审计
+    All() (map[string]string, error)                      // 全量参数（param list）
 }
 ```
 

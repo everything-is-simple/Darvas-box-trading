@@ -1,7 +1,7 @@
 # 03 · 数据库ERD（SQLite）
 
-> **单一事实源**：`internal/store/migrations/0001_init.sql`。本文档是它的可视化与释义；两者必须同步修改（流程见《06-consistency》）。
-> 版本：schema v1（2026-10-17）
+> **单一事实源**：`internal/store/migrations/`（append-only，0001→0004，最新状态为事实源）。本文档是它的可视化与释义；两者必须同步修改（流程见《06-consistency》）。
+> 版本：schema v4（2026-10-18）
 
 ---
 
@@ -235,10 +235,16 @@ erDiagram
 | daily_bar | `(date)` | 全市场当日截面（screen/pool） |
 | box | `(code, status)` | 跟踪池当前箱体查找 |
 | box | `(code, id)` | 阶梯链回溯 |
+| candidate | `(screen_date)` | 初选日快照查询 |
 | watch | `(stage)` | 池列表视图 |
+| watch | `(code)` | 按股查池状态/两亏拉黑巡检（B2） |
 | trade_review | `(code)` + `UNIQUE(position_id)` | 战绩按股查询 / 每笔一条复盘（B3） |
 | plan_order | `(trade_plan_id, status)` | 计划视图 |
+| position | `(status)` | 持仓/清仓过滤 |
+| trade_fill | `(code, date)` | 成交幂等检查 |
+| trade_fill | `(date)` | 成交按日查询（0002） |
 | signal | `(date, type)` | 当日信号汇总 |
+| signal | `(code, date)` | 个股信号历史（昨日状态对比，首次事件语义） |
 | daily_run | `(date, task)` | 心跳视图/补跑判断 |
 
 ---

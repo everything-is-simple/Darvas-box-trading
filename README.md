@@ -91,7 +91,7 @@ darvas ui     [--addr] [--db]        本地GUI四视图（浏览器，只读）
 darvas run    [--date]               完整盘后流水线（一次性全链路）
 darvas ingest [--date] [--since full]  数据同步（增量/全量）
 darvas boxscan|screen|poolsync|signal|plan|report [--date]   单任务补跑
-darvas weekly [--date]               周报（M7.2，待交付）
+darvas weekly [--date]               周报（M7.2）
 darvas fills  [file] [--yes]         成交粘贴录入（同花顺/通达信/CSV三格式）
 darvas ladder <code>                 个股箱体阶梯（终端打印）
 darvas param  get|set                参数读写（风险系数/箱体宽度/tdx.root等，热调）
@@ -155,7 +155,7 @@ var/                   # 运行时（db/备份/报告）
 ## 当前状态
 
 - ✅ M0 规划与骨架 · M1 数据层（全量<10min）· M2 箱体引擎（35用例）· M3 池 · M4 信号与计划（含账本）· M5 CLI闭环 · M6 GUI四视图
-- 🚧 M7 周而复始：✅ 7.1 常驻调度（serve）· ✅ 7.3 备份轮转+恢复演练 · ⏳ 7.2 周报 · ⏳ 7.4 移植演练 · 观察期：连续20交易日无人值守
+- 🚧 M7 周而复始：✅ 7.1 常驻调度（serve）· ✅ 7.2 周报 · ✅ 7.3 备份轮转+恢复演练 · ⏳ 7.4 移植演练 · 观察期：连续20交易日无人值守
 
 数据源已验证：TDX vipdoc 更新至 2026-10-16 收盘；真实库全链路跑通（142候选入池、茅台29箱体）。
 

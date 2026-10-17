@@ -149,6 +149,15 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 > 格式事实源：EXPORTT 四个年代样本（2009/2015/2019/2024）验证一致。
 > 端到端实录：2015样本10笔（5买5卖闭环）→ 入库+审核报告+review list 战绩
 > 联动（3胜2负）+ 重导幂等全跳过。
+> **D 工程还债（2026-10-18，文档对齐实际代码：观察期门禁卫生）**：docs/04 §3.3
+> 全面对齐 store 方法面——删幻影方法（LatestDates/ActiveBoxes）；BarRepo 13 方法/
+> PoolRepo 9 / SignalRepo 4 / TradeRepo 27（+日期范围4方法+B3五方法）/ RunRepo
+> 补 DatesOverview / ParamRepo 补 All；SecRepo 定性为 store 公共 API 不进接口面。
+> contract.go L1 区加澄清注释：Repo 接口=构造期最小示意，完整方法面以 docs/04
+> §3.3 为事实源（扩展方法返回 store 包类型，补进接口会 import 循环）。docs/03：
+> 版本行 v1→v4、事实源行改指 migrations 目录、索引表补 6 缺口（candidate/
+> watch(code)/signal(code,date)/position(status)/trade_fill 两索引）。README：
+> weekly"待交付"与 M7.2 ⏳ 状态修正（均已实现，M7.4 移植演练仍待）。
 
 ---
 

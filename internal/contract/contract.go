@@ -228,6 +228,11 @@ type PlanParams struct {
 // L1 数据层接口
 // ---------------------------------------------------------------------------
 
+// 说明：本节 Repo 接口为构造期最小示意（Store 构造时按此满足），并非完整方法面。
+// M4.5 后的扩展方法（PlansRecent/AddReview 等返回 store 包类型 PendingOrder/
+// PlanView/ReviewRow），补进本接口会与 store 形成 import 循环，故直接作为
+// store 包公共 API 消费——完整仓储方法面以 docs/04 §3.3 为事实源。
+
 // DayFileReader TDX .day 文件读取器
 type DayFileReader interface {
 	ListCodes() ([]string, error)
