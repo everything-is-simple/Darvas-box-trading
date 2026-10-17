@@ -71,7 +71,7 @@
 Darvas-box-trading/
 ├── README.md                     # 项目总览+快速开始
 ├── docs/                         # 00理论 01需求 02设计 03ERD 04API 05任务 06一致性
-├── cmd/darvas/main.go            # 入口：CLI解析+gui子命令
+├── cmd/darvas/main.go            # 入口：CLI解析+ui/serve子命令
 ├── internal/
 │   ├── contract/                 # ★ 模块间接口定义（单一事实源，见04文档）
 │   │   └── contract.go

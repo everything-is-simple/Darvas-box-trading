@@ -90,6 +90,9 @@ func (p *Pipeline) RunDaily(ctx context.Context, date string) ([]contract.TaskRe
 	})
 	results = append(results, r7)
 
+	// 8. 备份（M7.3/NFR-3 流水线尾部运维动作，非任务：不占 daily_run 心跳位）
+	p.BackupDaily(date)
+
 	return results, nil
 }
 

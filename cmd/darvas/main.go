@@ -22,10 +22,11 @@ import (
 	"darvas/internal/ingest"
 	"darvas/internal/ledger"
 	"darvas/internal/pipeline"
+	"darvas/internal/scheduler"
 	"darvas/internal/store"
 )
 
-const version = "0.3.0-m6"
+const version = "0.4.0-m7"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -69,6 +70,8 @@ func main() {
 		runFills(*db, positional, *yes)
 	case "ui":
 		runUI(*db, *addr)
+	case "serve":
+		runServe(*db, *addr)
 	default:
 		usage()
 		os.Exit(2)
@@ -109,10 +112,11 @@ func usage() {
   darvas run    [--date]                     完整盘后流水线（M5）
   darvas fills  [file] [--yes]               成交粘贴录入（M4.5，无file读stdin）
   darvas ui     [--addr]                     本地GUI（浏览器四视图，M6）
+  darvas serve  [--addr]                     常驻模式（调度+GUI+备份，M7.1）
 
 每日时间表（docs/01-requirements.md §4）:
   15:30 ingest → 16:00 boxscan → 16:10 screen → 16:20 poolsync
-  → 16:30 signal → 16:40 plan → 16:45 report
+  → 16:30 signal → 16:40 plan → 16:45 report → 备份轮转
 `)
 }
 
@@ -491,4 +495,33 @@ func runUI(db, addr string) {
 	must(err)
 	defer st.Close()
 	must(gui.Run(st, addr, true))
+}
+
+// runServe 常驻模式（M7.1 无人值守）：启动即 CatchUp 补跑 + 按时刻表调度七任务链
+// + 流水线收尾自动备份（NFR-3）+ 本地GUI。读写分离双连接（WAL：调度写+GUI读
+// 互不阻塞，ADR-5）。用法：darvas serve [--addr 127.0.0.1:8787]。
+func runServe(db, addr string) {
+	dbp := dbPath(db)
+	stW, err := store.Open(dbp) // 调度/写连接
+	must(err)
+	defer stW.Close()
+	stR, err := store.Open(dbp) // GUI只读连接
+	must(err)
+	defer stR.Close()
+
+	root := stW.ParamRepo.GetString("tdx.root", tdxRoot())
+	reader := tdx.NewReader(root)
+	pipe := pipeline.New(stW, ingest.New(reader, stW, ""))
+
+	sched := scheduler.New(stW, pipe, reader)
+	sched.OnDayDone = pipe.BackupDaily // report ok 后：VACUUM备份+30份轮转
+	must(sched.CatchUp())
+	must(sched.Start())
+	defer sched.Stop()
+
+	fmt.Printf("=== darvas 常驻模式（%s）===\n", version)
+	fmt.Println("时刻表: 15:30 ingest → 16:00 boxscan → 16:10 screen → 16:20 poolsync",
+		"→ 16:30 signal → 16:40 plan → 16:45 report → 备份")
+	fmt.Printf("GUI: http://%s （Ctrl+C 退出）\n", addr)
+	must(gui.Run(stR, addr, false)) // 常驻模式不自动弹浏览器，需要时手动打开
 }

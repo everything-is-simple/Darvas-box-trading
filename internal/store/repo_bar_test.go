@@ -181,8 +181,8 @@ func TestUpsertSecurities(t *testing.T) {
 	secs := []contract.Security{
 		DeriveSecurity("sh600519", "2001-08-27"), // 沪主板 main
 		DeriveSecurity("sz300750", ""),           // 创业板 gem
-		DeriveSecurity("sh688981", ""),            // 科创板 star
-		DeriveSecurity("sh000001", ""),            // 指数 index
+		DeriveSecurity("sh688981", ""),           // 科创板 star
+		DeriveSecurity("sh000001", ""),           // 指数 index
 	}
 	if err := st.SecRepo.UpsertSecurities(secs); err != nil {
 		t.Fatal(err)

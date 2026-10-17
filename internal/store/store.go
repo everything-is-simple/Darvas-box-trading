@@ -140,9 +140,9 @@ func (s *Store) Backup(dest string) error {
 
 // BulkLoadToggle 切换全量导入的性能优化（docs/01 D1 / docs/05 M1.1）：
 //
-//   on=true  删除 daily_bar 的 (date) 二级索引 → 导入期每行少维护一棵 B 树，
-//            对 11942 只×散列 code 的随机插入提速一个数量级；
-//   on=false 重建该索引（SQLite 用排序构建，远快于逐行维护）。
+//	on=true  删除 daily_bar 的 (date) 二级索引 → 导入期每行少维护一棵 B 树，
+//	         对 11942 只×散列 code 的随机插入提速一个数量级；
+//	on=false 重建该索引（SQLite 用排序构建，远快于逐行维护）。
 //
 // PK(code,date) 是 WITHOUT ROWID 表本体，不可删；只动二级索引。
 // 仅限全量导入（幂等可重跑），增量导入不必调用。

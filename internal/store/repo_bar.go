@@ -16,7 +16,9 @@ func NewBarRepo(db *sql.DB) *BarRepo { return &BarRepo{db: db} }
 
 // batchInsertSize 每条 INSERT 语句拼入的行数。
 // 基准实测（internal/store/bench_test.go TestBenchInsertStrategies）：
-//   batch=500 → 11k bars/sec；batch=100 → 35k bars/sec（最优）；batch=1000 → 12k。
+//
+//	batch=500 → 11k bars/sec；batch=100 → 35k bars/sec（最优）；batch=1000 → 12k。
+//
 // modernc.org/sqlite 对大批次参数绑定有惩罚，100 行×8列=800 参数为甜点。
 const batchInsertSize = 100
 
@@ -155,6 +157,14 @@ func (r *BarRepo) AvgAmount(code string, endDate string, n int) (float64, error)
 func (r *BarRepo) LatestDate(code string) (string, error) {
 	var d string
 	err := r.db.QueryRow(`SELECT COALESCE(MAX(date),'') FROM daily_bar WHERE code = ?`, code).Scan(&d)
+	return d, err
+}
+
+// PrevDate 该证券在 before 之前的最近日期（scheduler CatchUp 判定前一交易日，ADR-2）。
+func (r *BarRepo) PrevDate(code, before string) (string, error) {
+	var d string
+	err := r.db.QueryRow(`SELECT COALESCE(MAX(date),'') FROM daily_bar WHERE code = ? AND date < ?`,
+		code, before).Scan(&d)
 	return d, err
 }
 

@@ -42,8 +42,8 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 
 	// 既有箱体：(top,bottom) → 可复用的 DB id 队列（同形箱体按 id 序复用）
 	type exBox struct {
-		id        int64
-		top, bot  float64
+		id       int64
+		top, bot float64
 	}
 	rows, err := tx.Query(`SELECT id, top, bottom FROM box WHERE code = ? ORDER BY id`, code)
 	if err != nil {
@@ -131,7 +131,7 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 		}
 	}
 	if len(stale) > 0 {
-		del, err := tx.Exec(`DELETE FROM box WHERE id IN (` + strings.Join(stale, ",") + `)
+		del, err := tx.Exec(`DELETE FROM box WHERE id IN (`+strings.Join(stale, ",")+`)
 			AND id NOT IN (SELECT entry_box_id FROM position WHERE code = ? AND entry_box_id IS NOT NULL)
 			AND id NOT IN (SELECT current_box_id FROM watch WHERE code = ? AND current_box_id IS NOT NULL)
 			AND id NOT IN (SELECT box_id FROM signal WHERE code = ? AND box_id IS NOT NULL)`,
