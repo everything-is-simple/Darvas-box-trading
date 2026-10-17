@@ -45,7 +45,7 @@ func (r *PoolRepo) AppendCandidates(date string, cands []contract.Candidate) err
 
 // CandidatesOn 读某日全部候选（按分数降序）。
 func (r *PoolRepo) CandidatesOn(date string) ([]contract.Candidate, error) {
-	rows, err := r.db.Query(`SELECT screen_date, code, score, reasons_json, fundamental_flag
+	rows, err := r.db.Query(`SELECT CAST(screen_date AS TEXT), code, score, reasons_json, fundamental_flag
 		FROM candidate WHERE screen_date = ? ORDER BY score DESC`, date)
 	if err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func (r *PoolRepo) UpsertWatch(w contract.Watch) error {
 
 // WatchByStage 按状态查跟踪池（GUI 池列表视图）。
 func (r *PoolRepo) WatchByStage(stage contract.WatchStage) ([]contract.Watch, error) {
-	rows, err := r.db.Query(`SELECT id, code, COALESCE(candidate_id,0), added_date, stage,
+	rows, err := r.db.Query(`SELECT id, code, COALESCE(candidate_id,0), CAST(added_date AS TEXT), stage,
 		COALESCE(current_box_id,0), box_count, COALESCE(exit_reason,''), note
 		FROM watch WHERE stage = ? ORDER BY code`, string(stage))
 	if err != nil {
@@ -125,7 +125,7 @@ func (r *PoolRepo) WatchByCode(code string) (*contract.Watch, error) {
 	var w contract.Watch
 	var st string
 	var cid, boxID sql.NullInt64
-	err := r.db.QueryRow(`SELECT id, code, candidate_id, added_date, stage, current_box_id, box_count, exit_reason, note
+	err := r.db.QueryRow(`SELECT id, code, candidate_id, CAST(added_date AS TEXT), stage, current_box_id, box_count, exit_reason, note
 		FROM watch WHERE code = ? ORDER BY id DESC LIMIT 1`, code).
 		Scan(&w.ID, &w.Code, &cid, &w.AddedDate, &st, &boxID, &w.BoxCount, &w.ExitReason, &w.Note)
 	if err == sql.ErrNoRows {

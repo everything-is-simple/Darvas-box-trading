@@ -48,7 +48,7 @@ func (r *SignalRepo) AppendSignals(sigs []contract.Signal) error {
 
 // SignalsOn 读某日全部信号（按类型、代码排序）。
 func (r *SignalRepo) SignalsOn(date string) ([]contract.Signal, error) {
-	rows, err := r.db.Query(`SELECT date, code, type, COALESCE(box_id,0), close_px, box_level, payload_json
+	rows, err := r.db.Query(`SELECT CAST(date AS TEXT), code, type, COALESCE(box_id,0), close_px, box_level, payload_json
 		FROM signal WHERE date = ? ORDER BY type, code`, date)
 	if err != nil {
 		return nil, err

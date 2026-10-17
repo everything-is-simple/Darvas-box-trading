@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"darvas/internal/contract"
+	"darvas/internal/ledger"
 	"darvas/internal/store"
 )
 
@@ -72,6 +73,10 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		posByCode[positions[i].Code] = &positions[i]
 	}
 
+	// M4.4 止损上移（docs/00 §5.2：新箱体确认 → 止损上移到新箱下轨下方）。
+	// DB 触发器保证只升不降（降则 ABORT），此处仅在候选值更高时调用。
+	stopMoves := p.raiseStops(positions, sellDisc)
+
 	executeDate := nextDay(planDate)
 	var orders []contract.PlanOrder
 	for _, s := range sigs {
@@ -108,12 +113,53 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		res.Status, res.Error = "failed", err.Error()
 		return res, err
 	}
+
+	// 收尾：过期未成交订单（执行日已过的 pending → expired）+ 当日权益快照
+	if n, err := p.st.TradeRepo.ExpireStaleOrders(planDate); err == nil && n > 0 {
+		p.log.Printf("过期订单 %d 笔（执行日已过未成交）", n)
+	}
+	if err := ledger.New(p.st).Snapshot(ctx, planDate); err != nil {
+		p.log.Printf("⚠ 权益快照失败: %v", err)
+	}
 	res.Status = "ok"
 	res.AffectedRows = int64(len(orders))
 	res.DurationMS = time.Since(start).Milliseconds()
-	p.log.Printf("plan %s→%s: %d signals → %d orders, equity=%.0f, %s",
-		planDate, executeDate, len(sigs), len(orders), equity, time.Since(start).Round(time.Millisecond))
+	p.log.Printf("plan %s→%s: %d signals → %d orders, equity=%.0f, 止损上移=%d, %s",
+		planDate, executeDate, len(sigs), len(orders), equity, stopMoves, time.Since(start).Round(time.Millisecond))
 	return res, nil
+}
+
+// raiseStops 止损上移（M4.4）：对每只持仓，若最新箱体下轨已3日确认
+// 且 新止损 = 下轨×sellDisc 高于现止损 → UpdateStop（触发器兜底拒绝下降）。
+// 入场箱体本身不参与（其下轨即初始止损）。返回上移笔数。
+func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) int {
+	moves := 0
+	for i := range positions {
+		pos := &positions[i]
+		lb, err := p.st.BoxRepo.LatestBox(pos.Code)
+		if err != nil || lb == nil {
+			continue
+		}
+		// 下轨未3日确认（forming/未确认）不作为止损依据
+		if lb.Bottom <= 0 || lb.BottomConfirmed == "" {
+			continue
+		}
+		// 入场箱体不算上移
+		if lb.ID == pos.EntryBoxID {
+			continue
+		}
+		cand := lb.Bottom * sellDisc
+		if cand > pos.StopPrice {
+			if err := p.st.TradeRepo.UpdateStop(pos.ID, cand); err != nil {
+				p.log.Printf("⚠ 止损上移被拒(触发器): pos#%d %s: %v", pos.ID, pos.Code, err)
+				continue
+			}
+			p.log.Printf("止损上移 %s: %.2f → %.2f（新箱体 #%d 下轨 %.2f）",
+				pos.Code, pos.StopPrice, cand, lb.ID, lb.Bottom)
+			moves++
+		}
+	}
+	return moves
 }
 
 // buyOrder 构造停损买单（breakout=leg1, pyramid=leg2/3）。

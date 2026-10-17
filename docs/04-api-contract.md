@@ -145,6 +145,35 @@ type TradeRepo interface {
     OpenPositions() ([]Position, error)
     UpdateStop(positionID int64, newStop float64) error    // 触发器保证只升不降
     UpsertEquity(e EquitySnapshot) error
+    // —— M4.5/M4.6 扩展 ——
+    FillsAll() ([]Fill, error)                             // 账本重算/审计
+    FillsOn(date string) ([]Fill, error)
+    FillExists(code, date, side string, price float64, qty int) (bool, error)  // 幂等粘贴
+    OrderStatus(orderID int64) (string, error)
+    PendingOrdersFor(code, side, date string) ([]PendingOrder, error)          // 成交匹配
+    ExpireStaleOrders(today string) (int64, error)         // 过期未成交订单
+    PositionByCode(code string) (*Position, error)
+    CreatePosition(p Position) (int64, error)
+    UpdatePositionQtyCost(id int64, qty int, avgCost float64) error
+    ClosePosition(id int64, date, reason string) error
+    AddLeg(positionID int64, legNo int, date string, qty int, price, stopAfter float64, planOrderID int64) error
+    LegsByPosition(positionID int64) ([]map[string]any, error)
+    AllPositions() ([]Position, error)                     // 含closed（交易记录视图）
+    EquityAll() ([]EquitySnapshot, error)
+    LatestEquity() (*EquitySnapshot, error)
+    SetEquityDefault(date string, total float64) error
+}
+
+// Fill 成交回录（M4.5 起含 side，0002迁移）
+type Fill struct {
+    PlanOrderID int64
+    Code        string
+    Date        string
+    Side        string  // buy / sell
+    Price       float64
+    Qty         int
+    Fee         float64
+    RawText     string  // 粘贴原文（审计）
 }
 
 type RunRepo interface {
@@ -260,6 +289,20 @@ type Ledger interface {
     ParseFill(rawText string) ([]Fill, error)             // 券商成交文本粘贴解析
 }
 ```
+
+实现要点（M4.5/M4.6，internal/ledger）：
+
+- **ParseFill**：支持三种常见券商格式（同花顺空白分隔 / 通达信带名称 / CSV单字母BS），
+  表头行与空行自动跳过；解析失败整批拒绝（宁可拒绝不可错账）。fee 可选缺省0。
+- **ApplyFills**：fill → 匹配 pending 订单（执行日≤成交日、触发价最接近）→ 订单 filled
+  （状态机：pending→placed→filled/cancelled/expired，`CanTransition` 封闭集合）→
+  持仓状态机（买=开仓/加码+腿记录+止损上移；卖=减仓/清仓）→ 幂等（code+date+side+price+qty）。
+- **Snapshot**：现金 = 本金(param `equity.base`，默认100万) + Σ卖出所得 − Σ买入支出；
+  市值 = open持仓 × 当日收盘（停牌回退最近收盘）。现金不落增量字段，永远可从成交重算。
+- **AuditEquation** 三重校验：① 权益恒等式 cash+mv=total（重算 vs 快照 + 快照内部自洽）；
+  ② 持仓闭合 Σ买−Σ卖=qty（逐股，孤儿净持仓报警）；③ 订单闭合 filled 订单必有 fill。
+- **CLI**：`darvas fills [file] [--yes]`（预览→确认→入库→快照→审计）；
+  doctor 增账本检查项（触发器在场/恒等式/滞留订单）。
 
 ---
 

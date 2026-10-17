@@ -42,7 +42,7 @@ func (r *RunRepo) FinishRun(id int64, res contract.TaskResult) error {
 func (r *RunRepo) LastOKRun(date, task string) (contract.TaskResult, bool, error) {
 	var res contract.TaskResult
 	var finished sql.NullTime
-	err := r.db.QueryRow(`SELECT task, date, status, finished_at, COALESCE(affected_rows,0), COALESCE(error,'')
+	err := r.db.QueryRow(`SELECT task, CAST(date AS TEXT), status, finished_at, COALESCE(affected_rows,0), COALESCE(error,'')
 		FROM daily_run WHERE date = ? AND task = ? AND status = 'ok'`, date, task).
 		Scan(&res.Task, &res.Date, &res.Status, &finished, &res.AffectedRows, &res.Error)
 	if err == sql.ErrNoRows {

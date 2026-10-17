@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"darvas/internal/contract"
 	"darvas/internal/datasource/tdx"
 	"darvas/internal/ingest"
+	"darvas/internal/ledger"
 	"darvas/internal/pipeline"
 	"darvas/internal/store"
 )
@@ -34,6 +36,7 @@ func main() {
 	date := fs.String("date", time.Now().Format("2006-01-02"), "交易日 YYYY-MM-DD")
 	db := fs.String("db", "", "数据库路径（默认 exe同目录/var/darvas.db）")
 	since := fs.String("since", "2024-01-01", "全量导入起始日")
+	yes := fs.Bool("yes", false, "fills: 解析后直接入库（跳过确认）")
 	// Go flag 遇首个非 flag 即停止；这里把 flag 与位置参数分离，使
 	// `darvas ladder <code> --db <path>` 这样的混合顺序也能正确解析。
 	flagArgs, positional := splitFlags(os.Args[2:])
@@ -60,6 +63,8 @@ func main() {
 		runParam(*db, positional)
 	case "run":
 		runPipeline(*db, *date)
+	case "fills":
+		runFills(*db, positional, *yes)
 	default:
 		usage()
 		os.Exit(2)
@@ -98,6 +103,7 @@ func usage() {
   darvas ladder  <code>                      个股箱体阶梯（M2）
   darvas param   get|set                     参数读写
   darvas run    [--date]                     完整盘后流水线（M5）
+  darvas fills  [file] [--yes]               成交粘贴录入（M4.5，无file读stdin）
 
 每日时间表（docs/01-requirements.md §4）:
   15:30 ingest → 16:00 boxscan → 16:10 screen → 16:20 poolsync
@@ -174,7 +180,137 @@ func runDoctor(db string) {
 			fmt.Printf("[calendar] %s 最新=%s\n", idx, latest)
 		}
 	}
+
+	// 账本检查项（M4.6）：止损触发器在场 + 恒等式审计
+	var trg int
+	must(st.DB().QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'
+		AND name='trg_position_stop_no_down'`).Scan(&trg))
+	if trg == 1 {
+		fmt.Println("[ledger] 止损只升不降触发器: 在位")
+	} else {
+		fmt.Println("⚠ [ledger] 止损只升不降触发器缺失！请检查迁移")
+	}
+	led := ledger.New(st)
+	ok, detail, err := led.AuditEquation(context.Background(), "")
+	if err != nil {
+		fmt.Printf("⚠ [ledger] 审计执行失败: %v\n", err)
+	} else if ok {
+		fmt.Printf("[ledger] 恒等式审计: %s\n", detail)
+	} else {
+		fmt.Printf("⚠ [ledger] 恒等式审计不通过: %s\n", detail)
+	}
+
+	// 订单一致性：执行日已过仍 pending 的订单
+	var staleOrders int
+	must(st.DB().QueryRow(`SELECT COUNT(*) FROM plan_order o JOIN trade_plan p ON p.id=o.trade_plan_id
+		WHERE o.status='pending' AND p.execute_date < date('now','localtime')`).Scan(&staleOrders))
+	if staleOrders > 0 {
+		fmt.Printf("⚠ [ledger] %d 笔订单执行日已过仍 pending（跑 run 自动过期或人工核对）\n", staleOrders)
+	}
+
 	fmt.Println("[doctor] OK")
+}
+
+// runFills 成交粘贴录入（M4.5，ADR-4）：file 参数或 stdin 读入 → 解析预览 → 入库。
+// 默认只预览；--yes 直接入库；交互终端（无重定向）时询问确认。
+func runFills(db string, args []string, yes bool) {
+	var raw string
+	if len(args) > 0 {
+		b, err := os.ReadFile(args[0])
+		must(err)
+		raw = string(b)
+	} else {
+		b, err := io.ReadAll(os.Stdin)
+		must(err)
+		raw = string(b)
+	}
+	if strings.TrimSpace(raw) == "" {
+		fmt.Println("用法: darvas fills [file] [--yes]   （或粘贴文本后 Ctrl+Z/Ctrl+D 结束）")
+		os.Exit(2)
+	}
+
+	st, err := store.Open(dbPath(db))
+	must(err)
+	defer st.Close()
+	led := ledger.New(st)
+
+	fills, err := led.ParseFill(raw)
+	must(err)
+
+	fmt.Printf("解析出 %d 笔成交:\n", len(fills))
+	fmt.Println("日期        代码      方向  价格      数量    手续费")
+	for _, f := range fills {
+		fmt.Printf("%s  %-9s %-4s  %8.2f  %5d  %.2f\n",
+			f.Date, f.Code, f.Side, f.Price, f.Qty, f.Fee)
+	}
+	if !yes {
+		if isTerminal(os.Stdin) {
+			fmt.Print("\n确认入库? [y/N] ")
+			var ans string
+			_, _ = fmt.Scanln(&ans)
+			ans = strings.TrimSpace(strings.ToLower(ans))
+			if ans != "y" && ans != "yes" {
+				fmt.Println("已取消（未入库）。加 --yes 可跳过确认。")
+				return
+			}
+		} else {
+			fmt.Println("\n（预览模式：未入库。加 --yes 直接入库）")
+			return
+		}
+	}
+
+	results, err := led.ApplyFills(fills)
+	must(err)
+	applied, dup, matched, stopUp := 0, 0, 0, 0
+	for _, r := range results {
+		if r.Duplicate {
+			dup++
+			continue
+		}
+		applied++
+		if r.Matched {
+			matched++
+		}
+		if r.StopUpdated {
+			stopUp++
+		}
+		fmt.Printf("✓ %s %s %.2f×%d", r.Fill.Code, r.Fill.Date, r.Fill.Price, r.Fill.Qty)
+		if r.Matched {
+			fmt.Printf(" → 订单#%d已成交", r.OrderID)
+		} else {
+			fmt.Print(" → 计划外成交")
+		}
+		if r.StopUpdated {
+			fmt.Print("，止损已上移")
+		}
+		fmt.Println()
+	}
+	fmt.Printf("\n入库 %d 笔（匹配订单 %d，止损上移 %d，重复跳过 %d）\n", applied, matched, stopUp, dup)
+
+	// 重算当日权益快照并审计
+	dates := map[string]bool{}
+	for _, f := range fills {
+		dates[f.Date] = true
+	}
+	for d := range dates {
+		must(led.Snapshot(context.Background(), d))
+	}
+	if ok, detail, err := led.AuditEquation(context.Background(), ""); err == nil {
+		if ok {
+			fmt.Printf("[审计] %s\n", detail)
+		} else {
+			fmt.Printf("⚠ [审计] %s\n", detail)
+		}
+	}
+}
+
+// isTerminal 判断 stdin 是否交互终端（非重定向）。
+func isTerminal(f *os.File) bool {
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 func runParam(db string, args []string) {

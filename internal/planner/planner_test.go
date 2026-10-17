@@ -165,3 +165,61 @@ func itoa(n int) string {
 }
 
 func approx(a, b, tol float64) bool { return a-b < tol && b-a < tol }
+
+// TestPlannerRaiseStop M4.4 验收：新箱体确认 → 止损只升不降。
+// ① 更高下轨的确认箱体 → 止损上移；② 更低候选不降（应用层跳过 + 触发器ABORT双防护）。
+func TestPlannerRaiseStop(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
+
+	// 入场箱体（旧）：bottom=17 → 初始止损 17×0.97=16.49
+	oldBox := contract.Box{Code: code, Top: 24, Bottom: 17, TopConfirmed: "2026-09-01",
+		BottomConfirmed: "2026-09-05", Status: contract.BoxBrokenUp}
+	ids, err := st.BoxRepo.UpsertBoxes([]contract.Box{oldBox})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 持仓：entry=旧箱, stop=16.49
+	posID, err := st.TradeRepo.CreatePosition(contract.Position{
+		Code: code, OpenedDate: "2026-10-10", EntryBoxID: ids[0], Qty: 1200, AvgCost: 24.72, StopPrice: 16.49,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 新箱体（更高阶梯）：bottom=20 已确认 → 候选止损 20×0.97=19.40 > 16.49
+	newBox := contract.Box{Code: code, Top: 30, Bottom: 20, TopConfirmed: "2026-10-12",
+		BottomConfirmed: "2026-10-16", Status: contract.BoxConfirmed, PrevBoxID: ids[0]}
+	if _, err := st.BoxRepo.UpsertBoxes([]contract.Box{newBox}); err != nil {
+		t.Fatal(err)
+	}
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	poses, _ := st.TradeRepo.OpenPositions()
+	if len(poses) != 1 {
+		t.Fatalf("positions=%d want 1", len(poses))
+	}
+	if !approx(poses[0].StopPrice, 19.40, 0.01) {
+		t.Errorf("止损应上移到19.40, got %.2f", poses[0].StopPrice)
+	}
+
+	// 只升不降②：另一个更低箱体（bottom=15，候选14.55 < 19.40）→ 应用层不调用
+	lowBox := contract.Box{Code: code, Top: 22, Bottom: 15, TopConfirmed: "2026-10-14",
+		BottomConfirmed: "2026-10-16", Status: contract.BoxConfirmed, PrevBoxID: ids[0]}
+	st.BoxRepo.UpsertBoxes([]contract.Box{lowBox})
+	if _, err := p.Build(context.Background(), "2026-10-17"); err != nil {
+		t.Fatalf("Build#2: %v", err)
+	}
+	poses, _ = st.TradeRepo.OpenPositions()
+	if !approx(poses[0].StopPrice, 19.40, 0.01) {
+		t.Errorf("止损不得下降: got %.2f want 19.40", poses[0].StopPrice)
+	}
+
+	// 只升不降③：直接调 UpdateStop 下降 → 触发器 ABORT
+	if err := st.TradeRepo.UpdateStop(posID, 18.0); err == nil {
+		t.Error("UpdateStop 下降应被触发器 ABORT")
+	}
+}

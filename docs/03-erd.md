@@ -133,6 +133,7 @@ erDiagram
         INTEGER id PK
         INTEGER plan_order_id FK
         DATE date
+        TEXT side "buy/sell (0002迁移)"
         REAL price
         INTEGER qty
         REAL fee

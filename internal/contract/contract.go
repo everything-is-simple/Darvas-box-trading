@@ -139,6 +139,7 @@ type Fill struct {
 	PlanOrderID int64
 	Code        string
 	Date        string
+	Side        string // buy / sell（0002迁移；粘贴解析或订单方向回填）
 	Price       float64
 	Qty         int
 	Fee         float64

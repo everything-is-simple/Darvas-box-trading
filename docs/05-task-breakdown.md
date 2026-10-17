@@ -99,14 +99,20 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 | 4.1 | 四类信号引擎 | breakout/pyramid/stop/failed_breakout判定 | 每类≥3构造用例 | ✅ |
 | 4.2 | 仓位计算 | 风险公式+整手+单股上限+腿数上限 | 边界用例（资金不足/超上限） | ✅ 单测验证qty公式 |
 | 4.3 | 计划生成 | trade_plan+plan_order（触发价/委托价/数量/腿号/理由JSON） | 六问全部有书面答案 | ✅ |
-| 4.4 | 止损上移 | 新箱体确认→UpdateStop（只升不降触发器验证） | 降止损被ABORT | ✅ 触发器已建(0001) |
-| 4.5 | 成交解析 | 券商成交文本粘贴解析（常见2-3种格式） | 样本文本通过 | ⏳ M4.5 |
-| 4.6 | 账本 | 权益快照+恒等式审计 | 手工账核对 | ✅ 基础权益快照 |
+| 4.4 | 止损上移 | 新箱体确认→UpdateStop（只升不降触发器验证） | 降止损被ABORT | ✅ planner.raiseStops接线+单测3断言 |
+| 4.5 | 成交解析 | 券商成交文本粘贴解析（常见2-3种格式） | 样本文本通过 | ✅ 2026-10-17 三格式解析+ApplyFills订单流转 |
+| 4.6 | 账本 | 权益快照+恒等式审计 | 手工账核对 | ✅ 2026-10-17 Snapshot重算+AuditEquation三重校验+doctor接线 |
 
 > M4 已实现：`internal/store/repo_signal.go`+`repo_trade.go`（SignalRepo/TradeRepo）+
 > `internal/signal/signal.go`（四类信号：stop优先>failed>breakout/pyramid）+
 > `internal/planner/planner.go`（qty=floor(equity×risk%/(trigger-stop)/100)×100、单股上限、腿号、T+1执行日）。
 > planner单测2例验证买/卖单数量公式。
+> **M4收尾（2026-10-17）**：`internal/ledger/ledger.go`（ParseFill三格式/ApplyFills订单状态机/
+> Snapshot/AuditEquation）+ migration 0002（trade_fill.side）+ CLI `fills` 子命令 +
+> doctor 账本检查项 + planner.raiseStops 止损上移接线（M4.4）。
+> 附带修复两个潜伏bug：①DATE列被modernc驱动转RFC3339（全repo CAST(date AS TEXT)统一修复，
+> 此前 signal.withinDays 的 failed_breakout 判定实际失效）；
+> ②UpsertBoxes 重算替换会撞 position/watch/signal 外键（改为按(top,bottom)匹配复用ID+引用保护删除）。
 
 ---
 
