@@ -1,0 +1,11 @@
+# 运行时数据不入库
+var/
+*.db
+*.db-wal
+*.db-shm
+*.exe
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
