@@ -35,17 +35,27 @@ def read(p):
         return f.read()
 
 def check_c1_enums():
-    """contract.go 枚举常量 vs DDL CHECK IN 集合
+    """contract.go 枚举常量 vs 最终生效 DDL 的 CHECK IN 集合
     仅核对 contract.go 中显式定义了枚举类型的列（BoxStatus/WatchStage/SignalType）。
     其余列（position.status/order.status/daily_run.status/fundamental_flag/side/order_kind）
     在 contract.go 中用普通字符串表示，DDL 的 CHECK 即其运行时守卫——不要求枚举对齐。
+    2026-10-18（0003起）：迁移可重建表改 CHECK（如 watch 六值），纯文本拼接会取到旧定义；
+    改为内存库按序执行全部迁移后，从 sqlite_master 读最终生效 DDL。
     """
+    import sqlite3
     code = read(CONTRACT_GO)
-    # DDL CHECK IN
-    sql = ""
+    parts = []
     for fn in sorted(os.listdir(MIGRATIONS_DIR)):
         if fn.endswith(".sql"):
-            sql += read(os.path.join(MIGRATIONS_DIR, fn)) + "\n"
+            parts.append(read(os.path.join(MIGRATIONS_DIR, fn)))
+    try:
+        con = sqlite3.connect(":memory:")
+        con.executescript("\n".join(parts))
+        ddl = " ".join(r[0] for r in con.execute(
+            "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL").fetchall())
+        con.close()
+    except Exception as e:
+        return fail(f"C1 迁移无法在内存库执行: {e}")
 
     # 列→contract枚举映射（仅这些列要求对齐）
     col_to_enum = {
@@ -56,12 +66,12 @@ def check_c1_enums():
     rc = 0
     for col_key, enum_name in col_to_enum.items():
         table, col = col_key.split(".")
-        # 取该列的 CHECK IN 集合
+        # sqlite_master 存储的建表语句（表名可能带引号：RENAME 重建的表存为 "watch"，原建表无引号）
         m = re.search(
-            r"CREATE TABLE IF NOT EXISTS\s+" + table + r"\b.*?CHECK\s*\(\s*" + col +
-            r"\s+IN\s*\(([^)]+)\)\s*\)", sql, re.I | re.S)
+            r"CREATE TABLE\s+(?:IF NOT EXISTS\s+)?[\"'`]?" + table + r"[\"'`]?\s*\(.*?" +
+            r"CHECK\s*\(\s*" + col + r"\s+IN\s*\(([^)]+)\)\s*\)", ddl, re.I | re.S)
         if not m:
-            rc |= fail(f"C1 找不到 {col_key} 的 CHECK 约束")
+            rc |= fail(f"C1 找不到 {col_key} 的 CHECK 约束（最终生效 schema）")
             continue
         ddl_vals = set(re.findall(r"'(\w+)'", m.group(1)))
         # 取 contract.go 中该枚举类型的常量值
@@ -102,17 +112,21 @@ def check_c2_tables():
     return 0
 
 def check_c3_params():
-    """migrations param种子键 vs docs/01 §6 参数键"""
+    """migrations param种子键 vs docs/01 §6 参数键
+    2026-10-18：合并全部迁移文件的 param INSERT 块（0003起参数种子分布在多个迁移）。
+    """
     sql = ""
     for fn in sorted(os.listdir(MIGRATIONS_DIR)):
         if fn.endswith(".sql"):
             sql += read(os.path.join(MIGRATIONS_DIR, fn)) + "\n"
-    # 只取 INSERT INTO param 语句块（含多行 VALUES 列表），避免 CHECK IN 值污染
-    m = re.search(r"INSERT OR IGNORE INTO param\(key, value\)\s*VALUES\s*(.*?);",
-                  sql, re.I | re.S)
-    if not m:
+    # 取全部 INSERT INTO param 语句块（含多行 VALUES 列表），避免 CHECK IN 值污染
+    blocks = re.findall(r"INSERT OR IGNORE INTO param\(key, value\)\s*VALUES\s*(.*?);",
+                         sql, re.I | re.S)
+    if not blocks:
         return fail("C3 找不到 param 种子 INSERT")
-    keys = set(re.findall(r"\('([\w.]+)',\s*'", m.group(1)))
+    keys = set()
+    for b in blocks:
+        keys |= set(re.findall(r"\('([\w.]+)',\s*'", b))
     req = read(REQ_MD)
     doc_keys = set(re.findall(r"`([\w.]+)`", req))
     missing = keys - doc_keys

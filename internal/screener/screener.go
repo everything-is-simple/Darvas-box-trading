@@ -40,6 +40,7 @@ func (s *Screener) params() contract.ScreenParams {
 		RSThreshold: s.st.ParamRepo.GetFloat("screen.rsthreshold", 1.2),
 		VolRatioMin: 2.0,
 		VolRatioMax: 5.0,
+		LateDays:    s.st.ParamRepo.GetInt("screen.latedays", 4),
 	}
 }
 
@@ -146,8 +147,16 @@ func (s *Screener) evaluate(code, date string, p contract.ScreenParams, idxRet f
 	}
 
 	// 条件4 箱体形态：confirmed 或刚 broken_up（达瓦斯核心，候选门槛）
+	// B2① 太晚规则（原书：股价四天都收在突破点之上=看到太晚，放弃）：
+	//   broken_up 箱体突破后已走过 ≥ LateDays 个交易日 → 不入候选池。
 	if box, err := s.st.BoxRepo.LatestBox(code); err == nil && box != nil {
 		boxOK := box.Status == contract.BoxConfirmed || box.Status == contract.BoxBrokenUp
+		if boxOK && box.Status == contract.BoxBrokenUp && box.BrokenDate != "" && p.LateDays > 0 {
+			if n, err := s.st.BarRepo.BarCount(code, box.BrokenDate, date); err == nil && n >= p.LateDays {
+				r["too_late_days"] = n
+				boxOK = false
+			}
+		}
 		r["box_status"] = string(box.Status)
 		r["box_top"] = box.Top
 		r["box_bottom"] = box.Bottom

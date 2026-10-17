@@ -22,6 +22,7 @@ import (
 	"darvas/internal/ingest"
 	"darvas/internal/ledger"
 	"darvas/internal/pipeline"
+	"darvas/internal/pool"
 	"darvas/internal/scheduler"
 	"darvas/internal/store"
 )
@@ -40,6 +41,8 @@ func main() {
 	since := fs.String("since", "2024-01-01", "全量导入起始日")
 	yes := fs.Bool("yes", false, "fills: 解析后直接入库（跳过确认）")
 	addr := fs.String("addr", "127.0.0.1:8787", "ui: HTTP监听地址")
+	resume := fs.Float64("resume", 0, "pool suspend: 挂起激活价（收盘≥此价自动恢复跟踪）")
+	reason := fs.String("reason", "", "pool remove: 人工移除原因")
 	// Go flag 遇首个非 flag 即停止；这里把 flag 与位置参数分离，使
 	// `darvas ladder <code> --db <path>` 这样的混合顺序也能正确解析。
 	flagArgs, positional := splitFlags(os.Args[2:])
@@ -68,6 +71,8 @@ func main() {
 		runPipeline(*db, *date)
 	case "boxscan", "screen", "poolsync", "signal", "plan", "report":
 		runRerun(*db, *date, cmd)
+	case "pool":
+		runPool(*db, positional, *resume, *reason)
 	case "weekly":
 		runWeekly(*db, *date)
 	case "fills":
@@ -113,6 +118,9 @@ func usage() {
   darvas doctor [--db]                       数据库/schema/数据新鲜度体检
   darvas ladder  <code>                      个股箱体阶梯（M2）
   darvas param   get|set                     参数读写
+  darvas pool    list [stage]                跟踪池查看（stage: watching/pending/holding/suspended/blacklisted）
+  darvas pool    suspend <code> --resume <价> 条件挂起（收盘≥激活价自动恢复跟踪）
+  darvas pool    remove <code> --reason <文本> 人工移除（留痕）
   darvas run    [--date]                     完整盘后流水线（M5）
   darvas boxscan|screen|poolsync|signal|plan|report [--date]
                                              单任务幂等补跑（docs/04 §7）
@@ -506,6 +514,71 @@ func runRerun(db, date, task string) {
 	res, err := pipe.RerunTask(context.Background(), date, task)
 	must(err)
 	printResult(res)
+}
+
+// runPool 跟踪池人工操作（B2；GUI 只读原则，状态修改走 CLI）：
+//
+//	darvas pool list [stage]                  池列表（默认全部活跃+挂起+黑名单）
+//	darvas pool suspend <code> --resume <价>   条件挂起（"停传报价"：收盘≥激活价自动恢复）
+//	darvas pool remove <code> --reason <文本> 人工移除（出池）
+func runPool(db string, positional []string, resume float64, reason string) {
+	if len(positional) == 0 {
+		fmt.Println("用法: darvas pool list [stage] | suspend <code> --resume <价> | remove <code> --reason <文本>")
+		os.Exit(2)
+	}
+	sub, args := positional[0], positional[1:]
+	st, err := store.Open(dbPath(db))
+	must(err)
+	defer st.Close()
+	m := pool.New(st)
+	switch sub {
+	case "list":
+		stages := []contract.WatchStage{contract.StageWatching, contract.StagePending, contract.StageHolding,
+			contract.StageSuspended, contract.StageBlacklisted, contract.StageExited}
+		if len(args) > 0 {
+			stages = []contract.WatchStage{contract.WatchStage(args[0])}
+		}
+		for _, stage := range stages {
+			ws, err := st.PoolRepo.WatchByStage(stage)
+			if err != nil {
+				must(err)
+			}
+			if len(ws) == 0 {
+				continue
+			}
+			fmt.Printf("== %s (%d) ==\n", stage, len(ws))
+			for _, w := range ws {
+				extra := ""
+				if w.Stage == contract.StageSuspended {
+					extra = fmt.Sprintf("  激活价=%.2f", w.ResumeTrigger)
+				}
+				if w.ExitReason != "" {
+					extra += "  " + w.ExitReason
+				}
+				fmt.Printf("  %s  入池%s  箱数%d%s\n", w.Code, w.AddedDate, w.BoxCount, extra)
+			}
+		}
+	case "suspend":
+		if len(args) < 1 || resume <= 0 {
+			fmt.Println("用法: darvas pool suspend <code> --resume <激活价>")
+			os.Exit(2)
+		}
+		must(m.Suspend(args[0], resume))
+		fmt.Printf("已挂起 %s（收盘≥%.2f 自动恢复跟踪）\n", args[0], resume)
+	case "remove":
+		if len(args) < 1 {
+			fmt.Println("用法: darvas pool remove <code> --reason <文本>")
+			os.Exit(2)
+		}
+		if reason == "" {
+			reason = "manual"
+		}
+		must(m.Remove(args[0], reason))
+		fmt.Printf("已移除 %s（%s）\n", args[0], reason)
+	default:
+		fmt.Println("未知子命令:", sub)
+		os.Exit(2)
+	}
 }
 
 // runWeekly M7.2 周报：默认锚定最近周六（docs/01 §4.3 周六10:00的命令行入口）。

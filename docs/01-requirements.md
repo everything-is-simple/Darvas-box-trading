@@ -172,6 +172,10 @@
 | 流动性门槛 | `screen.turnover` | 5000万 | A股适配 |
 | 箱体最长有效期 | `screen.maxboxage` | 60日 | 横盘过久出池 |
 | 跟踪池横盘箱上限 | `pool.flatboxmax` | 4 | 连续4箱不涨出池 |
+| 太晚规则阈值 | `screen.latedays` | 4日 | 原书：突破后第4日还没买=太晚，放弃 |
+| 两亏拉黑阈值 | `pool.maxloss` | 2次 | 同一股票亏损交易满N次→永久拉黑 |
+| 跟踪池活跃上限 | `pool.maxwatch` | 8支 | 原书：同时跟踪5-8支 |
+| 不获利持仓约束 | `position.staledays` | 15日 | 原书3周：开仓后N日仍不获利→退出 |
 | 最大腿数 | `risk.maxlegs` | 3 | 达瓦斯三段式 |
 | TDX数据根目录 | `tdx.root` | H:/new_tdx64/vipdoc | 运行时路径配置 |
 

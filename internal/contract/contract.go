@@ -13,8 +13,8 @@ import (
 
 // DailyBar 日线行情（与 daily_bar 表对应）
 type DailyBar struct {
-	Code   string  // sh600519
-	Date   string  // YYYY-MM-DD
+	Code   string // sh600519
+	Date   string // YYYY-MM-DD
 	Open   float64
 	High   float64
 	Low    float64
@@ -48,15 +48,15 @@ const (
 
 // Box 箱体（与 box 表对应）
 type Box struct {
-	ID               int64
-	Code             string
-	Top              float64
-	Bottom           float64
-	TopConfirmed     string
-	BottomConfirmed  string
-	Status           BoxStatus
-	PrevBoxID        int64 // 阶梯链：前一箱体ID（0=无）
-	BrokenDate       string
+	ID              int64
+	Code            string
+	Top             float64
+	Bottom          float64
+	TopConfirmed    string
+	BottomConfirmed string
+	Status          BoxStatus
+	PrevBoxID       int64 // 阶梯链：前一箱体ID（0=无）
+	BrokenDate      string
 }
 
 // SignalType 信号类型（四类，封闭集合）
@@ -71,13 +71,13 @@ const (
 
 // Signal 信号（与 signal 表对应）
 type Signal struct {
-	Date      string
-	Code      string
-	Type      SignalType
-	BoxID     int64
-	ClosePx   float64
-	BoxLevel  float64
-	Payload   map[string]any
+	Date     string
+	Code     string
+	Type     SignalType
+	BoxID    int64
+	ClosePx  float64
+	BoxLevel float64
+	Payload  map[string]any
 }
 
 // Candidate 初选候选（与 candidate 表对应）
@@ -89,27 +89,30 @@ type Candidate struct {
 	FundamentalFlag string // yes / no / unknown（人工复核）
 }
 
-// WatchStage 跟踪池状态机
+// WatchStage 跟踪池状态机（B2 淘汰生命周期，0003迁移扩六值）
 type WatchStage string
 
 const (
-	StageWatching WatchStage = "watching"
-	StagePending  WatchStage = "pending"
-	StageHolding  WatchStage = "holding"
-	StageExited   WatchStage = "exited"
+	StageWatching    WatchStage = "watching"
+	StagePending     WatchStage = "pending"
+	StageHolding     WatchStage = "holding"
+	StageExited      WatchStage = "exited"
+	StageSuspended   WatchStage = "suspended"   // 条件挂起（"停传报价"：跌破/远离后暂停，收盘≥resume_trigger再激活）
+	StageBlacklisted WatchStage = "blacklisted" // 两亏拉黑（同一股票亏损交易满 pool.maxloss 次，永久）
 )
 
 // Watch 跟踪池条目
 type Watch struct {
-	ID           int64
-	Code         string
-	CandidateID  int64
-	AddedDate    string
-	Stage        WatchStage
-	CurrentBoxID int64
-	BoxCount     int
-	ExitReason   string
-	Note         string
+	ID            int64
+	Code          string
+	CandidateID   int64
+	AddedDate     string
+	Stage         WatchStage
+	CurrentBoxID  int64
+	BoxCount      int
+	ExitReason    string
+	ResumeTrigger float64 // 挂起激活价（stage=suspended 时有效）
+	Note          string
 }
 
 // PlanOrder 订单计划（六问的答案单元）
@@ -155,9 +158,10 @@ type Position struct {
 	Qty         int
 	AvgCost     float64
 	StopPrice   float64 // 只升不降（DB触发器+应用层双防护）
-	Status      string // open / closed
+	Status      string  // open / closed
 	ClosedDate  string
 	CloseReason string
+	RealizedPnl float64 // 清仓时由 ClosePosition 计算写入（两亏拉黑统计基础，0003）
 }
 
 // EquitySnapshot 权益快照
@@ -202,21 +206,22 @@ type BoxParams struct {
 
 // ScreenParams 初选参数
 type ScreenParams struct {
-	TurnoverMin  float64 // 日均成交额下限（元），默认5000万
-	RSWindow     int     // 相对强度窗口，默认20
-	RSThreshold  float64 // RS阈值，默认1.2
-	VolRatioMin  float64 // 放量比下限，默认2.0
-	VolRatioMax  float64 // 放量比上限，默认5.0
+	TurnoverMin float64 // 日均成交额下限（元），默认5000万
+	RSWindow    int     // 相对强度窗口，默认20
+	RSThreshold float64 // RS阈值，默认1.2
+	VolRatioMin float64 // 放量比下限，默认2.0
+	VolRatioMax float64 // 放量比上限，默认5.0
+	LateDays    int     // B2①太晚规则：突破后第N交易日（默认4，原书"四天已超箱体=太晚"）
 }
 
 // PlanParams 计划参数
 type PlanParams struct {
-	RiskLeg1    float64 // 第1腿风险，默认0.01
-	RiskLeg23   float64 // 第2/3腿风险，默认0.02
-	MaxPosition float64 // 单股仓位上限，默认0.20
-	BuyPremium  float64 // 买入触发溢价，默认1.03
+	RiskLeg1     float64 // 第1腿风险，默认0.01
+	RiskLeg23    float64 // 第2/3腿风险，默认0.02
+	MaxPosition  float64 // 单股仓位上限，默认0.20
+	BuyPremium   float64 // 买入触发溢价，默认1.03
 	SellDiscount float64 // 卖出触发折价，默认0.97
-	MaxLegs     int     // 最大腿数，默认3
+	MaxLegs      int     // 最大腿数，默认3
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +325,7 @@ type PoolManager interface {
 	Sync(ctx context.Context, date string) (TaskResult, error)
 	MarkFundamental(code, date string, flag string) error
 	Remove(code string, reason string) error
+	Suspend(code string, resumeTrigger float64) error // 条件挂起（"停传报价"：收盘≥激活价自动恢复watching）
 }
 
 // SignalEngine 信号判定

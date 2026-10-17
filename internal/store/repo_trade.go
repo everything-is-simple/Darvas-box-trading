@@ -333,9 +333,53 @@ func (r *TradeRepo) UpdatePositionQtyCost(id int64, qty int, avgCost float64) er
 
 // ClosePosition 清仓（qty 归零）。
 func (r *TradeRepo) ClosePosition(id int64, date, reason string) error {
-	_, err := r.db.Exec(`UPDATE position SET status='closed', closed_date=?, close_reason=?, qty=0 WHERE id=?`,
-		date, reason, id)
+	// B2（0003）：清仓时落库本次交易已实现盈亏（两亏拉黑的统计基础）。
+	// = 该持仓生命周期内（opened_date~date）该股全部成交的净现金流：卖出所得−买入支出（含费）。
+	_, err := r.db.Exec(`UPDATE position SET status='closed', closed_date=?, close_reason=?, qty=0,
+		realized_pnl = (
+			SELECT COALESCE(SUM(CASE WHEN f.side='sell' THEN f.price*f.qty - f.fee
+			                         ELSE -(f.price*f.qty + f.fee) END), 0)
+			FROM trade_fill f
+			WHERE f.code = position.code AND f.date >= position.opened_date AND f.date <= ?
+		) WHERE id=?`, date, reason, date, id)
 	return err
+}
+
+// LossCountByCode 某证券历史亏损交易次数（closed 且 realized_pnl<0；两亏拉黑判定，B2）。
+func (r *TradeRepo) LossCountByCode(code string) (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM position
+		WHERE code = ? AND status = 'closed' AND realized_pnl < 0`, code).Scan(&n)
+	return n, err
+}
+
+// PositionPnlHistory 某证券全部历史交易战绩（B2/B3：几进几出、累计盈亏、亏损次数）。
+// qty 取 position_leg 聚合（清仓后 position.qty 已归零）。
+func (r *TradeRepo) PositionPnlHistory(code string) ([]map[string]any, error) {
+	rows, err := r.db.Query(`SELECT p.id, CAST(p.opened_date AS TEXT), COALESCE(CAST(p.closed_date AS TEXT),''),
+		COALESCE((SELECT SUM(l.qty) FROM position_leg l WHERE l.position_id = p.id), 0),
+		p.avg_cost, COALESCE(p.realized_pnl,0), COALESCE(p.close_reason,'')
+		FROM position p WHERE p.code = ? AND p.status='closed' ORDER BY p.opened_date`, code)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var id int64
+		var opened, closed string
+		var qty int
+		var avgCost, pnl float64
+		var reason string
+		if err := rows.Scan(&id, &opened, &closed, &qty, &avgCost, &pnl, &reason); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{
+			"position_id": id, "opened_date": opened, "closed_date": closed,
+			"qty": qty, "avg_cost": avgCost, "realized_pnl": pnl, "close_reason": reason,
+		})
+	}
+	return out, rows.Err()
 }
 
 // AddLeg 记录金字塔腿（stop_after 留审计）。

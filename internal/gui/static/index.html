@@ -181,7 +181,7 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 const fmt = (n, d=2) => (n===null||n===undefined||isNaN(n)) ? "-" : Number(n).toLocaleString("zh-CN", {minimumFractionDigits:d, maximumFractionDigits:d});
 const money = n => (n===null||n===undefined||isNaN(n)) ? "-" : "¥" + fmt(n, 0);
 const pct = n => (n===null||n===undefined||isNaN(n)) ? "-" : (n>=0?"+":"") + fmt(n, 2) + "%";
-const stageCN = {watching:"观察", pending:"待突破", holding:"持仓", exited:"已出池"};
+const stageCN = {watching:"观察", pending:"待突破", holding:"持仓", exited:"已出池", suspended:"挂起", blacklisted:"拉黑"};
 const boxCN = {confirmed:"已确认", forming:"形成中", broken_up:"向上突破", broken_down:"跌破", invalid:"作废"};
 const sideCN = {buy:"买", sell:"卖"};
 async function getJSON(url) {
@@ -301,7 +301,7 @@ async function loadDashboard() {
 
 // ---------------------------------------------------------------- 跟踪池 / 候选快照 / 信号日志
 let watchData = [], watchStage = "all", poolTab = "watch", candData = null, sigData = null;
-const STAGES = ["holding","pending","watching","exited"];
+const STAGES = ["holding","pending","watching","suspended","blacklisted","exited"];
 const sigCN = {breakout:"突破买入", pyramid:"金字塔加码", stop:"止损卖出", failed_breakout:"突破失败卖出"};
 const candReasons = [["liquidity_pass","流动性"],["rs_pass","相对强度"],["vol_pass","放量"],["box_pass","箱体"]];
 
@@ -343,11 +343,11 @@ function renderWatch() {
   if (!watchData.length) { $("watchTable").innerHTML = '<div class="empty">跟踪池为空：screen 初选通过后由 poolsync 入池（<code>darvas run</code>）</div>'; return; }
   const rows = poolFilter(watchData.filter(w => watchStage==="all" || w.stage===watchStage), "code", "name")
     .map(w => "<tr>" + codeTd(w.code) + td(esc(w.name)) +
-      td(`<span class="badge" style="background:${w.stage==='holding'?'#22c55e33':w.stage==='pending'?'#eab30833':w.stage==='watching'?'#3b82f633':'#64748b33'}">${stageCN[w.stage]||w.stage}</span>`) +
+      td(`<span class="badge" style="background:${w.stage==='holding'?'#22c55e33':w.stage==='pending'?'#eab30833':w.stage==='watching'?'#3b82f633':w.stage==='suspended'?'#a855f733':w.stage==='blacklisted'?'#ef444433':'#64748b33'}">${stageCN[w.stage]||w.stage}</span>`) +
       td(w.added_date) + td(w.box_count, "num") +
       td(w.box_top ? `${fmt(w.box_top)} ~ ${fmt(w.box_bottom)} <span class="muted">${boxCN[w.box_status]||w.box_status}</span>` : '<span class="muted">-</span>') +
       td(w.last_close ? fmt(w.last_close) : "-", "num") +
-      td(w.stage === "exited" && w.exit_reason ? esc(w.exit_reason) : '<span class="muted">-</span>', "muted") + "</tr>");
+      td(w.stage === "suspended" && w.resume_trigger ? `激活价 ${fmt(w.resume_trigger)}` : (w.exit_reason ? esc(w.exit_reason) : '<span class="muted">-</span>'), "muted") + "</tr>");
   $("watchTable").innerHTML = tbl(["代码","名称","状态","入池日","#阶梯数","当前箱体","#最新收盘","出池原因"], rows);
 }
 

@@ -101,6 +101,34 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		}
 	}
 
+	// B2⑤ 不获利持仓约束（原书：买入后3周仍不获利→退出——资金效率纪律，
+	// 非箱体事件，直接生成卖出计划；持有交易日数=BarCount(opened_date, planDate)）。
+	staleDays := p.st.ParamRepo.GetInt("position.staledays", 15)
+	for i := range positions {
+		pos := &positions[i]
+		if pos.Qty <= 0 {
+			continue
+		}
+		n, err := p.st.BarRepo.BarCount(pos.Code, pos.OpenedDate, planDate)
+		if err != nil || n < staleDays {
+			continue
+		}
+		px, ok, _ := p.st.BarRepo.CloseOn(pos.Code, planDate)
+		if !ok || px > pos.AvgCost {
+			continue
+		}
+		orders = append(orders, contract.PlanOrder{
+			PlanDate: planDate, ExecuteDate: executeDate, Code: pos.Code,
+			Side: "sell", OrderKind: "stop_sell",
+			TriggerPrice: px, LimitPrice: px, Qty: pos.Qty, LegNo: 0,
+			Reason: map[string]any{
+				"signal": "time_stop_3weeks", "days_held": n,
+				"avg_cost": pos.AvgCost, "last_close": px, "qty": pos.Qty, "position_id": pos.ID,
+			},
+		})
+		p.log.Printf("3周不获利离场 %s（持有%d日 收盘%.2f≤成本%.2f）", pos.Code, n, px, pos.AvgCost)
+	}
+
 	// 创建计划
 	planID, err := p.st.TradeRepo.CreatePlan(contract.TradePlan{
 		PlanDate:          planDate,
@@ -117,9 +145,24 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		return res, err
 	}
 
+	// B2 接线（docs/03 §2.2 状态机）：生成停损买单 → watch watching→pending。
+	for i := range orders {
+		if orders[i].Side != "buy" {
+			continue
+		}
+		if w, _ := p.st.PoolRepo.WatchByCode(orders[i].Code); w != nil && w.Stage == contract.StageWatching {
+			w.Stage = contract.StagePending
+			p.st.PoolRepo.UpsertWatch(*w)
+		}
+	}
+
 	// 收尾：过期未成交订单（执行日已过的 pending → expired）+ 当日权益快照
 	if n, err := p.st.TradeRepo.ExpireStaleOrders(planDate); err == nil && n > 0 {
 		p.log.Printf("过期订单 %d 笔（执行日已过未成交）", n)
+	}
+	// B2 接线：买单过期后 watch pending→watching（无在途买单即回观察态）
+	if err := p.st.PoolRepo.RelaxPendingWatches(); err != nil {
+		p.log.Printf("⚠ pending watch 回退失败: %v", err)
 	}
 	if err := ledger.New(p.st).Snapshot(ctx, planDate); err != nil {
 		p.log.Printf("⚠ 权益快照失败: %v", err)

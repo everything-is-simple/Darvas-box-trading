@@ -121,6 +121,15 @@ func (r *BarRepo) BarsWindow(code string, endDate string, n int) ([]contract.Dai
 	return out, rows.Err()
 }
 
+// BarCount code 在 (after, until] 区间的K线根数（交易日数；B2 太晚规则：
+// 突破日之后已走过的交易日数，个股停牌自然不计）。
+func (r *BarRepo) BarCount(code, after, until string) (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM daily_bar
+		WHERE code = ? AND date > ? AND date <= ?`, code, after, until).Scan(&n)
+	return n, err
+}
+
 // BarsRange 取 code 在 [from, to] 区间的K线（升序；GUI U2 时间范围查询）。
 // from/to 传空=不限；上限 max 根防区间过大（超出则截尾保留最近 max 根）。
 func (r *BarRepo) BarsRange(code, from, to string, max int) ([]contract.DailyBar, error) {

@@ -434,6 +434,12 @@ func (l *Ledger) applyBuy(f contract.Fill, order *store.PendingOrder) (posID int
 			return posID, stopUp, err
 		}
 	}
+	// B2 接线（docs/03 §2.2）：买入成交 → watch 持仓化（watching/pending → holding）。
+	if w, _ := l.st.PoolRepo.WatchByCode(f.Code); w != nil &&
+		(w.Stage == contract.StagePending || w.Stage == contract.StageWatching) {
+		w.Stage = contract.StageHolding
+		l.st.PoolRepo.UpsertWatch(*w)
+	}
 	return posID, stopUp, nil
 }
 
@@ -455,9 +461,38 @@ func (l *Ledger) applySell(f contract.Fill, order *store.PendingOrder) (int64, e
 		if order == nil {
 			reason = "manual" // 计划外人工卖出
 		}
-		return pos.ID, l.st.TradeRepo.ClosePosition(pos.ID, f.Date, reason)
+		if err := l.st.TradeRepo.ClosePosition(pos.ID, f.Date, reason); err != nil {
+			return pos.ID, err
+		}
+		// B2 接线：清仓 → watch 持仓态出池；止损离场后即时两亏拉黑判定。
+		l.onPositionClosed(f.Code, reason)
+		return pos.ID, nil
 	}
 	return pos.ID, l.st.TradeRepo.UpdatePositionQtyCost(pos.ID, newQty, pos.AvgCost)
+}
+
+// onPositionClosed 清仓后的 watch 状态迁移（B2）：holding/pending → exited；
+// 计划内止损离场（reason=stop）且该股历史亏损交易满 pool.maxloss → blacklisted（poolsync 次日兜底双保险）。
+func (l *Ledger) onPositionClosed(code, reason string) {
+	w, err := l.st.PoolRepo.WatchByCode(code)
+	if err != nil || w == nil {
+		return
+	}
+	if w.Stage == contract.StageExited || w.Stage == contract.StageBlacklisted {
+		return
+	}
+	if reason == "stop" {
+		maxLoss := l.st.ParamRepo.GetInt("pool.maxloss", 2)
+		if n, err := l.st.TradeRepo.LossCountByCode(code); err == nil && n >= maxLoss {
+			w.Stage = contract.StageBlacklisted
+			w.ExitReason = fmt.Sprintf("two_losses_%d", n)
+			l.st.PoolRepo.UpsertWatch(*w)
+			return
+		}
+	}
+	w.Stage = contract.StageExited
+	w.ExitReason = "position_closed_" + reason
+	l.st.PoolRepo.UpsertWatch(*w)
 }
 
 // reasonStop 从订单 reason 提取计划止损价（无则0）。

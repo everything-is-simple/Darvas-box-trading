@@ -72,6 +72,30 @@ type TaskResult struct {
     DurationMS int64
     Error string
 }
+
+// 池与持仓（B2 跟踪池生命周期，0003迁移）
+type WatchStage string
+// watching / pending / holding / exited / suspended / blacklisted
+//   watching→pending→holding→exited 主链；suspended=条件挂起（收盘≥ResumeTrigger恢复）；
+//   blacklisted=两亏拉黑终态（永不再入池）
+
+type Watch struct {
+    ID int64; Code string; CandidateID int64
+    AddedDate string
+    Stage WatchStage
+    CurrentBoxID int64; BoxCount int
+    ExitReason string
+    ResumeTrigger float64  // 挂起激活价（stage=suspended 时有效）
+    Note string
+}
+
+type Position struct {
+    ID int64; Code string; OpenedDate string; EntryBoxID int64
+    Qty int; AvgCost, StopPrice float64
+    Status string   // open / closed
+    ClosedDate, CloseReason string
+    RealizedPnl float64  // 清仓时由 ClosePosition 计算写入（两亏拉黑统计基础，0003）
+}
 ```
 
 ---
@@ -120,6 +144,7 @@ type BarRepo interface {
     CloseOn(code, date string) (float64, bool, error)
     AvgVolume(code string, endDate string, n int) (float64, error)
     LastClose(code string) (float64, bool, error)          // 最新收盘（GUI持仓浮盈亏，M6）
+    BarCount(code, after, until string) (int, error)        // (after, until]区间K线根数（太晚规则/3周约束交易日计数，B2）
 }
 
 type BoxRepo interface {
@@ -136,6 +161,8 @@ type PoolRepo interface {
     WatchByStage(stage string) ([]Watch, error)
     WatchByCode(code string) (*Watch, error)
     WatchOverview() ([]WatchOverview, error)   // 每code最新行+名称+当前箱体+最新收盘（GUI跟踪池视图，M6）
+    ActiveWatchCount() (int, error)             // watching+pending+holding 计数（5-8上限判定，B2）
+    RelaxPendingWatches() error                // 买单过期 pending→watching 回退（B2接线）
 }
 
 type SecRepo interface {                        // M6 新增（GUI名称展示）
@@ -168,7 +195,9 @@ type TradeRepo interface {
     PositionByCode(code string) (*Position, error)
     CreatePosition(p Position) (int64, error)
     UpdatePositionQtyCost(id int64, qty int, avgCost float64) error
-    ClosePosition(id int64, date, reason string) error
+    ClosePosition(id int64, date, reason string) error    // 清仓：status=closed + realized_pnl落库（持仓周期fills净现金流，B2）
+    LossCountByCode(code string) (int, error)              // 亏损交易（closed且realized_pnl<0）计数（两亏拉黑，B2）
+    PositionPnlHistory(code string) ([]map[string]any, error) // 个股历史持仓盈亏视图（B3战绩复用）
     AddLeg(positionID int64, legNo int, date string, qty int, price, stopAfter float64, planOrderID int64) error
     LegsByPosition(positionID int64) ([]map[string]any, error)
     AllPositions() ([]Position, error)                     // 含closed（交易记录视图）
@@ -250,6 +279,7 @@ type ScreenParams struct {
     RSWindow    int      // 默认20
     RSThreshold float64  // 默认1.2
     VolRatioMin, VolRatioMax float64 // 2.0 / 5.0
+    LateDays    int      // B2①太晚规则：broken_up后≥N个交易日→不入候选（默认4，原书"四天=太晚"）
 }
 ```
 
@@ -259,8 +289,12 @@ type ScreenParams struct {
 type PoolManager interface {
     Sync(ctx context.Context, date string) (TaskResult, error)
     // candidate→watching 入池；状态迁移见 ERD §2.2
+    // B2 淘汰生命周期（0003）：
+    //   入池拦截：LossCountByCode ≥ pool.maxloss（两亏拉黑终态）/ ActiveWatchCount ≥ pool.maxwatch（5-8上限）
+    //   巡检：活跃股两亏→blacklisted；suspended 收盘≥ResumeTrigger→watching（激活价清零）
     MarkFundamental(code, date string, flag string) error  // 人工复核 yes/no
     Remove(code string, reason string) error               // 人工移除
+    Suspend(code string, resumeTrigger float64) error      // 条件挂起（"停传报价"：exited/blacklisted拒绝）
 }
 ```
 
@@ -373,7 +407,7 @@ type Scheduler interface {
 |------|------|------|---------|
 | `GET /api/dashboard` | `?date=`（缺省=LatestRunDate） | `{date, runs[], plan, orders[], names, equity}` | 仪表盘：7任务心跳+计划订单+权益卡 |
 | `GET /api/dates` | - | `{dates: DateOverview[]}`（date/runs/candidates/has_plan/has_equity；UNION daily_run/candidate/trade_plan/equity_snapshot，降序） | 全站日期下拉（有数据的日期+每日附注） |
-| `GET /api/watch` | - | `{items: WatchOverview[]}`（code/name/stage/added_date/box_count/box_top/box_bottom/box_status/last_close/exit_reason；含 exited 行） | 跟踪池看板 |
+| `GET /api/watch` | - | `{items: WatchOverview[]}`（code/name/stage/added_date/box_count/box_top/box_bottom/box_status/last_close/exit_reason/resume_trigger；含 exited 行；stage 排序 holding→pending→watching→suspended→blacklisted→其他，B2） | 跟踪池看板 |
 | `GET /api/candidates` | `?date=`（缺省=最近候选快照日） | `{date, items: Candidate[], names}` | 候选池按日快照（score/reasons明细） |
 | `GET /api/signals` | `?date=`（缺省=最近信号日） | `{date, items: Signal[], names}` | 信号按日浏览 |
 | `GET /api/stock/{code}` | `?days=250`（上限1000）或 `?from=&to=`（区间，上限1000根） | `{code, name, days, from, to, bars[], boxes[], watch, position}` | 个股K线+箱体叠加+阶梯表（区间窗口） |
@@ -395,6 +429,9 @@ darvas ui     [--addr 127.0.0.1:8787] [--db path]   # 本地HTTP UI（起服务+
 darvas serve  [--addr 127.0.0.1:8787] [--db path]   # 常驻模式（M7.1）：CatchUp补跑+时刻表调度+周六weekly+备份+GUI
 darvas ladder  <code>         # 终端打印箱体阶梯
 darvas param   get|set        # 参数读写
+darvas pool    list [stage]   # 跟踪池查看（可按stage过滤，B2）
+darvas pool    suspend <code> --resume <价>   # 条件挂起：收盘≥激活价自动恢复跟踪
+darvas pool    remove <code> --reason <文本>  # 人工移除（留痕）
 darvas fills   paste          # 交互式成交录入
 darvas doctor                 # 一致性体检（含账本三重校验）
 ```

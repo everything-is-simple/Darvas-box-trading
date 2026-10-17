@@ -134,6 +134,20 @@ forming ──3日确认上轨──→ forming_bottom ──3日确认下轨─
 
 **基本面（盈利增长+成长行业）**：达瓦斯要求盈利能力不断提高。受限于本地数据源（TDX无财务数据），设计为**人工复核项**：系统输出候选池后，人工标注「盈利增长「盈利增长✓/✗」，未标注默认视为✓并记录在案。**不引入任何自动基本面模型。**
 
+### 跟踪池淘汰规则（原书校对补全，2026-10-18）
+
+达瓦斯对初选池与持仓的退出纪律（此前未实现，B2 补全）：
+
+| # | 规则 | 达瓦斯原话/依据 | 系统实现 |
+|---|------|----------------|---------|
+| 1 | 太晚规则 | 突破后「四天都收在突破点之上」还没买=看到太晚，放弃 | screener：broken_up 后 ≥ `screen.latedays`(4) 个交易日 → 不入候选池 |
+| 2 | 两亏拉黑 | 同一股票两次亏损交易 → 不再碰 | poolsync：`realized_pnl<0` 交易满 `pool.maxloss`(2) 次 → watch=blacklisted，永不再入池 |
+| 3 | 条件挂起 | 「停传报价」：基本面/走势存疑时暂停跟踪，突破X再传 | `darvas pool suspend <code> --resume <价>`：收盘 ≥ 激活价自动恢复跟踪（suspended 不占跟踪名额） |
+| 4 | 跟踪上限 | 「同时跟踪5-8支」 | poolsync：活跃池（watching+pending+holding）≥ `pool.maxwatch`(8) → 不再入池 |
+| 5 | 不获利3周 | 开仓3周仍不获利 → 退出，资金换到别处 | planner：开仓 ≥ `position.staledays`(15) 个交易日且收盘 ≤ 成本 → time_stop 卖单 |
+
+watch 状态机对应：`watching → pending`（买单生成）`→ holding`（成交）`→ exited`（清仓）；`watching → suspended`（人工挂起）`→ watching`（激活）；任意活跃态 `→ blacklisted`（两亏）。
+
 ### 排除清单（达瓦斯用亏损换来的）
 
 - ❌ 打听消息 / 听经纪人建议 / 华尔街格言 / 谣言

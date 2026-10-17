@@ -73,7 +73,8 @@ func (r *PoolRepo) LatestCandidateDate() (string, error) {
 
 // UpsertWatch 维护「每只股票一行活跃 watch」状态机（ERD §2.2）：
 //   - 存在未退出行 → 更新 stage/current_box_id/box_count 等（保留 id/added_date/candidate_id）；
-//   - 已退出或不存在 → 插入新行（支持退出后重新入池）。
+//   - 已退出或不存在 → 插入新行（支持退出后重新入池；blacklisted/suspended 走更新分支，
+//     重新入池拦截在 pool.Sync 层——黑名单永不入池）。
 func (r *PoolRepo) UpsertWatch(w contract.Watch) error {
 	// 查最近一行（含已退出）
 	var existingID int64
@@ -81,10 +82,10 @@ func (r *PoolRepo) UpsertWatch(w contract.Watch) error {
 	err := r.db.QueryRow(`SELECT id, stage FROM watch WHERE code = ? ORDER BY id DESC LIMIT 1`, w.Code).Scan(&existingID, &existingStage)
 	if err == sql.ErrNoRows {
 		// 新入池
-		_, err := r.db.Exec(`INSERT INTO watch(code, candidate_id, added_date, stage, current_box_id, box_count, note)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		_, err := r.db.Exec(`INSERT INTO watch(code, candidate_id, added_date, stage, current_box_id, box_count, resume_trigger, note)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			w.Code, nullInt64(w.CandidateID), w.AddedDate, string(w.Stage),
-			nullInt64(w.CurrentBoxID), w.BoxCount, w.Note)
+			nullInt64(w.CurrentBoxID), w.BoxCount, nullFloat64(w.ResumeTrigger), w.Note)
 		return err
 	}
 	if err != nil {
@@ -92,23 +93,40 @@ func (r *PoolRepo) UpsertWatch(w contract.Watch) error {
 	}
 	// 已退出 → 重新入池（插入新行）
 	if contract.WatchStage(existingStage) == contract.StageExited {
-		_, err := r.db.Exec(`INSERT INTO watch(code, candidate_id, added_date, stage, current_box_id, box_count, note)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		_, err := r.db.Exec(`INSERT INTO watch(code, candidate_id, added_date, stage, current_box_id, box_count, resume_trigger, note)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			w.Code, nullInt64(w.CandidateID), w.AddedDate, string(w.Stage),
-			nullInt64(w.CurrentBoxID), w.BoxCount, w.Note)
+			nullInt64(w.CurrentBoxID), w.BoxCount, nullFloat64(w.ResumeTrigger), w.Note)
 		return err
 	}
-	// 未退出 → 更新现有行
+	// 未退出（watching/pending/holding/suspended/blacklisted）→ 更新现有行
 	_, err = r.db.Exec(`UPDATE watch SET stage = ?, current_box_id = ?, box_count = ?,
-		exit_reason = ?, note = ?, updated_at = datetime('now','localtime') WHERE id = ?`,
-		string(w.Stage), nullInt64(w.CurrentBoxID), w.BoxCount, nullEmpty(w.ExitReason), w.Note, existingID)
+		exit_reason = ?, resume_trigger = ?, note = ?, updated_at = datetime('now','localtime') WHERE id = ?`,
+		string(w.Stage), nullInt64(w.CurrentBoxID), w.BoxCount,
+		nullEmpty(w.ExitReason), nullFloat64(w.ResumeTrigger), w.Note, existingID)
+	return err
+}
+
+// ActiveWatchCount 活跃跟踪池数量（watching+pending+holding；suspended 不占跟踪额度，B2 5-8上限）。
+func (r *PoolRepo) ActiveWatchCount() (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM watch
+		WHERE stage IN ('watching','pending','holding')`).Scan(&n)
+	return n, err
+}
+
+// RelaxPendingWatches 买单过期后 watch pending→watching（B2 接线：无在途买单即回观察态）。
+func (r *PoolRepo) RelaxPendingWatches() error {
+	_, err := r.db.Exec(`UPDATE watch SET stage='watching', updated_at=datetime('now','localtime')
+		WHERE stage='pending' AND code NOT IN (
+			SELECT DISTINCT code FROM plan_order WHERE side='buy' AND status IN ('pending','placed'))`)
 	return err
 }
 
 // WatchByStage 按状态查跟踪池（GUI 池列表视图）。
 func (r *PoolRepo) WatchByStage(stage contract.WatchStage) ([]contract.Watch, error) {
 	rows, err := r.db.Query(`SELECT id, code, COALESCE(candidate_id,0), CAST(added_date AS TEXT), stage,
-		COALESCE(current_box_id,0), box_count, COALESCE(exit_reason,''), note
+		COALESCE(current_box_id,0), box_count, COALESCE(exit_reason,''), COALESCE(resume_trigger,0), note
 		FROM watch WHERE stage = ? ORDER BY code`, string(stage))
 	if err != nil {
 		return nil, err
@@ -118,7 +136,7 @@ func (r *PoolRepo) WatchByStage(stage contract.WatchStage) ([]contract.Watch, er
 	for rows.Next() {
 		var w contract.Watch
 		var st string
-		if err := rows.Scan(&w.ID, &w.Code, &w.CandidateID, &w.AddedDate, &st, &w.CurrentBoxID, &w.BoxCount, &w.ExitReason, &w.Note); err != nil {
+		if err := rows.Scan(&w.ID, &w.Code, &w.CandidateID, &w.AddedDate, &st, &w.CurrentBoxID, &w.BoxCount, &w.ExitReason, &w.ResumeTrigger, &w.Note); err != nil {
 			return nil, err
 		}
 		w.Stage = contract.WatchStage(st)
@@ -132,10 +150,11 @@ func (r *PoolRepo) WatchByCode(code string) (*contract.Watch, error) {
 	var w contract.Watch
 	var st string
 	var cid, boxID sql.NullInt64
+	var rt sql.NullFloat64
 	err := r.db.QueryRow(`SELECT id, code, candidate_id, CAST(added_date AS TEXT), stage, current_box_id, box_count,
-		COALESCE(exit_reason,''), COALESCE(note,'')
+		COALESCE(exit_reason,''), resume_trigger, COALESCE(note,'')
 		FROM watch WHERE code = ? ORDER BY id DESC LIMIT 1`, code).
-		Scan(&w.ID, &w.Code, &cid, &w.AddedDate, &st, &boxID, &w.BoxCount, &w.ExitReason, &w.Note)
+		Scan(&w.ID, &w.Code, &cid, &w.AddedDate, &st, &boxID, &w.BoxCount, &w.ExitReason, &rt, &w.Note)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -148,6 +167,9 @@ func (r *PoolRepo) WatchByCode(code string) (*contract.Watch, error) {
 	if boxID.Valid {
 		w.CurrentBoxID = boxID.Int64
 	}
+	if rt.Valid {
+		w.ResumeTrigger = rt.Float64
+	}
 	w.Stage = contract.WatchStage(st)
 	return &w, nil
 }
@@ -157,6 +179,14 @@ func nullInt64(n int64) any {
 		return nil
 	}
 	return n
+}
+
+// nullFloat64 0 → NULL（resume_trigger 无值时）。
+func nullFloat64(f float64) any {
+	if f == 0 {
+		return nil
+	}
+	return f
 }
 
 // WatchOverview 跟踪池看板行（GUI 跟踪池视图）：
@@ -174,7 +204,8 @@ type WatchOverview struct {
 	BottomConfirmed string  `json:"bottom_confirmed"`
 	BrokenDate      string  `json:"broken_date"`
 	LastClose       float64 `json:"last_close"`
-	ExitReason      string  `json:"exit_reason"` // 仅 exited 行有值（出池轨迹展示）
+	ExitReason      string  `json:"exit_reason"`    // 仅 exited 行有值（出池轨迹展示）
+	ResumeTrigger   float64 `json:"resume_trigger"` // 仅 suspended 行有值（B2 条件挂起激活价）
 }
 
 // WatchOverview 全部跟踪池看板行（每 code 取最新 watch 行，含 exited）。
@@ -185,13 +216,14 @@ func (r *PoolRepo) WatchOverview() ([]WatchOverview, error) {
 			CAST(COALESCE(b.top_confirmed,'') AS TEXT), CAST(COALESCE(b.bottom_confirmed,'') AS TEXT),
 			CAST(COALESCE(b.broken_date,'') AS TEXT),
 			COALESCE((SELECT d.close FROM daily_bar d WHERE d.code = w.code ORDER BY d.date DESC LIMIT 1), 0),
-			COALESCE(w.exit_reason,'')
+			COALESCE(w.exit_reason,''), COALESCE(w.resume_trigger,0)
 		FROM watch w
 		JOIN (SELECT code, MAX(id) AS mid FROM watch GROUP BY code) latest ON w.id = latest.mid
 		LEFT JOIN security s ON s.code = w.code
 		LEFT JOIN box b ON b.id = w.current_box_id
 		ORDER BY CASE w.stage
-			WHEN 'holding' THEN 1 WHEN 'pending' THEN 2 WHEN 'watching' THEN 3 ELSE 4 END, w.code`)
+			WHEN 'holding' THEN 1 WHEN 'pending' THEN 2 WHEN 'watching' THEN 3
+			WHEN 'suspended' THEN 4 WHEN 'blacklisted' THEN 5 ELSE 6 END, w.code`)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +233,8 @@ func (r *PoolRepo) WatchOverview() ([]WatchOverview, error) {
 		var w WatchOverview
 		if err := rows.Scan(&w.Code, &w.Name, &w.Stage, &w.AddedDate, &w.BoxCount,
 			&w.BoxTop, &w.BoxBottom, &w.BoxStatus,
-			&w.TopConfirmed, &w.BottomConfirmed, &w.BrokenDate, &w.LastClose, &w.ExitReason); err != nil {
+			&w.TopConfirmed, &w.BottomConfirmed, &w.BrokenDate, &w.LastClose,
+			&w.ExitReason, &w.ResumeTrigger); err != nil {
 			return nil, err
 		}
 		out = append(out, w)

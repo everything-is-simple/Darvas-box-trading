@@ -119,6 +119,16 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 > **被突破箱体上轨（突破点）下方**（stop = box.top × sell.discount，紧止损；riskPerUnit 变小→
 > qty 变大，受单股上限约束）。腿2/3（pyramid）止损=新箱体下轨下方不变；止损上移规则不变。
 > 存量订单/持仓不追溯。planner_test 断言 stop=23.28/qty=6900 + 新增腿2对照用例。
+> **B2 跟踪池淘汰生命周期（2026-10-18，原书校对补全，跨M3/M4）**：migration 0003（watch 表
+> 重建 stage 扩六值+resume_trigger 列；position.realized_pnl；4 新参数种子）。规则落地：
+> ①太晚规则（screener 条件4：broken_up 后≥screen.latedays 交易日不入候选）②两亏拉黑
+> （poolsync 巡检：亏损交易≥pool.maxloss→blacklisted 终态+入池拦截）③条件挂起
+> （CLI `pool suspend --resume`：收盘≥激活价自动恢复）④5-8上限（ActiveWatchCount≥
+> pool.maxwatch 不入池，suspended 不占名额）⑤3周不获利（planner：开仓≥position.staledays
+> 交易日且收盘≤成本→time_stop 卖单）。同时补全 watch 状态机接线（此前 pending/holding
+> 从未写入）：planner 买单→pending、ledger 成交→holding、清仓→exited、买单过期→
+> RelaxPendingWatches 回退 watching。测试：pool_test 五用例+screener 太晚规则用例；
+> check_consistency C1 升级运行时验证（python sqlite3 执行迁移后读 sqlite_master）。
 
 ---
 

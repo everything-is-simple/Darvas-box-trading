@@ -71,9 +71,11 @@ erDiagram
         TEXT code FK
         INTEGER candidate_id FK "入池来源快照"
         DATE added_date
-        TEXT stage "watching/pending/holding/exited"
+        TEXT stage "watching/pending/holding/exited/suspended/blacklisted"
         INTEGER current_box_id FK
+        INTEGER box_count "已走完的箱体数"
         TEXT exit_reason
+        REAL resume_trigger "挂起激活价(suspended有效,0003)"
         TEXT note
         DATE updated_at
     }
@@ -98,6 +100,7 @@ erDiagram
         TEXT status "open/closed"
         DATE closed_date
         TEXT close_reason
+        REAL realized_pnl "清仓时落库净盈亏(含费,0003)"
     }
     position_leg {
         INTEGER id PK
@@ -183,11 +186,17 @@ erDiagram
 
 | 迁移 | 触发 |
 |------|------|
-| → watching | candidate当日入池 |
+| → watching | candidate当日入池（blacklisted 拦截；活跃池 ≥ `pool.maxwatch` 拦截） |
 | watching → pending | 箱体confirmed且挂停损买单计划生成 |
+| pending → watching | 买单过期未成交（RelaxPendingWatches，B2接线） |
 | pending → holding | 买单成交（trade_fill回录） |
-| holding → exited | 止损成交 / 突破失败 / 人工移除 |
+| holding → exited | 止损成交 / 突破失败 / 3周不获利 / 人工移除 |
 | watching → exited | 箱体broken_down / 连续4箱不涨 / 人工移除 |
+| watching/holding → suspended | 人工挂起（`pool suspend --resume <价>`，B2） |
+| suspended → watching | 收盘价 ≥ resume_trigger 激活价（poolsync 巡检） |
+| watching/pending/holding → blacklisted | 两亏拉黑：该股亏损交易（`realized_pnl<0`）≥ `pool.maxloss` 次（B2） |
+
+注：suspended 不占跟踪名额（`pool.maxwatch` 只计 watching+pending+holding）；blacklisted 为终态，永不再入池（0003 起 CHECK 六值）。
 
 ### 2.3 `position.stop_price`
 
@@ -197,7 +206,7 @@ erDiagram
 
 ## 3. 完整DDL
 
-见 `internal/store/migrations/0001_init.sql`（本仓库已含，为唯一事实源）。
+见 `internal/store/migrations/`（0001 初始 + 0002 fill.side + 0003 跟踪池生命周期，append-only，最新状态为事实源）。0003 要点：watch 表重建（stage 扩六值 + resume_trigger 列）、position 增 realized_pnl 列、4 个新参数种子。
 
 要点：
 - 主键策略：`daily_bar`用`(code,date)`复合主键；`box`/`signal`等用自增`INTEGER PRIMARY KEY`
