@@ -36,16 +36,25 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 
 ## M1 · 数据层（ingest + store + tdx）
 
+> **实测发现（2026-10-17，M0骨架验证）**：modernc纯Go驱动 + 逐条Exec + 每code独立事务，
+> 全量导入速率约 **800 bars/sec**（15分钟仅完成1371/11942只），不达NFR-1（<10min）。
+> M1.1须优先解决：① 多行 VALUES 批量插入（每批500行）② 跨code合并事务（每50只commit一次）
+> ③ PRAGMA synchronous=NORMAL / cache_size 调优 ④ 进度日志改 stdout 行缓冲。
+> 目标：全量<10min、增量<30s。数据通路与新鲜度校验已验证可用。
+
 | # | 任务 | 内容 | 验收 |
 |---|------|------|------|
-| 1.1 | tdx包移植 | 从tradebuddy移植reader.go，按contract.DayFileReader适配，补bj市场排除 | 单文件读取与TDX值一致 |
-| 1.2 | store骨架 | Open(WAL+foreign_keys)、migrate（嵌入SQL自动执行）、backup | 0001_init.sql幂等执行 |
-| 1.3 | BarRepo | UpsertBars批量事务、BarsWindow、CloseOn、AvgVolume | 单测覆盖 |
-| 1.4 | security初始化 | 从文件名+首条记录推导market/kind/board（60/00=main，30=gem，688=star，ST识别） | 抽样100只正确 |
-| 1.5 | Ingester全量 | 全量导入11942文件 | <10min，幂等零重复 |
-| 1.6 | Ingester增量 | 按ModTime当日过滤→增量Upsert | 只导当日新记录 |
-| 1.7 | Verify | sh000001最新日期=期望交易日；更新数<1000告警 | 断数据测试通过 |
-| 1.8 | RunRepo | StartRun/FinishRun/LastOKRun | 单测覆盖 |
+| 1.1 | ingest性能优化 | 多行VALUES批量+跨code合并事务+PRAGMA调优（见上） | 全量<10min |
+| 1.2 | tdx包移植 | 从tradebuddy移植reader.go，按contract.DayFileReader适配，补bj市场排除 | 单文件读取与TDX值一致 |
+| 1.3 | store骨架 | Open(WAL+foreign_keys)、migrate（嵌入SQL自动执行）、backup | 0001_init.sql幂等执行 |
+| 1.4 | BarRepo | UpsertBars批量事务、BarsWindow、CloseOn、AvgVolume | 单测覆盖 |
+| 1.5 | security初始化 | 从文件名+首条记录推导market/kind/board（60/00=main，30=gem，688=star，ST识别） | 抽样100只正确 |
+| 1.6 | Ingester全量 | 全量导入11942文件 | <10min，幂等零重复 |
+| 1.7 | Ingester增量 | 按ModTime当日过滤→增量Upsert | 只导当日新记录 |
+| 1.8 | Verify | sh000001最新日期=期望交易日；更新数<1000告警 | 断数据测试通过 |
+| 1.9 | RunRepo | StartRun/FinishRun/LastOKRun | 单测覆盖 |
+
+> M0已提前完成1.2/1.3/1.4/1.5/1.6骨架与1.8通路验证；1.1性能与1.7增量完善为M1收尾。
 
 ---
 
