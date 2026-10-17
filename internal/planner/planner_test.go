@@ -108,9 +108,7 @@ func TestPlannerSellOrderQty(t *testing.T) {
 
 // TestPlannerExecuteDate P1修复验收（2026-10-17）：执行日=下一交易日（ADR-2），非日历+1。
 // ① 回放场景：sh000001 有未来K线 → 周五10-09 → 周一10-12（旧逻辑给10-10周六死单，
-//
-//	实证 sh600052 2026-10-09 信号 → exec 10-10 expired）；
-//
+//    实证 sh600052 2026-10-09 信号 → exec 10-10 expired）；
 // ② 跨长假：09-30 → 10-08（国庆，旧逻辑给10-01假日死单）；
 // ③ 实盘边界：planDate=最新数据日（周五10-16，无未来K线）→ 兜底跳周末 → 周一10-19。
 func TestPlannerExecuteDate(t *testing.T) {
@@ -171,7 +169,7 @@ func seedBars(t *testing.T, st *store.Store, code string) {
 	day := "2026-10-"
 	for i, spec := range [][5]float64{{24, 17, 23.9}, {23.5, 17, 23.5}, {23.8, 17, 23.5}, {23.6, 17, 23.3}, {23.9, 17.2, 23.5}, {23.7, 17.3, 23.5}, {23.6, 17.1, 23.4}} {
 		bars = append(bars, contract.DailyBar{
-			Code: code, Date: day + pad2(i+9), // 10-09..10-15
+			Code: code, Date: day + pad2(i + 9), // 10-09..10-15
 			Open: spec[2], High: spec[0], Low: spec[1], Close: spec[2], Volume: 1000, Amount: 6e7,
 		})
 	}
@@ -187,7 +185,7 @@ func scanBoxesForSeed(code string) []contract.Box {
 	day := "2026-10-"
 	specs := [][5]float64{{24, 17, 23.9}, {23.5, 17, 23.5}, {23.8, 17, 23.5}, {23.6, 17, 23.3}, {23.9, 17.2, 23.5}, {23.7, 17.3, 23.5}, {23.6, 17.1, 23.4}}
 	for i, s := range specs {
-		bars = append(bars, contract.DailyBar{Code: code, Date: day + pad2(i+9), Open: s[2], High: s[0], Low: s[1], Close: s[2], Volume: 1000, Amount: 6e7})
+		bars = append(bars, contract.DailyBar{Code: code, Date: day + pad2(i + 9), Open: s[2], High: s[0], Low: s[1], Close: s[2], Volume: 1000, Amount: 6e7})
 	}
 	return eng.Scan(bars, contract.BoxParams{VolMultiplier: 2.0, VolWindow: 5, BreakPremium: 1.03, MinBoxWidth: 0.05})
 }
