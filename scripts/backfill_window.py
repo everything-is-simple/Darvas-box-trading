@@ -29,9 +29,10 @@ import sys
 TASKS = ["ingest", "boxscan", "screen", "poolsync", "signal", "plan", "report"]
 
 # 事务态表：清空后从零演化；box/daily_bar/security/param 保留。
+# （表名以 0001_init.sql 为准：fill→trade_fill；position_leg 为 position 明细须一并清）
 RESET_TABLES = [
-    "signal", "plan_order", "trade_plan", "fill", "position",
-    "equity_snapshot", "watch", "candidate", "daily_run",
+    "signal", "plan_order", "trade_plan", "trade_fill",
+    "position_leg", "position", "equity_snapshot", "watch", "candidate", "daily_run",
 ]
 
 
