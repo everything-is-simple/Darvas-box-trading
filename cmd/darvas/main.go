@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"darvas/internal/backtest"
 	"darvas/internal/box"
 	"darvas/internal/contract"
 	"darvas/internal/datasource/tdx"
@@ -28,7 +29,7 @@ import (
 	"darvas/internal/store"
 )
 
-const version = "0.4.2-m7"
+const version = "0.5.0-m8"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -47,6 +48,10 @@ func main() {
 	lesson := fs.String("lesson", "", "review add: 教训（人工复盘录入，原书核心）")
 	errorType := fs.String("error-type", "", "review add: 错误类型（追高/不止损/过早止盈/情绪化…）")
 	rule := fs.String("rule", "", "review add: 规则执行评价（followed/violated/自由文本）")
+	from := fs.String("from", "", "backtest: 回放窗口起点 YYYY-MM-DD（空=源库最近20交易日）")
+	to := fs.String("to", "", "backtest: 回放窗口终点 YYYY-MM-DD")
+	src := fs.String("src", "", "backtest: 源库路径（只读；灌历史K线/证券表/日历）")
+	btMode := fs.String("mode", "", "backtest: prefill|progressive|verify（verify=as-of差分审计）")
 	// Go flag 遇首个非 flag 即停止；这里把 flag 与位置参数分离，使
 	// `darvas ladder <code> --db <path>` 这样的混合顺序也能正确解析。
 	flagArgs, positional := splitFlags(os.Args[2:])
@@ -87,6 +92,8 @@ func main() {
 		runUI(*db, *addr)
 	case "serve":
 		runServe(*db, *addr)
+	case "backtest":
+		runBacktest(*db, *from, *to, *src, *btMode)
 	default:
 		usage()
 		os.Exit(2)
@@ -136,6 +143,9 @@ func usage() {
   darvas fills  [file] [--yes]               成交录入（粘贴文本；.csv=炒股手导出→审核报告）
   darvas ui     [--addr]                     本地GUI（浏览器四视图，M6）
   darvas serve  [--addr]                     常驻模式（调度+GUI+备份，M7.1）
+  darvas backtest --src <库> [--from <起>] [--to <止>] --mode prefill|progressive|verify
+                                             内置回放器 M8：scratch库重放as-of六任务链；
+                                             verify=双模式差分审计（as-of纪律运行时证明）
 
 每日时间表（docs/01 §4 唯一事实源；此处由 scheduler.ScheduleSummary 派生，禁止他处硬编码）:
   ` + scheduler.ScheduleSummary() + ` → 备份轮转
@@ -726,6 +736,25 @@ func runWeekly(db, date string) {
 	if wp := pipe.WeeklyPath(date); res.Status == "ok" {
 		fmt.Printf("周报: %s\n", wp)
 		_ = openReport(wp)
+	}
+}
+
+// runBacktest M8 内置回放器入口（PROMPT.md P4/M8.1）。scratch 独立库、源库只读、
+// 观察期内规则冻结（回放只产出问题清单 docs/07-m8-issue-list.md）。
+func runBacktest(db, from, to, src, mode string) {
+	o := backtest.Options{
+		From:      from,
+		To:        to,
+		SrcDB:     src,
+		ScratchDB: "", // --db 默认值是生产 var/darvas.db，不可用作 scratch；显式传 --db 时才用
+		Mode:      backtest.Mode(mode),
+	}
+	if db != "" {
+		o.ScratchDB = db // Bootstrap 内置护栏：拒用 darvas.db / perf_test.db / 与源库同路径
+	}
+	if err := backtest.Run(o); err != nil {
+		fmt.Fprintln(os.Stderr, "错误:", err)
+		os.Exit(1)
 	}
 }
 

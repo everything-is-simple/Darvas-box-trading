@@ -1,11 +1,15 @@
 # PROMPT · Darvas-box-trading 下一阶段强化指令
 
 > 用途：新开发会话（人或AI）开工前的接力提示词，先读完本文件再动手。
-> 版本：v1.4（2026-10-18，时刻集中一处管理：§4 唯一事实源；流水线 16:00→19:00 间隔30分钟；盯守 20:00；盘前人肉 08:00/08:20；周六周报 08:00）
+> 版本：v1.5（2026-10-18，M8.1 回放骨架落地：`darvas backtest` 内置回放器 + as-of 差分审计；
+> 0.5.0-m8；问题清单 docs/07-m8-issue-list.md——含 #1 P0「四类信号死路」待用户拍板）
 > 现状：系统已达成「每日无人值守自动运行」（serve 由 Windows 计划任务 DarvasBoxServe 托管，
-> 日志 var/serve.log，版本 0.4.2-m7）；全部 34 个 commit 已推送 GitHub
+> 日志 var/serve.log，运行版本 0.4.2-m7；代码版本 0.5.0-m8——M8 仅新增 backtest 子命令，
+> 不动交易规则，serve 可择机升级也可不动）；全部 commit 已推送 GitHub
 > （everything-is-simple/Darvas-box-trading）；v1.0 候选，观察期 2026-10-19 启动至
 > 2026-11-14（满20交易日），期间规则冻结。
+> ⚠ M8.1 审计发现 #1（docs/07）：干净 as-of 状态下事件驱动链路全部死路——观察期将零信号零订单。
+> 用户需在观察期启动前拍板修复方向（方案A/B 见 docs/07 #1），否则验收口径「每笔计划有留痕」将空载。
 
 ## 一、你在接手什么
 
@@ -69,8 +73,11 @@ docs/01 v1.1 §9。
 撮合器（D+1 OHLC、T+1/涨跌停/整手/印花税）接入现成 ledger（订单匹配/止损上移/
 金字塔/恒等式审计全复用），分体制输出报告。
 
-- [ ] M8.1 回放骨架：scratch DB 引导 + 交易日历循环。首任务=审计六任务 as-of 纪律
+- [x] M8.1 回放骨架：scratch DB 引导 + 交易日历循环。首任务=审计六任务 as-of 纪律
       （任何任务读到「未来」K线即返工）。
+      （2026-10-18 落地：`internal/backtest` + CLI `darvas backtest --mode verify`；
+      prefill/progressive 双模式差分审计通过——六任务链未读到任何未来K线；
+      审计同时发现事件驱动链路三条死路 docs/07 #1-#3，规则冻结期不改待用户拍板）
 - [ ] M8.2 模拟撮合器：D+1 OHLC 成交语义 + A股摩擦，接 ledger / B4 仓位金字塔。
 - [ ] M8.3 体制运行器：用客观规则**事先**标注牛/熊/猴窗口（禁摘樱桃），分体制
       权益曲线/回撤/胜率/暴露时间 HTML 报告。建议首测：2014-07~2015-06 牛、
@@ -101,4 +108,5 @@ M8 附加纪律（违反任何一条=返工）：
 | API 契约（仓储事实源 §3.3） | docs/04-api-contract.md |
 | 任务划分与校对实录 | docs/05-task-breakdown.md |
 | 一致性机制 | docs/06-consistency.md |
+| M8 回放问题清单（as-of 审计证据 + 死路 #1-#3） | docs/07-m8-issue-list.md |
 | 历程与阵亡墙 | docs/retrospective-2026/retrospective-2026.html |

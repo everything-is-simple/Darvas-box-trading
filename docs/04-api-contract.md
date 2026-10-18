@@ -458,6 +458,13 @@ darvas fills  [file] [--yes]   # 交互式成交录入（粘贴文本/M4.5；fil
 darvas fills  <炒股手导出.csv> --yes     # C：GBK解析→入库→执行质量审核报告
                                # （指令vs执行：漏执行/滑点/数量偏差/计划外；幂等重导全跳过）
 darvas doctor                 # 一致性体检（含账本三重校验）
+darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] --mode prefill|progressive|verify
+                              # M8 内置回放器（docs/01 §9）：scratch独立库重放as-of六任务链；
+                              #   prefill=全历史预灌（M8.2+常规模式）
+                              #   progressive=逐日灌K线（差分审计的地面真值）
+                              #   verify=双模式差分（as-of纪律运行时证明，详见 docs/07）
+                              # 默认窗口=源库最近20交易日；scratch默认 var/bt/bt_<mode>.db（gitignored）
+                              # 铁律 M8-2：scratch 独立库不污染实时库心跳；--src 以 mode=ro 只读（铁律 7）
 ```
 
 > serve 与 ui 的区别：ui 只起 GUI（一次性看盘）；serve = scheduler + GUI 双连接

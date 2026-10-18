@@ -37,6 +37,12 @@ func New(st *store.Store, ing *ingest.Ingester) *Pipeline {
 	}
 }
 
+// SetReportDir 重定向日报输出目录（M8.1 回放专用：scratch 日报绝不写生产 var/reports，
+// docs/07-m8-issue-list.md #5）。生产路径（run/serve/rerun）不受影响。
+func (p *Pipeline) SetReportDir(dir string) {
+	p.report = reporter.New(p.st, dir)
+}
+
 // RunDaily 跑完整盘后流水线（严格串行，每步留痕 daily_run）。
 // 失败策略：ingest 失败→整体中止；plan 失败→标红但已完成任务保留；其余失败不阻断后续（可续跑）。
 func (p *Pipeline) RunDaily(ctx context.Context, date string) ([]contract.TaskResult, error) {
