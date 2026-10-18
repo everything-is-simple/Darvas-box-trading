@@ -125,7 +125,11 @@ pyramid: 同上                                                  // forming → 
   BoxCount 模拟。
 
 **修后验证**：`go test ./...` 全绿 + `check_consistency.py` 全部一致；真实 20 日  
-verify 重跑结果见 git log / 观察期日记。
+verify 重跑（2026-10-19，14m6s）结果：差分全等 ✓（prefill ≡ progressive）；
+信号与上轮一致（09-17 sz300739 / 09-21 sz300473 breakout）；出池分布：3 个  
+box_broken_down，0 个 flat_too_long——本 20 日窗口无股票满足"连续 4 箱不涨"
+（窗口短、池跟踪股未达累积条件），flat_too_long 路径生效性由单元测试  
+`TestBoxCountIncrementsOnBoxChange` 保证。
 
 ## #3 [P1·已修复 2026-10-18] poolsync 自动出池两条路径均不可达
 
