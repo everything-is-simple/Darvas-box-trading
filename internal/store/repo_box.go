@@ -123,7 +123,9 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 	}
 
 	// 删除本次重算中消失的箱体（未被复用的旧箱）；
-	// position/watch/signal 仍引用的保留（FK 安全，历史事实不可删）
+	// position/watch/signal 仍引用的保留（FK 安全，历史事实不可删）；
+	// 幸存箱体的 prev_box_id 前驱也保留（box 自引用 FK，docs/07 #6：
+	// 漏保护曾致整个事务回滚、该股当日箱体更新全丢）
 	var stale []string
 	for _, e := range existing {
 		if !reused[e.id] {
@@ -134,8 +136,9 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 		del, err := tx.Exec(`DELETE FROM box WHERE id IN (`+strings.Join(stale, ",")+`)
 			AND id NOT IN (SELECT entry_box_id FROM position WHERE code = ? AND entry_box_id IS NOT NULL)
 			AND id NOT IN (SELECT current_box_id FROM watch WHERE code = ? AND current_box_id IS NOT NULL)
-			AND id NOT IN (SELECT box_id FROM signal WHERE code = ? AND box_id IS NOT NULL)`,
-			code, code, code)
+			AND id NOT IN (SELECT box_id FROM signal WHERE code = ? AND box_id IS NOT NULL)
+			AND id NOT IN (SELECT prev_box_id FROM box WHERE code = ? AND prev_box_id IS NOT NULL)`,
+			code, code, code, code)
 		if err != nil {
 			return nil, fmt.Errorf("delete stale boxes %s: %w", code, err)
 		}
