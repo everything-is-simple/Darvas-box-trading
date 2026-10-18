@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -108,6 +110,30 @@ func at(date string, h, m int) time.Time {
 	return t.Add(time.Duration(h)*time.Hour + time.Duration(m)*time.Minute)
 }
 
+// parseClock 解析 "16:30" → (16, 30)。
+func parseClock(c string) (int, int) {
+	p := strings.SplitN(c, ":", 2)
+	if len(p) != 2 {
+		panic("bad clock " + c)
+	}
+	h, _ := strconv.Atoi(p[0])
+	m, _ := strconv.Atoi(p[1])
+	return h, m
+}
+
+// schedAt 返回 date 当日 Schedule[i] 触发点之后 d 的时间——随 Schedule 漂移，
+// 不再硬编码时刻（时刻集中一处管理，docs/01 §4.1 唯一事实源）。
+func schedAt(date string, i int, d time.Duration) time.Time {
+	h, m := parseClock(Schedule[i].Clock)
+	return at(date, h, m).Add(d)
+}
+
+// weeklyAt 返回 date 当日 WeeklyClock 之后 d 的时间（周六周报触发点派生）。
+func weeklyAt(date string, d time.Duration) time.Time {
+	h, m := parseClock(WeeklyClock)
+	return at(date, h, m).Add(d)
+}
+
 func eq(t *testing.T, got, want []string) {
 	t.Helper()
 	if len(got) != len(want) {
@@ -125,9 +151,9 @@ var friBars = []contract.DailyBar{{Code: "sh000001", Date: "2026-10-16", Close: 
 
 func TestTickChainOrderAndIdempotent(t *testing.T) {
 	s, runner := newTestEnv(t, friBars, nil)
-	s.now = func() time.Time { return at("2026-10-16", 16, 35) }
+	s.now = func() time.Time { return schedAt("2026-10-16", 3, 5*time.Minute) }
 
-	s.tick() // 16:35 → ingest/boxscan/screen/poolsync 四个触发点已过，链式补跑
+	s.tick() // poolsync 触发点后 → ingest/boxscan/screen/poolsync 四任务链式补跑
 	eq(t, runner.snapshot(), []string{
 		"2026-10-16|ingest", "2026-10-16|boxscan", "2026-10-16|screen", "2026-10-16|poolsync",
 	})
@@ -142,17 +168,17 @@ func TestIngestFailAbortsAndRetriesNextTrigger(t *testing.T) {
 	s, runner := newTestEnv(t, friBars, nil)
 	runner.failOn["2026-10-16|ingest"] = errors.New("tdx not ready")
 
-	s.now = func() time.Time { return at("2026-10-16", 16, 35) }
+	s.now = func() time.Time { return schedAt("2026-10-16", 3, 5*time.Minute) }
 	s.tick() // ingest 失败 → 中止本链，boxscan/screen/poolsync 不跑
 	eq(t, runner.snapshot(), []string{"2026-10-16|ingest"})
 
-	s.now = func() time.Time { return at("2026-10-16", 16, 40) } // signal 触发点
-	s.tick()                                                    // 链头 ingest 仍未 ok → 重试（仍失败）→ 中止；signal 不跑
+	s.now = func() time.Time { return schedAt("2026-10-16", 4, 5*time.Minute) } // signal 触发点
+	s.tick()                                                              // 链头 ingest 仍未 ok → 重试（仍失败）→ 中止；signal 不跑
 	eq(t, runner.snapshot(), []string{"2026-10-16|ingest", "2026-10-16|ingest"})
 
-	// TDX 数据到位后，16:50 触发点一次链式补齐全部
+	// TDX 数据到位后，plan 触发点一次链式补齐全部
 	delete(runner.failOn, "2026-10-16|ingest")
-	s.now = func() time.Time { return at("2026-10-16", 16, 50) }
+	s.now = func() time.Time { return schedAt("2026-10-16", 5, 5*time.Minute) }
 	s.tick()
 	eq(t, runner.snapshot(), []string{
 		"2026-10-16|ingest", "2026-10-16|ingest",
@@ -163,16 +189,16 @@ func TestIngestFailAbortsAndRetriesNextTrigger(t *testing.T) {
 
 func TestNonTradingDaySkips(t *testing.T) {
 	// 周六 2026-10-17：DB 无当日K线、TDX 也无 → 每日七任务全部跳过；
-	// 但周六 16:35 已过 10:00 → weekly 周报触发（M7.2）
+	// 但周六已过 weekly 触发点 → weekly 周报触发（M7.2）
 	s, runner := newTestEnv(t, friBars, nil)
-	s.now = func() time.Time { return at("2026-10-17", 16, 35) }
+	s.now = func() time.Time { return weeklyAt("2026-10-17", 2*time.Hour) }
 	s.tick()
 	eq(t, runner.snapshot(), []string{"2026-10-17|weekly"})
 
-	// 周五 16:35 但 TDX 未下载且当日未入库（DB 只有 10-15 及更早）→ 跳过（周五不触发 weekly）
+	// 周五 poolsync 触发点后 但 TDX 未下载且当日未入库（DB 只有 10-15 及更早）→ 跳过（周五不触发 weekly）
 	s2, runner2 := newTestEnv(t,
 		[]contract.DailyBar{{Code: "sh000001", Date: "2026-10-15", Close: 3000, Volume: 100}}, nil)
-	s2.now = func() time.Time { return at("2026-10-16", 16, 35) }
+	s2.now = func() time.Time { return schedAt("2026-10-16", 3, 5*time.Minute) }
 	s2.tick()
 	eq(t, runner2.snapshot(), nil)
 }
@@ -181,17 +207,17 @@ func TestTradingDayViaTDX(t *testing.T) {
 	// DB 尚无 10-16 K线（ingest 未跑），但 TDX sh000001.day 已有当日数据 → 是交易日
 	s, runner := newTestEnv(t,
 		[]contract.DailyBar{{Code: "sh000001", Date: "2026-10-15", Close: 3000, Volume: 100}}, friBars)
-	s.now = func() time.Time { return at("2026-10-16", 16, 5) }
+	s.now = func() time.Time { return schedAt("2026-10-16", 0, time.Minute) }
 	s.tick()
 	eq(t, runner.snapshot(), []string{"2026-10-16|ingest"})
 }
 
 func TestCatchUpPrevTradingDay(t *testing.T) {
-	// 周六早上启动：周五（10-16，在库日历中）完全没跑 → 整日补跑；今天周六不跑
+	// 周六早上启动（已过 weekly 触发点）：周五（10-16，在库日历中）完全没跑 → 整日补跑；今天周六不跑
 	s, runner := newTestEnv(t, friBars, nil)
 	var doneDates []string
 	s.OnDayDone = func(d string) { doneDates = append(doneDates, d) }
-	s.now = func() time.Time { return at("2026-10-17", 10, 0) }
+	s.now = func() time.Time { return weeklyAt("2026-10-17", 2*time.Hour) }
 
 	if err := s.CatchUp(); err != nil {
 		t.Fatal(err)
@@ -199,7 +225,7 @@ func TestCatchUpPrevTradingDay(t *testing.T) {
 	eq(t, runner.snapshot(), []string{
 		"2026-10-16|ingest", "2026-10-16|boxscan", "2026-10-16|screen",
 		"2026-10-16|poolsync", "2026-10-16|signal", "2026-10-16|plan", "2026-10-16|report",
-		"2026-10-17|weekly", // 周六10:00 CatchUp 时触发 weekly（M7.2）
+		"2026-10-17|weekly", // 周六 weekly 触发点 CatchUp 时触发（M7.2）
 	})
 	eq(t, doneDates, []string{"2026-10-16"}) // 收尾钩子（备份）恰好一次
 
@@ -215,20 +241,20 @@ func TestCatchUpPrevTradingDay(t *testing.T) {
 	eq(t, doneDates, []string{"2026-10-16"})
 }
 
-// TestWeeklySaturdayOnce weekly 触发时机（M7.2）：周六10:00整点触发、
-// 当日仅一次、10:00 前不触发、周五永不触发。
+// TestWeeklySaturdayOnce weekly 触发时机（M7.2）：周六 weekly 触发点整点触发、
+// 当日仅一次、触发点前不触发、周五永不触发（时间随 WeeklyClock 派生）。
 func TestWeeklySaturdayOnce(t *testing.T) {
 	s, runner := newTestEnv(t, friBars, nil)
 
-	s.now = func() time.Time { return at("2026-10-17", 9, 59) } // 周六 09:59
+	s.now = func() time.Time { return weeklyAt("2026-10-17", -time.Minute) } // 触发点前1分钟
 	s.tick()
 	eq(t, runner.snapshot(), nil)
 
-	s.now = func() time.Time { return at("2026-10-17", 10, 0) } // 周六 10:00 整
+	s.now = func() time.Time { return weeklyAt("2026-10-17", 0) } // 触发点整
 	s.tick()
 	eq(t, runner.snapshot(), []string{"2026-10-17|weekly"})
 
-	s.now = func() time.Time { return at("2026-10-17", 10, 30) } // 再巡检不重复
+	s.now = func() time.Time { return weeklyAt("2026-10-17", 30*time.Minute) } // 再巡检不重复
 	s.tick()
 	eq(t, runner.snapshot(), []string{"2026-10-17|weekly"})
 
@@ -239,15 +265,15 @@ func TestWeeklySaturdayOnce(t *testing.T) {
 	s.tick()
 	eq(t, runner.snapshot(), []string{"2026-10-17|weekly"})
 
-	s2, runner2 := newTestEnv(t, friBars, nil) // 周五 10:30 → 永不触发
-	s2.now = func() time.Time { return at("2026-10-16", 10, 30) }
+	s2, runner2 := newTestEnv(t, friBars, nil) // 周五 weekly 触发点后 → 永不触发
+	s2.now = func() time.Time { return weeklyAt("2026-10-16", 30*time.Minute) }
 	s2.tick()
 	eq(t, runner2.snapshot(), nil)
 }
 
 func TestCatchUpTodayMidDay(t *testing.T) {
 	s, runner := newTestEnv(t, friBars, nil)
-	s.now = func() time.Time { return at("2026-10-16", 16, 35) }
+	s.now = func() time.Time { return schedAt("2026-10-16", 3, 5*time.Minute) }
 	if err := s.CatchUp(); err != nil {
 		t.Fatal(err)
 	}
@@ -262,11 +288,11 @@ func TestAlreadyOkSkips(t *testing.T) {
 	id, _ := s.st.RunRepo.StartRun("2026-10-16", "ingest")
 	_ = s.st.RunRepo.FinishRun(id, contract.TaskResult{Task: "ingest", Date: "2026-10-16", Status: "ok"})
 
-	s.now = func() time.Time { return at("2026-10-16", 16, 5) }
+	s.now = func() time.Time { return schedAt("2026-10-16", 0, time.Minute) }
 	s.tick() // ingest 触发点，但已 ok → 链空转
 	eq(t, runner.snapshot(), nil)
 
-	s.now = func() time.Time { return at("2026-10-16", 16, 15) }
+	s.now = func() time.Time { return schedAt("2026-10-16", 1, 5*time.Minute) }
 	s.tick() // boxscan 触发点 → 只补 boxscan
 	eq(t, runner.snapshot(), []string{"2026-10-16|boxscan"})
 }
@@ -274,7 +300,7 @@ func TestAlreadyOkSkips(t *testing.T) {
 func TestStartStopSmoke(t *testing.T) {
 	s, runner := newTestEnv(t, friBars, nil)
 	s.interval = 5 * time.Millisecond
-	s.now = func() time.Time { return at("2026-10-16", 16, 35) }
+	s.now = func() time.Time { return schedAt("2026-10-16", 3, 5*time.Minute) }
 	if err := s.Start(); err != nil {
 		t.Fatal(err)
 	}

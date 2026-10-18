@@ -1,17 +1,18 @@
 // Package scheduler 常驻调度器（M7.1，docs/01 §4 每日时间表 / docs/04 §5）。
 //
 // 语义：
-//   - 时刻表触发：每日 16:00/16:10/16:20/16:30/16:40/16:50/16:55 各任务有自己的触发点。
-//     每个触发点到达时，把「计划时刻已过且尚未 ok」的任务按依赖链顺序补跑一遍
-//     （错过多个触发点的，一次链式补齐；ingest 失败则中止本链，等下个触发点重试
-//     —— 天然满足 docs/01「失败重跑/ingest重试」而不会每分钟空转重试）。
+//   - 时刻表触发：按 Schedule 表（docs/01 §4.1 唯一事实源，C4 一致性检查锁定）
+//     每日各任务有自己的触发点。每个触发点到达时，把「计划时刻已过且尚未 ok」的
+//     任务按依赖链顺序补跑一遍（错过多个触发点的，一次链式补齐；ingest 失败则
+//     中止本链，等下个触发点重试——天然满足 docs/01「失败重跑/ingest重试」
+//     而不会每分钟空转重试）。
 //   - CatchUp 启动补跑：前一交易日（DB 日历内 < 今天的最大交易日）若完全没有任何
 //     ok 心跳 → 整日补跑；今天已过触发点但未 ok 的 → 链式补跑。
 //     更早的历史缺口不自动回放（数据多半未入库），用 `darvas run --date X` 手动补。
 //   - 交易日历（ADR-2）：以 sh000001 的日线日期序列为权威——已入库的日期查
 //     daily_bar（BarRepo.HasBar）；当日尚未入库的，直读 TDX sh000001.day 判断
-//     用户是否已完成「下载数据」（15:30 下载后，16:00 触发 ingest 前即可判定；
-//     未下载则跳过，待下个触发点重查）。
+//     用户是否已完成「下载数据」（当日数据收盘后约15:30可下载，16:00 触发 ingest
+//     前即可判定；未下载则跳过，待下个触发点重查）。
 //
 // 时区：A股时刻按北京时间；本工具单机本地运行，直接用系统本地时钟（time.Local）。
 // 周六10:00 weekly 周报任务（M7.2）已接入：fireWeekly 独立于每日时刻表，
@@ -37,20 +38,34 @@ type TaskTime struct {
 }
 
 // Schedule 每日时刻表（顺序即依赖链 ingest→…→report）。
-// 2026-10-18 修订（docs/01 v1.2 §4.1）：TDX 当日数据 15:30 才可下载 → 整链后移，
-// 初选 16:25 前完成（用户 16:30-18:00 浏览池子），16:55 日报（用户 19:30 看计划）。
+//
+// 【时刻集中一处管理】本表与 docs/01 §4.1 互为锁定（check_consistency.py C4）。
+// 改时点 = 改本表 + 改 docs/01 §4.1；CLI usage/serve 横幅（ScheduleSummary）、
+// GUI 心跳（/api/schedule）、测试（schedAt/weeklyAt 派生）全部自动跟随，禁止他处硬编码。
+// 2026-10-18 v1.3 修订：TDX 当日数据 15:30 才可下载 → 16:00 起、每任务间隔 30 分钟
+// （补跑容错窗），19:00 日报；人机协作时点（盘前/午间/盯守）见 docs/01 §4.2。
 var Schedule = []TaskTime{
 	{"16:00", "ingest"},
-	{"16:10", "boxscan"},
-	{"16:20", "screen"},
-	{"16:30", "poolsync"},
-	{"16:40", "signal"},
-	{"16:50", "plan"},
-	{"16:55", "report"},
+	{"16:30", "boxscan"},
+	{"17:00", "screen"},
+	{"17:30", "poolsync"},
+	{"18:00", "signal"},
+	{"18:30", "plan"},
+	{"19:00", "report"},
 }
 
-// WeeklyClock weekly 周报触发时刻（docs/01 §4.3：周六10:00）。
-const WeeklyClock = "10:00"
+// ScheduleSummary 返回 "16:00 ingest → 16:30 boxscan → …" 摘要
+// （CLI usage / serve 横幅由此派生，避免数字散落多处）。
+func ScheduleSummary() string {
+	parts := make([]string, len(Schedule))
+	for i, tt := range Schedule {
+		parts[i] = tt.Clock + " " + tt.Task
+	}
+	return strings.Join(parts, " → ")
+}
+
+// WeeklyClock weekly 周报触发时刻（docs/01 §4.3：周六08:00）。
+const WeeklyClock = "08:00"
 
 // Runner 任务执行器（*pipeline.Pipeline 满足；测试可注入假实现）。
 type Runner interface {

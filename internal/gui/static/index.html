@@ -83,7 +83,7 @@ a.code:hover { color: var(--accent); }
     <span class="muted" id="dashHint"></span>
   </div>
   <div class="card">
-    <h3>每日流水线心跳（16:00 → 16:55）</h3>
+    <h3 id="hbTitle">每日流水线心跳</h3>
     <div class="taskgrid" id="taskGrid"><div class="empty">加载中…</div></div>
     <div id="taskErr" style="color:var(--bad); font-size:12px; margin-top:8px; white-space:pre-wrap;"></div>
   </div>
@@ -236,7 +236,19 @@ function gotoStock(code) {
 }
 
 // ---------------------------------------------------------------- 仪表盘
-const TASKS = ["ingest","boxscan","screen","poolsync","signal","plan","report"];
+// 时刻集中一处管理：TASKS 与心跳时点由 /api/schedule 派生，前端不硬编码（docs/01 §4.1 唯一事实源）。
+let TASKS = ["ingest","boxscan","screen","poolsync","signal","plan","report"]; // 兜底（API 失败时）
+let SCHED = null, SCHED_MAP = {};
+async function loadSchedule() {
+  try {
+    SCHED = (await getJSON("/api/schedule"));
+    if (SCHED && SCHED.tasks && SCHED.tasks.length) {
+      TASKS = SCHED.tasks.map(t => t.task);
+      SCHED_MAP = {}; SCHED.tasks.forEach(t => SCHED_MAP[t.task] = t.clock);
+      $("hbTitle").textContent = `每日流水线心跳（${SCHED.tasks[0].clock} → ${SCHED.tasks[SCHED.tasks.length-1].clock}）`;
+    }
+  } catch (e) { /* 兜底常量生效 */ }
+}
 async function loadDashboard() {
   const d = $("dashDate").value || curDate;
   let url = "/api/dashboard";
@@ -257,6 +269,7 @@ async function loadDashboard() {
   const byTask = {}; j.runs.forEach(r => byTask[r.Task] = r);
   $("taskGrid").innerHTML = TASKS.map(t => {
     const r = byTask[t];
+    const clk = SCHED_MAP[t] || "";
     let color = "#64748b", txt = "未运行", info = "";
     if (r) {
       if (r.Status === "ok") color = "var(--ok)";
@@ -266,7 +279,7 @@ async function loadDashboard() {
       txt = r.Status;
       info = `${fmt(r.DurationMS,0)}ms · ${fmt(r.AffectedRows,0)}行`;
     }
-    return `<div class="task"><div class="tname"><span class="dot" style="background:${color}"></span>${t}</div>
+    return `<div class="task"><div class="tname"><span class="dot" style="background:${color}"></span>${t}${clk?` <span class="muted">${clk}</span>`:""}</div>
       <div class="tinfo">${txt} ${info}</div></div>`;
   }).join("");
   $("taskErr").textContent = j.runs.filter(r => r.Error).map(r => `${r.Task}: ${r.Error}`).join("\n");
@@ -634,7 +647,7 @@ async function loadTrades() {
 
 // ---------------------------------------------------------------- 启动
 window.addEventListener("resize", () => { if (curView==="stock") drawStock(); if (curView==="trades") loadTrades(); });
-loadDates().then(loadDashboard);
+loadSchedule().then(() => loadDates()).then(loadDashboard);
 </script>
 </body>
 </html>

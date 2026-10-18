@@ -315,7 +315,7 @@ func (p *Planner) sellOrder(s contract.Signal, box *contract.Box, sellDisc float
 
 // nextTradingDate 下一交易日（ADR-2 交易日历来自数据本身）：优先取 sh000001 日线中
 // planDate 之后的最近日期（回放/补跑场景未来K线已入库，跨节假日的执行日精确）；
-// 无未来数据时（实盘当日 16:50 plan，DB 仅含至 planDate）退化为跳过周末的下一工作日
+// 无未来数据时（实盘当日 plan 任务时，DB 仅含至 planDate；时点见 scheduler.Schedule）退化为跳过周末的下一工作日
 // ——节假日无法从历史数据预判（ADR-2 不内置日历库），假日偏差由 ExpireStaleOrders
 // 过期机制兜底，不产生错误成交。
 // 修复（2026-10-17）：此前用日历日+1 近似，周五信号会产生周六死单（sh600052 2026-10-09 → exec 10-10）。

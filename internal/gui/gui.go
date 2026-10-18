@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"darvas/internal/contract"
+	"darvas/internal/scheduler"
 	"darvas/internal/store"
 )
 
@@ -47,6 +48,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/signals", s.handleSignals)
 	mux.HandleFunc("GET /api/stock/{code}", s.handleStock)
 	mux.HandleFunc("GET /api/trades", s.handleTrades)
+	mux.HandleFunc("GET /api/schedule", s.handleSchedule) // 时刻集中一处管理（scheduler.Schedule 派生）
 	sub, err := fs.Sub(staticFS, "static")
 	if err != nil {
 		panic(err) // embed 编译期保证，不可达
@@ -115,6 +117,24 @@ func writeJSON(w http.ResponseWriter, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// handleSchedule 返回调度时刻表（scheduler.Schedule 派生；时刻集中一处管理，
+// 前端心跳标题/格子/任务名全部动态渲染，不再硬编码——docs/01 §4.1 唯一事实源）。
+func (s *Server) handleSchedule(w http.ResponseWriter, r *http.Request) {
+	type item struct {
+		Task  string `json:"task"`
+		Clock string `json:"clock"`
+	}
+	items := make([]item, len(scheduler.Schedule))
+	for i, tt := range scheduler.Schedule {
+		items[i] = item{Task: tt.Task, Clock: tt.Clock}
+	}
+	writeJSON(w, map[string]any{
+		"tasks":  items,
+		"weekly": scheduler.WeeklyClock,
+		"summary": scheduler.ScheduleSummary(),
+	})
 }
 
 // writeErr 统一错误输出。
