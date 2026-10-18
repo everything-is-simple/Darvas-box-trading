@@ -1,15 +1,14 @@
 # PROMPT · Darvas-box-trading 下一阶段强化指令
 
 > 用途：新开发会话（人或AI）开工前的接力提示词，先读完本文件再动手。
-> 版本：v1.5（2026-10-18，M8.1 回放骨架落地：`darvas backtest` 内置回放器 + as-of 差分审计；
-> 0.5.0-m8；问题清单 docs/07-m8-issue-list.md——含 #1 P0「四类信号死路」待用户拍板）
+> 版本：v1.6（2026-10-18，#1 方案A 修复落地：四类信号死路打通——LatestNonFormingBox；
+> 真实 20 日 verify 信号不再全 0 + 差分全等；观察期可在修复后系统上启动）
 > 现状：系统已达成「每日无人值守自动运行」（serve 由 Windows 计划任务 DarvasBoxServe 托管，
-> 日志 var/serve.log，运行版本 0.4.2-m7；代码版本 0.5.0-m8——M8 仅新增 backtest 子命令，
-> 不动交易规则，serve 可择机升级也可不动）；全部 commit 已推送 GitHub
+> 日志 var/serve.log，运行版本 0.4.2-m7；代码版本 0.5.0-m8——M8 新增 backtest 子命令 +
+> #1 修复，不动交易规则结构，serve 可择机升级也可不动）；全部 commit 已推送 GitHub
 > （everything-is-simple/Darvas-box-trading）；v1.0 候选，观察期 2026-10-19 启动至
 > 2026-11-14（满20交易日），期间规则冻结。
-> ⚠ M8.1 审计发现 #1（docs/07）：干净 as-of 状态下事件驱动链路全部死路——观察期将零信号零订单。
-> 用户需在观察期启动前拍板修复方向（方案A/B 见 docs/07 #1），否则验收口径「每笔计划有留痕」将空载。
+> M8.1 审计 + #1 修复：docs/07 #1（已修）/ #2（残留，flat_too_long 出池死）/ #3（随#1修）/ #6（残留，UpsertBoxes FK 自引用保护缺失，可能 mask 个别突破持久化）。
 
 ## 一、你在接手什么
 

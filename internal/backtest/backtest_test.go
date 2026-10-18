@@ -13,16 +13,14 @@ import (
 
 // TestSyntheticAsOfDifferential 合成数据差分审计（M8.1 首任务的 CI 常驻版）：
 //
-// 构造能走完「箱体确认 → 入池 → 放量突破」全链条的合成序列（sh600001）+
-// 未来才物化的箱体泄漏陷阱股（sh600003）+ 永不达标对照股（sh600002），
+// 构造能走完「箱体确认 → 入池 → 放量突破 → 信号 → 订单 → 过期回退」全链条的合成序列
+// （sh600001）+ 未来才物化的箱体泄漏陷阱股（sh600003）+ 永不达标对照股（sh600002），
 // 对同一窗口分别以 progressive（未来K线物理缺席）与 prefill（全历史在场）重放，
 // 断言全部决策输出全等——任何任务偷读未来K线都会导致 dump 分叉。
 //
-// 机制断言以 docs/07-m8-issue-list.md #1 的现实语义为准：
-// 突破日引擎输出 [broken_up箱体, forming(0,0)箱体]，LatestBox(id DESC) 必为
-// forming → signal 任务的 breakout/pyramid/stop/failed 判定在干净 as-of 状态下
-// 全部不可达（生产库 signal 表 0 行佐证）。本测试锁定该行为——若未来修复 #1，
-// 断言需同步更新。
+// 机制断言锁定 docs/07 #1 方案A 修复后的语义（2026-10-18 落地）：
+// signal/poolsync/planner 改用 LatestNonFormingBox 后，突破日 t15 出 breakout 信号 →
+// 买单（leg1，exec t16）→ t17 过期 → watch 回 watching。修复前四类信号全死（signal=0）。
 func TestSyntheticAsOfDifferential(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src.db")
@@ -77,7 +75,7 @@ func TestSyntheticAsOfDifferential(t *testing.T) {
 	assertMechanics(t, pre, days)
 }
 
-// assertMechanics 锁定干净 as-of 回放的确定性行为（docs/07 #1/#2/#3 的死路均在其中）。
+// assertMechanics 锁定 #1 方案A 修复后的确定性行为（docs/07 #1-#3 修复后）。
 func assertMechanics(t *testing.T, scratch string, days []string) {
 	t.Helper()
 	db, err := openScratchDump(scratch)
@@ -88,10 +86,18 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 
 	one := func(q string, args ...any) *sql.Row { return db.QueryRow(q, args...) }
 
-	// ① 信号表为空（docs/07 #1：突破日 LatestBox=forming，四类信号死路）
+	// ① 信号表：1 条 breakout@t15 sh600001（#1 修复前为 0——死路已通）
 	var nSig int
-	if err := one(`SELECT COUNT(*) FROM signal`).Scan(&nSig); err != nil || nSig != 0 {
-		t.Fatalf("signal 行数=%d err=%v（期望 0——docs/07 #1 信号死路）", nSig, err)
+	if err := one(`SELECT COUNT(*) FROM signal`).Scan(&nSig); err != nil || nSig != 1 {
+		t.Fatalf("signal 行数=%d err=%v（期望 1——breakout@t15，docs/07 #1 修复后）", nSig, err)
+	}
+	var sigDate, sigCode, sigType string
+	if err := one(`SELECT CAST(date AS TEXT), code, type FROM signal ORDER BY date LIMIT 1`).
+		Scan(&sigDate, &sigCode, &sigType); err != nil {
+		t.Fatalf("读 signal: %v", err)
+	}
+	if sigDate != d(15) || sigCode != "sh600001" || sigType != "breakout" {
+		t.Fatalf("signal = %s/%s/%s, 期望 t15/sh600001/breakout", sigDate, sigCode, sigType)
 	}
 
 	// ② sh600001 阶梯：确认→突破（broken_up@t15）→ 第二箱确认（11.8/11.0）
@@ -133,7 +139,8 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 		t.Fatalf("sh600002 对照股不应有候选，got %d", got)
 	}
 
-	// ④ 跟踪池：t13/t20 入池后永不退出（docs/07 #2/#3：出池死路）
+	// ④ 跟踪池：t13/t20 入池；sh600001 经历 watching→pending(t15 买单)→watching(t17 过期回退)；
+	//    无人退出（本合成无跌破/flat_too_long 触发——#3 已修但此处不验出池，#2 仍死）
 	type wrow struct {
 		stage, added string
 	}
@@ -162,13 +169,29 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 		t.Fatalf("入池日错: %+v（期望 sh600001@t13, sh600003@t20）", ws)
 	}
 
-	// ⑤ 计划与权益：每日一份空计划，权益恒为本金（无成交）
+	// ⑤ 计划与权益：每日一份计划；t15 的 breakout 信号 → 1 笔买单（leg1，exec t16，
+	//    t17 过期）；权益恒为本金（无成交回录）
 	var nPlan, nOrder, nEq int
 	if err := one(`SELECT COUNT(*) FROM trade_plan`).Scan(&nPlan); err != nil || nPlan != len(days) {
 		t.Fatalf("trade_plan = %d err=%v, 期望 %d", nPlan, err, len(days))
 	}
-	if err := one(`SELECT COUNT(*) FROM plan_order`).Scan(&nOrder); err != nil || nOrder != 0 {
-		t.Fatalf("plan_order = %d err=%v, 期望 0（信号死路 → 无订单）", nOrder, err)
+	if err := one(`SELECT COUNT(*) FROM plan_order`).Scan(&nOrder); err != nil || nOrder != 1 {
+		t.Fatalf("plan_order = %d err=%v, 期望 1（t15 breakout → leg1 买单）", nOrder, err)
+	}
+	// 订单明细：buy/leg1/expired，执行日 t16，数量 4400（试探仓钳制：probeUpper=4400）
+	var oSide, oKind, oStatus string
+	var oQty, oLeg int
+	var oExec string
+	if err := one(`SELECT o.side, o.order_kind, o.qty, COALESCE(o.leg_no,0), o.status, CAST(p.execute_date AS TEXT)
+		FROM plan_order o JOIN trade_plan p ON p.id=o.trade_plan_id LIMIT 1`).
+		Scan(&oSide, &oKind, &oQty, &oLeg, &oStatus, &oExec); err != nil {
+		t.Fatalf("读 plan_order: %v", err)
+	}
+	if oSide != "buy" || oKind != "stop_buy" || oLeg != 1 || oStatus != "expired" || oExec != d(16) {
+		t.Fatalf("plan_order = %s/%s/leg%d/%s/exec%s, 期望 buy/stop_buy/leg1/expired/exec%s", oSide, oKind, oLeg, oStatus, oExec, d(16))
+	}
+	if oQty != 4400 {
+		t.Fatalf("plan_order qty = %d, 期望 4400（试探仓钳制：equity×probe_max_pct/trigger 探测）", oQty)
 	}
 	if err := one(`SELECT COUNT(*) FROM equity_snapshot`).Scan(&nEq); err != nil || nEq != len(days) {
 		t.Fatalf("equity_snapshot = %d err=%v, 期望 %d", nEq, err, len(days))

@@ -94,6 +94,8 @@ func (m *Manager) Sync(ctx context.Context, date string) (contract.TaskResult, e
 	}
 
 	// 2) 更新在池股票的当前箱体 + 出池跌破者
+	// 修复 docs/07 #1/#3：用 LatestNonFormingBox——LatestBox 取 forming(0,0) 行致
+	// broken_down 出池判定永假（生产 watch 0 exited 佐证）。
 	watching, err := m.st.PoolRepo.WatchByStage(contract.StageWatching)
 	if err != nil {
 		res.Status, res.Error = "failed", err.Error()
@@ -101,7 +103,7 @@ func (m *Manager) Sync(ctx context.Context, date string) (contract.TaskResult, e
 	}
 	exited := 0
 	for _, w := range watching {
-		box, _ := m.st.BoxRepo.LatestBox(w.Code)
+		box, _ := m.st.BoxRepo.LatestNonFormingBox(w.Code)
 		if box == nil {
 			continue
 		}

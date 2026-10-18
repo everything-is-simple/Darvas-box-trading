@@ -149,6 +149,7 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 }
 
 // LatestBox 取某证券最新的箱体（按 id DESC，即最近写入）。
+// 含 forming 暂态行——供 GUI/报告展示「当前形成中状态」；决策逻辑请用 LatestNonFormingBox。
 func (r *BoxRepo) LatestBox(code string) (*contract.Box, error) {
 	var b contract.Box
 	var topC, botC, broken sql.NullString
@@ -157,6 +158,38 @@ func (r *BoxRepo) LatestBox(code string) (*contract.Box, error) {
 	err := r.db.QueryRow(`SELECT id, code, top, bottom,
 		CAST(top_confirmed AS TEXT), CAST(bottom_confirmed AS TEXT), status, prev_box_id, CAST(broken_date AS TEXT)
 		FROM box WHERE code = ? ORDER BY id DESC LIMIT 1`, code).
+		Scan(&b.ID, &b.Code, &b.Top, &b.Bottom, &topC, &botC, &status, &prev, &broken)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	b.TopConfirmed = topC.String
+	b.BottomConfirmed = botC.String
+	b.BrokenDate = broken.String
+	if prev.Valid {
+		b.PrevBoxID = prev.Int64
+	}
+	b.Status = contract.BoxStatus(status)
+	return &b, nil
+}
+
+// LatestNonFormingBox 取某证券最新的「已落定」箱体（confirmed/broken_up/broken_down；
+// 排除 forming 暂态与 invalid 作废）。决策逻辑（signal/poolsync 出池/planner）专用——
+// 修复 docs/07 #1：突破日引擎输出 [broken_up箱体, forming(0,0)箱体]，LatestBox(id DESC)
+// 必取 forming → 四类信号判定全跳过（生产 signal 表 0 行佐证）。LatestNonFormingBox
+// 跳过 forming，返回突破箱体本身，恢复事件判定。排除 invalid 避免（bottom 可能已填）
+// spuriously 触发 stop 信号。
+func (r *BoxRepo) LatestNonFormingBox(code string) (*contract.Box, error) {
+	var b contract.Box
+	var topC, botC, broken sql.NullString
+	var prev sql.NullInt64
+	var status string
+	err := r.db.QueryRow(`SELECT id, code, top, bottom,
+		CAST(top_confirmed AS TEXT), CAST(bottom_confirmed AS TEXT), status, prev_box_id, CAST(broken_date AS TEXT)
+		FROM box WHERE code = ? AND status IN ('confirmed','broken_up','broken_down')
+		ORDER BY id DESC LIMIT 1`, code).
 		Scan(&b.ID, &b.Code, &b.Top, &b.Bottom, &topC, &botC, &status, &prev, &broken)
 	if err == sql.ErrNoRows {
 		return nil, nil

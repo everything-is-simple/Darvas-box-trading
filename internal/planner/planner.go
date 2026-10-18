@@ -86,7 +86,9 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	executeDate := p.nextTradingDate(planDate)
 	var orders []contract.PlanOrder
 	for _, s := range sigs {
-		box, _ := p.st.BoxRepo.LatestBox(s.Code)
+		// 修复 docs/07 #1：用 LatestNonFormingBox——LatestBox 取 forming(0,0) 行致
+		// box.Top/Bottom=0，buyOrder 因 box.Bottom<=0 直接 return nil，订单永不生成。
+		box, _ := p.st.BoxRepo.LatestNonFormingBox(s.Code)
 		if box == nil {
 			continue
 		}
@@ -182,11 +184,14 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 // 且 新止损 = 下轨×sellDisc 高于现止损 → UpdateStop（触发器兜底拒绝下降）。
 // 入场箱体本身不参与（B1修正后：腿1初始止损=其上轨下方、腿2/3初始止损=其下轨下方，
 // 均不随入场箱体自身重算）。返回上移笔数。
+//
+// 修复 docs/07 #1：用 LatestNonFormingBox——LatestBox 取 forming(bottom=0) 致
+// `lb.Bottom <= 0 → continue`，止损上移永不触发。
 func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) int {
 	moves := 0
 	for i := range positions {
 		pos := &positions[i]
-		lb, err := p.st.BoxRepo.LatestBox(pos.Code)
+		lb, err := p.st.BoxRepo.LatestNonFormingBox(pos.Code)
 		if err != nil || lb == nil {
 			continue
 		}

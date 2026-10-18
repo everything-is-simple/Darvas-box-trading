@@ -9,9 +9,12 @@
 > as-of 纪律成立。逐日箱体哈希定位首个分叉日，决策表语义 dump 定位分叉字段。
 > 静态审计补全运行时无法触发的死路（见 #1）。
 
-## #1 [P0·观察期阻塞] 四类信号在干净 as-of 状态下全部不可达
+## #1 [P0·已修复 2026-10-18] 四类信号在干净 as-of 状态下全部不可达
 
-**症状**：生产库 `var/darvas.db` 的 `signal` 表 0 行——系统从未发出任何信号；
+> **状态：已修复（方案A，2026-10-18，commit 见 git log）**。本条保留为历史记录与
+> 修复依据；下方「根因/证据/影响」描述修复**前**的状态，「修复」段记录方案A落地。
+
+**症状（修复前）**：生产库 `var/darvas.db` 的 `signal` 表 0 行——系统从未发出任何信号；
 box 表 138 条 `(top=0, bottom=0, status='forming')` 残留行（in-pool 股票的当前
 形成中箱体）。10-17 演练的 5 个信号（3 breakout + 2 stop）是引导泄漏（见 #4）
 意外打通的死路，不可作为系统正常工作的证据。
@@ -50,6 +53,35 @@ pyramid: 同上                                                  // forming → 
 - 方案A（最小侵入）：`BoxRepo` 新增 `LatestNonFormingBox(code)`（`status != 'forming'` 的最新箱体）；`signal.evalOne` / `poolsync` 改用之。维持现有 `LatestBox` 供 GUI/报告显示当前形成态。
 - 方案B（更彻底）：`UpsertBoxes` 不持久化 forming 箱体（仅 confirmed/broken/invalid），把"当前形成态"作为引擎运行时状态而非 DB 行——避免 (0,0) 行累积与 stale 删除噪音。撞铁律 6（按 (top,bottom) 复用）需重审。
 
+### 修复（方案A，2026-10-18 落地）
+
+用户拍板方案A（最小爆炸半径 + 可逆 + 让生产对齐单元测试已假设的语义），同日实施：
+
+- `internal/store/repo_box.go`：新增 `LatestNonFormingBox(code)`——
+  `status IN ('confirmed','broken_up','broken_down') ORDER BY id DESC LIMIT 1`
+  （排除 forming 暂态 + invalid 作废，避免 invalid 的 bottom spuriously 触发 stop）。
+  `contract.BoxRepo` 接口虽声明但全代码无人作为类型使用，故只加到具体 struct，不碰契约、不碰 docs/04。
+- 4 处决策调用点 `LatestBox → LatestNonFormingBox`：
+  - `internal/signal/signal.go` evalOne（#1 核心）
+  - `internal/pool/pool.go` watching 循环（#3 出池判定 + current_box_id）
+  - `internal/planner/planner.go` 买卖箱体取值（box.Top/Bottom=0 致 buyOrder 直接 return nil 的连带死路）
+  - `internal/planner/planner.go` raiseStops（forming bottom=0 致止损上移永不触发的连带死路）
+- 保留 `LatestBox`：`screener.go`（box_pass，突破即从 watching 候选毕业，符合语义）、
+  `pool.go` 入池取 boxID（候选已过 screen 的 LatestBox=confirmed）、GUI（展示当前形成态）。
+
+**修复后验证**（2026-10-18，`darvas backtest --src var/perf_test.db --from 2026-09-11 --to 2026-10-16 --mode verify`，14m17s）：
+- 真实 20 日 prefill ≡ progressive 决策输出**全等**（as-of 未回归 ✓）。
+- 信号不再全 0：09-17、09-21 两日各 1 个 breakout 信号 + 1 笔买单（两模式一致）。
+- #3 连带复活：poolsync exited=1 出现在 09-16/09-28/10-08（跌破出池死路通）；
+  连带 pool 开始演化（旧股出池→新股入池，entered=1 多日）。
+- 合成差分测试 `TestSyntheticAsOfDifferential` 更新期望并 PASS：t15 出 breakout 信号 +
+  买单（leg1, qty 4400, exec t16, t17 过期，watch watching→pending→watching）。
+- 现有 signal/pool/planner/store 单测全绿（修复对齐了单元测试已假设的语义）。
+
+**残留（未修，观察期内排期）**：#2（watch.BoxCount 不递增 → flat_too_long 出池规则死，
+独立逻辑，方案A 不碰）、#6（UpsertBoxes prev_box_id FK 自引用保护缺失，可能 mask
+个别股票的突破箱体持久化——如 sz300411 在演练中复现 FK 787，其突破信号可能仍发不出）。
+
 ## #2 [P1] watch.BoxCount 从不递增
 
 **症状**：`watch.BoxCount` 仅在 `pool.Sync` 入池时置 0（pool.go:90），全代码无
@@ -64,13 +96,17 @@ pyramid: 同上                                                  // forming → 
 关联 watch 累加 BoxCount。需关联当前形成态箱体与 watch.current_box_id 的迁移
 判定（与 #1 方案A 配套）。
 
-## #3 [P1] poolsync 自动出池两条路径均不可达
+## #3 [P1·已修复 2026-10-18] poolsync 自动出池两条路径均不可达
 
-**症状**：`pool.Sync` 的 `broken_down` 出池（pool.go:111）与 `flat_too_long`
+> **状态：已修复**（随 #1 方案A 一并——poolsync watching 循环改用 LatestNonFormingBox）。
+
+**症状（修复前）**：`pool.Sync` 的 `broken_down` 出池（pool.go:111）与 `flat_too_long`
 出池（pool.go:119）均依赖 `LatestBox` 的状态——前者撞 #1（forming 不破），
 后者撞 #2（BoxCount 不增）。生产 watch 表 0 exited 佐证。
 
-**修复方向**：随 #1 + #2 一并修复。
+**修复**：poolsync watching 循环的 `LatestBox` 改用 `LatestNonFormingBox` → broken_down
+出池判定可达。修复后真实 20 日回放 exited=1 出现在 09-16/09-28/10-08 三日（两模式一致）。
+`flat_too_long` 出池仍死（依赖 #2 BoxCount，未修）。
 
 ## #4 [P2·已修正] 演练引导未清 box 表 → 候选池被未来箱体污染
 
@@ -163,19 +199,20 @@ sh000001 全历史，保持两模式 NextDate 行为一致，差分测试不被�
 1. **合成数据**（`TestSyntheticAsOfDifferential`，CI 常驻）：构造能走完「箱体确认→入池→
    放量突破」全链条的合成序列 + 未来才物化的泄漏陷阱股，17 个回放日决策输出全等。
 2. **真实数据**（`darvas backtest --src var/perf_test.db --from 2026-09-11 --to 2026-10-16 --mode verify`，
-   2026-10-18 运行，耗时 15m57s）：20 个交易日双模式重放，逐日 boxscan hit 数 /
-   screen 候选数 / poolsync / signal / plan / equity 全部一致。例如 09-11 两模式
-   均 `boxscan=9072 screen=130 poolsync=8 signal=0 plan=0`；10-16 均
-   `boxscan=9447 screen=1043 poolsync=0 signal=0 plan=0`。20 日 signal 全 0、
-   plan_order 全 0——#1 信号死路在真实数据上实证。
+   2026-10-18 运行，耗时 14m17s，#1 方案A 修复后）：20 个交易日双模式重放，逐日 boxscan hit 数 /
+   screen 候选数 / poolsync / signal / plan / equity 全部一致。修复后信号不再全 0：
+   09-17、09-21 两日各出 1 个 breakout 信号 + 1 笔买单（两模式一致）；#3 连带复活，
+   exited=1 出现在 09-16/09-28/10-08 三日。
 
 **as-of 纪律成立**：六任务链未读到任何未来K线（#9 豁免的 sh000001 日历读除外）。
 差分方法论的守卫边界：若未来任何任务偷读未来K线，prefill（未来在场）与
 progressive（未来缺席）的决策输出必然分叉——首个分叉日由逐日箱体哈希定位，
 分叉字段由决策表语义 dump 定位。
 
-**但 as-of 纪律成立 ≠ 系统能正常交易**：#1-#3 表明，干净 as-of 状态下事件驱动
-链路是死的——这正是 M8 审计要发现的事，回放器只给证据，修复走周五复盘 + 用户拍板。
+**#1 方案A 修复后**：事件驱动链路恢复——breakout 信号会出、跌破出池会触发、
+pool 会演化。观察期（2026-10-19 启动）可在修复后的系统上运行。残留 #2（flat_too_long
+出池死）/ #6（UpsertBoxes FK 自引用保护缺失，可能 mask 个别股票突破持久化）不阻塞
+观察期，可观察期内排期。
 
 **附：真实回放与 10-17 演练的对照**（佐证 #4 引导泄漏）：
 | 日期 | 演练 screen（box 表带未来状态） | 干净回放 screen（box 全清重算） |
