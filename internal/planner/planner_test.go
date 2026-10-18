@@ -52,9 +52,11 @@ func TestPlannerBuyOrderQty(t *testing.T) {
 	if stop, ok := o.Reason["stop"].(float64); !ok || !approx(stop, 23.28, 0.01) {
 		t.Errorf("reason.stop=%v want ≈23.28（首腿止损=上轨×0.97）", o.Reason["stop"])
 	}
-	// qty = floor(1000000×0.01/1.44/100)×100 = 6900（< 单股上限 floor(100万×20%/24.72/100)×100 = 8000）
-	if o.Qty != 6900 {
-		t.Errorf("qty=%d want 6900（紧止损→风险预算内股数变大）", o.Qty)
+	// B4动态仓位（2026-10-18）：腿1=试探单，名义≤权益5% → floor(1000000×0.05/24.72/100)×100 = 2000
+	// （风险公式本会给 floor(1M×0.01/1.44/100)×100 = 6900≈17%名义——"试探"形同重仓，被5%上限压小；
+	//   maxQty = floor(1M×20%/24.72/100)×100 = 8000 不参与）
+	if o.Qty != 2000 {
+		t.Errorf("qty=%d want 2000（试探仓5%%名义上限，原书小仓试探）", o.Qty)
 	}
 	if o.Side != "buy" || o.OrderKind != "stop_buy" || o.LegNo != 1 {
 		t.Errorf("order side/kind/leg=%s/%s/%d want buy/stop_buy/1", o.Side, o.OrderKind, o.LegNo)
@@ -180,6 +182,160 @@ func TestPlannerExecuteDate(t *testing.T) {
 		}
 		if plan.ExecuteDate != c[1] {
 			t.Errorf("plan %s execute_date=%s want %s（下一交易日）", c[0], plan.ExecuteDate, c[1])
+		}
+	}
+}
+
+// TestPlannerProbeFloor B4：试探仓绝对下限（原书首批200-500股）——高价股风险公式算出的
+// 股数不足 200 且上限允许时，抬到 risk.probe_min_shares=200（本例把 probe_max_pct 调到
+// 20% 构造"上限允许"场景：upper=floor(1M×0.2/927/100)*100=200；默认5%下900元股票的
+// 试探上限仅0手，下限让位上限——不硬凑）。
+func TestPlannerProbeFloor(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	// 高价箱体 top=900 bottom=800（confirmed）
+	boxes := []contract.Box{{
+		Code: code, Top: 900, Bottom: 800, TopConfirmed: "2026-10-10",
+		BottomConfirmed: "2026-10-14", Status: contract.BoxConfirmed,
+	}}
+	ids, err := st.BoxRepo.UpsertBoxes(boxes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 调大试探仓名义上限到 20%，使 200 股下限可生效
+	if _, err := st.DB().Exec(`INSERT INTO param(key,value) VALUES('risk.probe_max_pct','0.2')
+		ON CONFLICT(key) DO UPDATE SET value='0.2'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
+		BoxID: ids[0], ClosePx: 950, BoxLevel: 900,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("orders=%d want 1", len(orders))
+	}
+	o := orders[0]
+	// 风险公式=floor(1M×0.01/(927−873)/100)×100=100 < 200 → 抬到下限 200
+	if o.Qty != 200 {
+		t.Errorf("qty=%d want 200（试探仓绝对下限，原书首批200-500股）", o.Qty)
+	}
+	if o.LegNo != 1 {
+		t.Errorf("leg=%d want 1", o.LegNo)
+	}
+}
+
+// TestPlannerLeg3Scale B4：腿3加码=持仓×risk.scale（原书确认后放大3-10倍，默认5），
+// 且加码后总名义≤单股上限（room=maxQty−持仓）——持仓1900股×5=9500，被 room=7400−1900=5500 裁剪。
+func TestPlannerLeg3Scale(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	// 入场箱体（旧，已突破）+ 新箱体（26/21 confirmed）同批 upsert：
+	// 局部 ID 1/2 接 prev 链；分两次 upsert 会把未被引用的入场箱当 stale 删掉（FK 断）
+	ids, err := st.BoxRepo.UpsertBoxes([]contract.Box{
+		{ID: 1, Code: code, Top: 24, Bottom: 17, TopConfirmed: "2026-10-09",
+			BottomConfirmed: "2026-10-13", Status: contract.BoxBrokenUp},
+		{ID: 2, Code: code, Top: 26, Bottom: 21, TopConfirmed: "2026-10-14",
+			BottomConfirmed: "2026-10-15", Status: contract.BoxConfirmed, PrevBoxID: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 持仓 1900 股（试探仓成交后的状态）
+	if _, err := st.TradeRepo.CreatePosition(contract.Position{
+		Code: code, OpenedDate: "2026-10-10", EntryBoxID: ids[0],
+		Qty: 1900, AvgCost: 24, StopPrice: 20,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// pyramid 信号（有持仓 → 腿3 加码）
+	if err := st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalPyramid,
+		BoxID: ids[1], ClosePx: 27, BoxLevel: 26,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("orders=%d want 1（仅加码买单）", len(orders))
+	}
+	o := orders[0]
+	if o.LegNo != 3 {
+		t.Errorf("leg=%d want 3（有持仓→加码单）", o.LegNo)
+	}
+	// 放大：1900×5=9500 > 风险公式3100；room=7400−1900=5500（加码后总名义≤20%）
+	if o.Qty != 5500 {
+		t.Errorf("qty=%d want 5500（持仓×5 放大后被 room 裁剪）", o.Qty)
+	}
+	if sc, ok := o.Reason["scale"].(float64); !ok || sc != 5 {
+		t.Errorf("reason.scale=%v want 5", o.Reason["scale"])
+	}
+}
+
+// TestPlannerLeg3RoomExhausted B4：持仓已达单股名义上限 → room<1手 → 不再加码
+// （自设上限优先于放大倍数）。
+func TestPlannerLeg3RoomExhausted(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	// 入场箱体 + 新箱体同批 upsert（局部 ID 1/2 接 prev 链，避免入场箱被当 stale 删）
+	ids, err := st.BoxRepo.UpsertBoxes([]contract.Box{
+		{ID: 1, Code: code, Top: 24, Bottom: 17, TopConfirmed: "2026-10-09",
+			BottomConfirmed: "2026-10-13", Status: contract.BoxBrokenUp},
+		{ID: 2, Code: code, Top: 26, Bottom: 21, TopConfirmed: "2026-10-14",
+			BottomConfirmed: "2026-10-15", Status: contract.BoxConfirmed, PrevBoxID: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 持仓 = maxQty = floor(1M×20%/26.78/100)×100 = 7400 股（正好打满单股上限）
+	if _, err := st.TradeRepo.CreatePosition(contract.Position{
+		Code: code, OpenedDate: "2026-10-10", EntryBoxID: ids[0],
+		Qty: 7400, AvgCost: 24, StopPrice: 20,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalPyramid,
+		BoxID: ids[1], ClosePx: 27, BoxLevel: 26,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range orders {
+		if o.Side == "buy" {
+			t.Errorf("不应再加码：room=maxQty−持仓=0，got buy qty=%d leg=%d", o.Qty, o.LegNo)
 		}
 	}
 }

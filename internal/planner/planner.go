@@ -4,6 +4,9 @@
 // 输出：trade_plan + plan_order（停损买/卖单，含触发价、委托价、数量、腿号）
 //
 // 数量公式（FR-404）：qty = floor(equity × risk% / (trigger − stop) / 100) × 100（A股整手）
+// 动态仓位（B4 2026-10-18，原书§4.1「试探→放大→自设上限」）：腿1试探单钳制到
+// 名义≤权益×risk.probe_max_pct 且 ≥risk.probe_min_shares 股；腿3加码=持仓×risk.scale
+// 倍且加码后总名义≤risk.maxpos（单股上限）；参数见 migrations/0005，详见 buyOrder。
 //   - breakout → 腿1停损买单：trigger = box.top × buy.premium，stop = box.top × sell.discount
 //     （B1修正2026-10-18：首腿紧止损=被突破箱体上轨/突破点下方，原书§4.1；旧实现误挂箱体下轨下方）
 //   - pyramid → 腿2/3停损买单：trigger = box.top × buy.premium，stop = box.bottom × sell.discount
@@ -210,6 +213,12 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 }
 
 // buyOrder 构造停损买单（breakout=leg1, pyramid=leg2/3）。
+// 动态仓位（B4 2026-10-18，原书§4.1「试探→放大→自设上限」，参数见 0005 migration）：
+//   - 腿1 试探单：风险公式基准钳制到名义≤权益×probe_max_pct/触发价，且不低于
+//     probe_min_shares 股（上限允许时）——原书"首批200-500股小仓"的A股适配；
+//   - 腿2 确认单（pyramid 但无持仓=新入场）：风险公式(2%) + 单股上限；
+//   - 腿3 加码单（pyramid 且有持仓）：max(风险公式(2%), 持仓股数×scale)，且加码后
+//     总名义不超过单股上限（room=maxQty−持仓；不足1手则不加码）——原书"确认后放大3-10倍"。
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, equity, leg1, leg23, maxPos, buyPrem, sellDisc float64,
 	maxLegs int, posByCode map[string]*contract.Position, planDate, execDate string) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
@@ -226,9 +235,11 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, equity, leg1, l
 	// 腿号：breakout=第1腿（测试单）；pyramid=第2/3腿（确认/加码）
 	leg := 1
 	riskPct := leg1
+	var pos *contract.Position
 	if s.Type == contract.SignalPyramid {
-		if _, ok := posByCode[s.Code]; ok {
+		if pp, ok := posByCode[s.Code]; ok {
 			leg = 3 // 已有持仓的加码 → 第3腿
+			pos = pp
 		} else {
 			leg = 2 // 第2腿（确认单）
 		}
@@ -237,11 +248,36 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, equity, leg1, l
 	if leg > maxLegs {
 		return nil
 	}
-	// 数量公式 + 单股仓位上限（FR-404）
+	// 动态仓位参数（B4）
+	probeMin := p.st.ParamRepo.GetInt("risk.probe_min_shares", 200)
+	probeMaxPct := p.st.ParamRepo.GetFloat("risk.probe_max_pct", 0.05)
+	scale := p.st.ParamRepo.GetInt("risk.scale", 5)
+	// 数量公式 + 单股仓位上限（FR-404）；maxQty=自设单股名义上限
 	qty := int(math.Floor(equity*riskPct/riskPerUnit/100)) * 100
 	maxQty := int(math.Floor(equity*maxPos/trigger/100)) * 100
-	if qty > maxQty {
-		qty = maxQty
+	// 腿3 加码：原书"确认后放大"——以持仓股数为基放大 scale 倍（不低于风险公式）
+	if leg == 3 && pos != nil && pos.Qty > 0 {
+		if scaled := pos.Qty / 100 * scale * 100; scaled > qty {
+			qty = scaled
+		}
+	}
+	// 上限：腿1=试探仓名义上限；腿3=加码后总名义≤单股上限（room=maxQty−持仓）；其余=maxQty
+	upper := maxQty
+	if leg == 1 {
+		if probeUpper := int(math.Floor(equity*probeMaxPct/trigger/100)) * 100; probeUpper < upper {
+			upper = probeUpper
+		}
+	} else if leg == 3 && pos != nil {
+		if room := maxQty - pos.Qty; room < upper {
+			upper = room
+		}
+	}
+	if qty > upper {
+		qty = upper
+	}
+	// 下限：试探仓不低于原书绝对下限（上限允许时）；其余腿 A股整手 100 股
+	if leg == 1 && qty < probeMin && probeMin <= upper {
+		qty = probeMin
 	}
 	if qty <= 0 {
 		return nil
@@ -253,6 +289,7 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, equity, leg1, l
 		Reason: map[string]any{
 			"signal": string(s.Type), "box_top": box.Top, "box_bottom": box.Bottom,
 			"trigger": trigger, "stop": stop, "risk_pct": riskPct, "equity": equity, "leg": leg,
+			"probe_min_shares": probeMin, "probe_max_pct": probeMaxPct, "scale": scale, "max_qty": maxQty,
 		},
 	}
 }
