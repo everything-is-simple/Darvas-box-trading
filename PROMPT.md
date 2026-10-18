@@ -3,13 +3,15 @@
 > 用途：新开发会话（人或AI）开工前的接力提示词，先读完本文件再动手。
 > 版本：v1.4（2026-10-18，时刻集中一处管理：§4 唯一事实源；流水线 16:00→19:00 间隔30分钟；盯守 20:00；盘前人肉 08:00/08:20；周六周报 08:00）
 > 现状：系统已达成「每日无人值守自动运行」（serve 由 Windows 计划任务 DarvasBoxServe 托管，
-> 日志 var/serve.log）；v1.0 候选，观察期 2026-10-19 启动至 2026-11-14（满20交易日）。
+> 日志 var/serve.log，版本 0.4.2-m7）；全部 34 个 commit 已推送 GitHub
+> （everything-is-simple/Darvas-box-trading）；v1.0 候选，观察期 2026-10-19 启动至
+> 2026-11-14（满20交易日），期间规则冻结。
 
 ## 一、你在接手什么
 
 一个只用达瓦斯箱体理论的个人A股交易系统：Go + SQLite 单 exe、本地 HTTP UI、
 固定时刻表调度，每日自动跑 ingest → boxscan → screen → poolsync → signal → plan → report。
-从 M0 到 M7.4 共 25 个 commit，前身是 7 个阵亡系统（历史与教训见
+从 M0 到 M7.4 共 34 个 commit（已全部推送 GitHub），前身是 7 个阵亡系统（历史与教训见
 docs/retrospective-2026/retrospective-2026.html）。
 
 ## 二、铁律（违反任何一条=返工）
