@@ -34,6 +34,7 @@ import (
 	"strings"
 
 	"darvas/internal/contract"
+	"darvas/internal/match"
 	"darvas/internal/pipeline"
 	"darvas/internal/store"
 
@@ -380,6 +381,7 @@ func Replay(scratch string, days []string, dayBars map[string][]contract.DailyBa
 	reportDir := strings.TrimSuffix(scratch, ".db") + "_reports"
 	pipe := pipeline.New(st, nil) // ingest 不在回放链上，ingester 传 nil（禁用 ingest 任务）
 	pipe.SetReportDir(reportDir)
+	matcher := match.New(st) // M8.2 撮合器：report 之前撮合当日订单
 
 	ctx := context.Background()
 	hashes := make(map[string]uint64, len(days))
@@ -392,6 +394,15 @@ func Replay(scratch string, days []string, dayBars map[string][]contract.DailyBa
 		}
 		var rows []string
 		for _, task := range sixTasks {
+			if task == "report" {
+				// M8.2：report 之前撮合当日订单（match 插在 plan 之后、report 之前，docs/08 §5）
+				if n, err := matcher.Match(ctx, d); err != nil {
+					fails = append(fails, fmt.Sprintf("%s match: %v", d, err))
+					rows = append(rows, "match=FAIL")
+				} else if n > 0 {
+					rows = append(rows, fmt.Sprintf("match=%d", n))
+				}
+			}
 			res, err := pipe.RerunTask(ctx, d, task)
 			if err != nil || res.Status != "ok" {
 				msg := fmt.Sprintf("%s %s: status=%s err=%v", d, task, res.Status, err)

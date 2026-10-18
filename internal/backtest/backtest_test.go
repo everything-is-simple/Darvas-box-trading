@@ -3,6 +3,7 @@ package backtest
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"path/filepath"
 	"testing"
 	"time"
@@ -18,9 +19,10 @@ import (
 // 对同一窗口分别以 progressive（未来K线物理缺席）与 prefill（全历史在场）重放，
 // 断言全部决策输出全等——任何任务偷读未来K线都会导致 dump 分叉。
 //
-// 机制断言锁定 docs/07 #1 方案A 修复后的语义（2026-10-18 落地）：
+// 机制断言锁定 docs/07 #1 方案A 修复 + M8.2 撮合后的语义（2026-10-19）：
 // signal/poolsync/planner 改用 LatestNonFormingBox 后，突破日 t15 出 breakout 信号 →
-// 买单（leg1，exec t16）→ t17 过期 → watch 回 watching。修复前四类信号全死（signal=0）。
+// 买单（leg1，exec t16）→ M8.2 撮合器在 t16 盘中上穿 trigger 成交 → watch 持仓化 holding。
+// 修复前四类信号全死（signal=0）；M8.2 撮合前该买单会在 t17 过期（无成交、watch 回 watching）。
 func TestSyntheticAsOfDifferential(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src.db")
@@ -139,19 +141,19 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 		t.Fatalf("sh600002 对照股不应有候选，got %d", got)
 	}
 
-	// ④ 跟踪池：t13/t20 入池；sh600001 经历 watching→pending(t15 买单)→watching(t17 过期回退)；
-	//    无人退出（本合成无跌破/flat_too_long 触发——#3 已修但此处不验出池，#2 仍死）
+	// ④ 跟踪池：t13/t20 入池；sh600001 经历 watching→pending(t15 买单)→holding(t16 撮合成交)；
+	//    sh600003 保持 watching（无人退出——本合成无跌破/flat_too_long 触发）
 	type wrow struct {
-		stage, added string
+		code, stage, added string
 	}
-	rows, err := db.Query(`SELECT stage, CAST(added_date AS TEXT) FROM watch ORDER BY code`)
+	rows, err := db.Query(`SELECT code, stage, CAST(added_date AS TEXT) FROM watch ORDER BY code`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var ws []wrow
 	for rows.Next() {
 		var w wrow
-		if err := rows.Scan(&w.stage, &w.added); err != nil {
+		if err := rows.Scan(&w.code, &w.stage, &w.added); err != nil {
 			t.Fatal(err)
 		}
 		ws = append(ws, w)
@@ -161,16 +163,23 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 		t.Fatalf("watch 行数 = %d, 期望 2（sh600001+sh600003）", len(ws))
 	}
 	for _, w := range ws {
-		if w.stage != "watching" {
-			t.Fatalf("watch stage = %s, 期望 watching（出池死路 docs/07 #2/#3）", w.stage)
+		switch w.code {
+		case "sh600001":
+			if w.stage != "holding" {
+				t.Fatalf("sh600001 watch stage = %s, 期望 holding（t16 撮合成交→持仓化）", w.stage)
+			}
+		case "sh600003":
+			if w.stage != "watching" {
+				t.Fatalf("sh600003 watch stage = %s, 期望 watching", w.stage)
+			}
 		}
 	}
 	if ws[0].added != d(13) || ws[1].added != d(20) {
 		t.Fatalf("入池日错: %+v（期望 sh600001@t13, sh600003@t20）", ws)
 	}
 
-	// ⑤ 计划与权益：每日一份计划；t15 的 breakout 信号 → 1 笔买单（leg1，exec t16，
-	//    t17 过期）；权益恒为本金（无成交回录）
+	// ⑤ 计划与权益：每日一份计划；t15 breakout 信号 → 1 笔买单（leg1，exec t16），
+	//    M8.2 撮合器 t16 成交（status=filled）；权益 ≈ 本金−买入支出+市值 ≈ 999415
 	var nPlan, nOrder, nEq int
 	if err := one(`SELECT COUNT(*) FROM trade_plan`).Scan(&nPlan); err != nil || nPlan != len(days) {
 		t.Fatalf("trade_plan = %d err=%v, 期望 %d", nPlan, err, len(days))
@@ -178,7 +187,7 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 	if err := one(`SELECT COUNT(*) FROM plan_order`).Scan(&nOrder); err != nil || nOrder != 1 {
 		t.Fatalf("plan_order = %d err=%v, 期望 1（t15 breakout → leg1 买单）", nOrder, err)
 	}
-	// 订单明细：buy/leg1/expired，执行日 t16，数量 4400（试探仓钳制：probeUpper=4400）
+	// 订单明细：buy/leg1/filled，执行日 t16，数量 4400（试探仓钳制：probeUpper=4400）
 	var oSide, oKind, oStatus string
 	var oQty, oLeg int
 	var oExec string
@@ -187,8 +196,8 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 		Scan(&oSide, &oKind, &oQty, &oLeg, &oStatus, &oExec); err != nil {
 		t.Fatalf("读 plan_order: %v", err)
 	}
-	if oSide != "buy" || oKind != "stop_buy" || oLeg != 1 || oStatus != "expired" || oExec != d(16) {
-		t.Fatalf("plan_order = %s/%s/leg%d/%s/exec%s, 期望 buy/stop_buy/leg1/expired/exec%s", oSide, oKind, oLeg, oStatus, oExec, d(16))
+	if oSide != "buy" || oKind != "stop_buy" || oLeg != 1 || oStatus != "filled" || oExec != d(16) {
+		t.Fatalf("plan_order = %s/%s/leg%d/%s/exec%s, 期望 buy/stop_buy/leg1/filled/exec%s", oSide, oKind, oLeg, oStatus, oExec, d(16))
 	}
 	if oQty != 4400 {
 		t.Fatalf("plan_order qty = %d, 期望 4400（试探仓钳制：equity×probe_max_pct/trigger 探测）", oQty)
@@ -197,11 +206,31 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 		t.Fatalf("equity_snapshot = %d err=%v, 期望 %d", nEq, err, len(days))
 	}
 	var eq float64
-	if err := one(`SELECT total FROM equity_snapshot ORDER BY date DESC LIMIT 1`).Scan(&eq); err != nil || eq != 1000000 {
-		t.Fatalf("期末权益 = %v err=%v, 期望 1000000", eq, err)
+	if err := one(`SELECT total FROM equity_snapshot ORDER BY date DESC LIMIT 1`).Scan(&eq); err != nil || math.Abs(eq-999415.04) > 1 {
+		t.Fatalf("期末权益 = %v err=%v, 期望 ≈999415.04（t16 成交 4400@11.33 + 手续费）", eq, err)
 	}
 
-	// ⑥ 心跳：每日 6 任务全部 ok（回放心跳只落 scratch，铁律 M8-2）
+	// ⑥ 成交与持仓（M8.2 撮合）：t16 成交 1 笔买入，sh600001 开仓 4400 股
+	var nFill int
+	if err := one(`SELECT COUNT(*) FROM trade_fill`).Scan(&nFill); err != nil || nFill != 1 {
+		t.Fatalf("trade_fill = %d err=%v, 期望 1（t16 buy 4400）", nFill, err)
+	}
+	var fCode, fSide string
+	var fPx float64
+	var fQty int
+	if err := one(`SELECT code, side, price, qty FROM trade_fill LIMIT 1`).
+		Scan(&fCode, &fSide, &fPx, &fQty); err != nil {
+		t.Fatalf("读 trade_fill: %v", err)
+	}
+	if fCode != "sh600001" || fSide != "buy" || fQty != 4400 || math.Abs(fPx-11.33) > 1e-6 {
+		t.Fatalf("fill = %s/%s/%d@%.4f, 期望 sh600001/buy/4400@11.33", fCode, fSide, fQty, fPx)
+	}
+	var nPos int
+	if err := one(`SELECT COUNT(*) FROM position WHERE status='open'`).Scan(&nPos); err != nil || nPos != 1 {
+		t.Fatalf("open position = %d err=%v, 期望 1", nPos, err)
+	}
+
+	// ⑦ 心跳：每日 6 任务全部 ok（回放心跳只落 scratch，铁律 M8-2）
 	var nBad int
 	if err := one(`SELECT COUNT(*) FROM daily_run WHERE status != 'ok'`).Scan(&nBad); err != nil || nBad != 0 {
 		t.Fatalf("daily_run 非 ok 行 = %d err=%v", nBad, err)

@@ -263,6 +263,41 @@ type PendingOrder struct {
 	ReasonJSON  string
 }
 
+// MatchOrder 撮合用订单视图（M8.2：execute_date==当日 的全部待成交订单，
+// 含 code/side/trigger，撮合器据此用当日 OHLC 判定触发）。
+type MatchOrder struct {
+	ID           int64
+	Code         string
+	Side         string
+	TriggerPrice float64
+	LimitPrice   float64
+	Qty          int
+	LegNo        int
+}
+
+// PendingOrdersForExecuteDate 取执行日==date 且仍可成交的订单（pending/placed），
+// 按 side 排序（sell 先于 buy，撮合器先卖后买满足 T+1）。M8.2 撮合入口。
+func (r *TradeRepo) PendingOrdersForExecuteDate(date string) ([]MatchOrder, error) {
+	rows, err := r.db.Query(`SELECT o.id, o.code, o.side, o.trigger_price, o.limit_price,
+			o.qty, COALESCE(o.leg_no,0)
+		FROM plan_order o JOIN trade_plan p ON p.id = o.trade_plan_id
+		WHERE o.status IN ('pending','placed') AND CAST(p.execute_date AS TEXT) = ?
+		ORDER BY CASE o.side WHEN 'sell' THEN 0 ELSE 1 END, o.code, o.id`, date)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MatchOrder
+	for rows.Next() {
+		var o MatchOrder
+		if err := rows.Scan(&o.ID, &o.Code, &o.Side, &o.TriggerPrice, &o.LimitPrice, &o.Qty, &o.LegNo); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 // PendingOrdersFor 取某股某方向仍可成交的订单（pending/placed，execute_date≤date，按计划日先后）。
 // 成交回录时用它把 fill 关联到 plan_order。
 func (r *TradeRepo) PendingOrdersFor(code, side, date string) ([]PendingOrder, error) {

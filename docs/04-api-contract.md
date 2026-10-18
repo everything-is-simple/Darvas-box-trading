@@ -197,6 +197,7 @@ type TradeRepo interface {
     FillExists(code, date, side string, price float64, qty int) (bool, error)  // 幂等粘贴
     OrderStatus(orderID int64) (string, error)
     PendingOrdersFor(code, side, date string) ([]PendingOrder, error)          // 成交匹配
+    PendingOrdersForExecuteDate(date string) ([]MatchOrder, error)  // 撮合用：执行日==date 全部待成交单（M8.2）
     ExpireStaleOrders(today string) (int64, error)         // 过期未成交订单
     PositionByCode(code string) (*Position, error)
     CreatePosition(p Position) (int64, error)

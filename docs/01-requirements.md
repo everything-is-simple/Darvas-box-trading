@@ -189,6 +189,10 @@
 | 跟踪池活跃上限 | `pool.maxwatch` | 8支 | 原书：同时跟踪5-8支 |
 | 不获利持仓约束 | `position.staledays` | 15日 | 原书3周：开仓后N日仍不获利→退出 |
 | 最大腿数 | `risk.maxlegs` | 3 | 达瓦斯三段式 |
+| 佣金费率 | `fee.commission_rate` | 万2.5 | 双向（M8.2 撮合） |
+| 单笔最低佣金 | `fee.commission_min` | 5元 | 券商最低收费（M8.2 撮合） |
+| 印花税 | `fee.stamp_tax` | 千1 | 卖出单边（M8.2 撮合） |
+| 过户费 | `fee.transfer_rate` | 万0.1 | 双向简化（M8.2 撮合） |
 | TDX数据根目录 | `tdx.root` | H:/new_tdx64/vipdoc | 运行时路径配置 |
 
 ---
