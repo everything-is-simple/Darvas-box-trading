@@ -28,7 +28,7 @@ import (
 	"darvas/internal/store"
 )
 
-const version = "0.4.0-m7"
+const version = "0.4.1-m7"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -138,8 +138,8 @@ func usage() {
   darvas serve  [--addr]                     常驻模式（调度+GUI+备份，M7.1）
 
 每日时间表（docs/01-requirements.md §4）:
-  15:30 ingest → 16:00 boxscan → 16:10 screen → 16:20 poolsync
-  → 16:30 signal → 16:40 plan → 16:45 report → 备份轮转
+  16:00 ingest → 16:10 boxscan → 16:20 screen → 16:30 poolsync
+  → 16:40 signal → 16:50 plan → 16:55 report → 备份轮转
 `)
 }
 
@@ -762,8 +762,8 @@ func runServe(db, addr string) {
 	defer sched.Stop()
 
 	fmt.Printf("=== darvas 常驻模式（%s）===\n", version)
-	fmt.Println("时刻表: 15:30 ingest → 16:00 boxscan → 16:10 screen → 16:20 poolsync",
-		"→ 16:30 signal → 16:40 plan → 16:45 report → 备份")
+	fmt.Println("时刻表: 16:00 ingest → 16:10 boxscan → 16:20 screen → 16:30 poolsync",
+		"→ 16:40 signal → 16:50 plan → 16:55 report → 备份")
 	fmt.Printf("GUI: http://%s （Ctrl+C 退出）\n", addr)
 	must(gui.Run(stR, addr, false)) // 常驻模式不自动弹浏览器，需要时手动打开
 }

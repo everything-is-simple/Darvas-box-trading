@@ -147,21 +147,21 @@ Darvas-box-trading/
 自动下单明确不做（需求§9）。成交录入提供「粘贴解析」（券商APP成交明细文本→结构化），把人工成本压到每笔30秒。
 
 ### ADR-5 SQLite WAL + 每日备份
-单机单用户，WAL模式足够并发（GUI读+调度写）；每日16:45流水线尾部做`VACUUM INTO`备份。
+单机单用户，WAL模式足够并发（GUI读+调度写）；每日16:55流水线尾部做`VACUUM INTO`备份。
 
 ---
 
 ## 6. 数据流（一次完整交易日）
 
 ```
-15:05 通达信客户端 ──下载数据──▶ vipdoc/*.day（外部更新）
-15:30 ingest      ──增量读取──▶ daily_bar（今日T行）
-16:00 boxscan     ──K线窗口──▶ box（重算跟踪池全量+候选池增量+全市场滚动N日）
-16:10 screen      ──四条件──▶ candidate_pool（当日快照）
-16:20 poolsync    ──状态机──▶ watch（入池/升阶/出池）
-16:30 signal      ──收盘价vs箱体（首次事件语义：状态迁移当日发一次，同日重跑幂等）──▶ signal（breakout/pyramid/stop/failed）
-16:40 plan        ──信号+持仓+param──▶ trade_plan+plan_order（六问答案）
-16:45 report      ──汇总──▶ daily_20261017.html + db备份
+15:30 通达信客户端 ──下载数据──▶ vipdoc/*.day（外部更新）
+16:00 ingest      ──增量读取──▶ daily_bar（今日T行）
+16:10 boxscan     ──K线窗口──▶ box（重算跟踪池全量+候选池增量+全市场滚动N日）
+16:20 screen      ──四条件──▶ candidate_pool（当日快照）
+16:30 poolsync    ──状态机──▶ watch（入池/升阶/出池）
+16:40 signal      ──收盘价vs箱体（首次事件语义：状态迁移当日发一次，同日重跑幂等）──▶ signal（breakout/pyramid/stop/failed）
+16:50 plan        ──信号+持仓+param──▶ trade_plan+plan_order（六问答案）
+16:55 report      ──汇总──▶ daily_20261017.html + db备份
      (次日09:25 人工按plan_order挂券商条件单；成交后paste回录 → trade_fill → ledger)
 ```
 

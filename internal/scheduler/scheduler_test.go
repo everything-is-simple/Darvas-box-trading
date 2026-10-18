@@ -125,9 +125,9 @@ var friBars = []contract.DailyBar{{Code: "sh000001", Date: "2026-10-16", Close: 
 
 func TestTickChainOrderAndIdempotent(t *testing.T) {
 	s, runner := newTestEnv(t, friBars, nil)
-	s.now = func() time.Time { return at("2026-10-16", 16, 25) }
+	s.now = func() time.Time { return at("2026-10-16", 16, 35) }
 
-	s.tick() // 16:25 → ingest/boxscan/screen/poolsync 四个触发点已过，链式补跑
+	s.tick() // 16:35 → ingest/boxscan/screen/poolsync 四个触发点已过，链式补跑
 	eq(t, runner.snapshot(), []string{
 		"2026-10-16|ingest", "2026-10-16|boxscan", "2026-10-16|screen", "2026-10-16|poolsync",
 	})
@@ -142,17 +142,17 @@ func TestIngestFailAbortsAndRetriesNextTrigger(t *testing.T) {
 	s, runner := newTestEnv(t, friBars, nil)
 	runner.failOn["2026-10-16|ingest"] = errors.New("tdx not ready")
 
-	s.now = func() time.Time { return at("2026-10-16", 16, 25) }
+	s.now = func() time.Time { return at("2026-10-16", 16, 35) }
 	s.tick() // ingest 失败 → 中止本链，boxscan/screen/poolsync 不跑
 	eq(t, runner.snapshot(), []string{"2026-10-16|ingest"})
 
-	s.now = func() time.Time { return at("2026-10-16", 16, 30) } // signal 触发点
-	s.tick()                                                     // 链头 ingest 仍未 ok → 重试（仍失败）→ 中止；signal 不跑
+	s.now = func() time.Time { return at("2026-10-16", 16, 40) } // signal 触发点
+	s.tick()                                                    // 链头 ingest 仍未 ok → 重试（仍失败）→ 中止；signal 不跑
 	eq(t, runner.snapshot(), []string{"2026-10-16|ingest", "2026-10-16|ingest"})
 
-	// TDX 数据到位后，16:40 触发点一次链式补齐全部
+	// TDX 数据到位后，16:50 触发点一次链式补齐全部
 	delete(runner.failOn, "2026-10-16|ingest")
-	s.now = func() time.Time { return at("2026-10-16", 16, 40) }
+	s.now = func() time.Time { return at("2026-10-16", 16, 50) }
 	s.tick()
 	eq(t, runner.snapshot(), []string{
 		"2026-10-16|ingest", "2026-10-16|ingest",
@@ -163,16 +163,16 @@ func TestIngestFailAbortsAndRetriesNextTrigger(t *testing.T) {
 
 func TestNonTradingDaySkips(t *testing.T) {
 	// 周六 2026-10-17：DB 无当日K线、TDX 也无 → 每日七任务全部跳过；
-	// 但周六 16:25 已过 10:00 → weekly 周报触发（M7.2）
+	// 但周六 16:35 已过 10:00 → weekly 周报触发（M7.2）
 	s, runner := newTestEnv(t, friBars, nil)
-	s.now = func() time.Time { return at("2026-10-17", 16, 25) }
+	s.now = func() time.Time { return at("2026-10-17", 16, 35) }
 	s.tick()
 	eq(t, runner.snapshot(), []string{"2026-10-17|weekly"})
 
-	// 周五 16:25 但 TDX 未下载且当日未入库（DB 只有 10-15 及更早）→ 跳过（周五不触发 weekly）
+	// 周五 16:35 但 TDX 未下载且当日未入库（DB 只有 10-15 及更早）→ 跳过（周五不触发 weekly）
 	s2, runner2 := newTestEnv(t,
 		[]contract.DailyBar{{Code: "sh000001", Date: "2026-10-15", Close: 3000, Volume: 100}}, nil)
-	s2.now = func() time.Time { return at("2026-10-16", 16, 25) }
+	s2.now = func() time.Time { return at("2026-10-16", 16, 35) }
 	s2.tick()
 	eq(t, runner2.snapshot(), nil)
 }
@@ -181,7 +181,7 @@ func TestTradingDayViaTDX(t *testing.T) {
 	// DB 尚无 10-16 K线（ingest 未跑），但 TDX sh000001.day 已有当日数据 → 是交易日
 	s, runner := newTestEnv(t,
 		[]contract.DailyBar{{Code: "sh000001", Date: "2026-10-15", Close: 3000, Volume: 100}}, friBars)
-	s.now = func() time.Time { return at("2026-10-16", 15, 31) }
+	s.now = func() time.Time { return at("2026-10-16", 16, 5) }
 	s.tick()
 	eq(t, runner.snapshot(), []string{"2026-10-16|ingest"})
 }
@@ -247,7 +247,7 @@ func TestWeeklySaturdayOnce(t *testing.T) {
 
 func TestCatchUpTodayMidDay(t *testing.T) {
 	s, runner := newTestEnv(t, friBars, nil)
-	s.now = func() time.Time { return at("2026-10-16", 16, 25) }
+	s.now = func() time.Time { return at("2026-10-16", 16, 35) }
 	if err := s.CatchUp(); err != nil {
 		t.Fatal(err)
 	}
@@ -262,11 +262,11 @@ func TestAlreadyOkSkips(t *testing.T) {
 	id, _ := s.st.RunRepo.StartRun("2026-10-16", "ingest")
 	_ = s.st.RunRepo.FinishRun(id, contract.TaskResult{Task: "ingest", Date: "2026-10-16", Status: "ok"})
 
-	s.now = func() time.Time { return at("2026-10-16", 15, 31) }
+	s.now = func() time.Time { return at("2026-10-16", 16, 5) }
 	s.tick() // ingest 触发点，但已 ok → 链空转
 	eq(t, runner.snapshot(), nil)
 
-	s.now = func() time.Time { return at("2026-10-16", 16, 0) }
+	s.now = func() time.Time { return at("2026-10-16", 16, 15) }
 	s.tick() // boxscan 触发点 → 只补 boxscan
 	eq(t, runner.snapshot(), []string{"2026-10-16|boxscan"})
 }
@@ -274,7 +274,7 @@ func TestAlreadyOkSkips(t *testing.T) {
 func TestStartStopSmoke(t *testing.T) {
 	s, runner := newTestEnv(t, friBars, nil)
 	s.interval = 5 * time.Millisecond
-	s.now = func() time.Time { return at("2026-10-16", 16, 25) }
+	s.now = func() time.Time { return at("2026-10-16", 16, 35) }
 	if err := s.Start(); err != nil {
 		t.Fatal(err)
 	}

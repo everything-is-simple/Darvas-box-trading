@@ -390,7 +390,7 @@ type Pipeline interface {
 
 // scheduler：常驻调度
 type Scheduler interface {
-    Start() error      // 时刻表：15:30/16:00/16:10/16:20/16:30/16:40/16:45 + 周六10:00 weekly（M7.2已接入）
+    Start() error      // 时刻表：16:00/16:10/16:20/16:30/16:40/16:50/16:55 + 周六10:00 weekly（M7.2已接入）
     CatchUp() error    // 启动时检查daily_run，补跑「交易日已过但未ok」的任务；周六启动补查weekly
     Stop() error
 }
@@ -408,7 +408,7 @@ type Scheduler interface {
 - **CatchUp**：① 前一交易日（`BarRepo.PrevDate(sh000001)`）完全无 ok 心跳 → 整日补跑；
   ② 今天已过点未 ok → 链式补跑。更早历史缺口用 `darvas run --date X` 手动补。
 - **交易日历（ADR-2）**：`isTradingDay` = DB `HasBar(sh000001,date)`，未入库时直读
-  TDX `sh000001.day`（用户15:05已下载即算交易日，ingest 前可判定）。
+  TDX `sh000001.day`（用户15:30已下载即算交易日，ingest 前可判定）。
 - **OnDayDone 钩子**：某日 report 刚转 ok 时触发一次（serve 接 `Pipeline.BackupDaily`，
   NFR-3 备份轮转）。
 - 时钟/任务执行器可注入（`now func()` / `Runner` 接口），单测用模拟时钟全覆盖。
