@@ -106,6 +106,7 @@ func TestBreakoutFiresOnlyOnBrokenDate(t *testing.T) {
 }
 
 // TestPyramidOnlyOnBrokenDate holding 股新箱体突破 → pyramid（同样当日一次）。
+// docs/07 #2 修复后：金字塔钳制改用 position_leg 真实腿数替代 watch.BoxCount。
 func TestPyramidOnlyOnBrokenDate(t *testing.T) {
 	st := newTestStore(t)
 	code := "sh600003"
@@ -115,7 +116,17 @@ func TestPyramidOnlyOnBrokenDate(t *testing.T) {
 		mkBar(code, "2026-10-13", 19.5),
 		mkBar(code, "2026-10-14", 20.8),
 	}
-	seed(t, st, code, box, bars, contract.StageHolding, 1) // 已1腿 < maxlegs=3
+	// 持仓已1腿（模拟leg1=leg_no=1）：先建仓 + 腿记录
+	seed(t, st, code, box, bars, contract.StageHolding, 0)
+	posID, err := st.TradeRepo.CreatePosition(contract.Position{
+		Code: code, OpenedDate: "2026-10-13", EntryBoxID: 0, Qty: 100, AvgCost: 19.5, StopPrice: 17.5,
+	})
+	if err != nil {
+		t.Fatalf("create position: %v", err)
+	}
+	if err := st.TradeRepo.AddLeg(posID, 1, "2026-10-13", 100, 19.5, 17.5, 0); err != nil {
+		t.Fatalf("add leg: %v", err)
+	}
 	eng := New(st)
 
 	if _, err := eng.Evaluate(context.Background(), "2026-10-14"); err != nil {
@@ -124,6 +135,42 @@ func TestPyramidOnlyOnBrokenDate(t *testing.T) {
 	sigs := mustSigs(t, st, "2026-10-14")
 	if len(sigs) != 1 || sigs[0].Type != contract.SignalPyramid {
 		t.Fatalf("期望1条pyramid, got %v", sigs)
+	}
+}
+
+// TestPyramidMaxLegsReached 持仓已达最大腿数（maxlegs=3）→ 不再发 pyramid
+// 信号（即 watch.BoxCount 与金字塔钳制解耦后的回归测试，docs/07 #2）。
+func TestPyramidMaxLegsReached(t *testing.T) {
+	st := newTestStore(t)
+	code := "sh600004"
+	box := contract.Box{Code: code, Top: 20, Bottom: 18, TopConfirmed: "2026-10-10",
+		Status: contract.BoxBrokenUp, BrokenDate: "2026-10-14"}
+	bars := []contract.DailyBar{
+		mkBar(code, "2026-10-13", 19.5),
+		mkBar(code, "2026-10-14", 20.8),
+	}
+	seed(t, st, code, box, bars, contract.StageHolding, 0)
+	posID, err := st.TradeRepo.CreatePosition(contract.Position{
+		Code: code, OpenedDate: "2026-10-03", EntryBoxID: 0, Qty: 300, AvgCost: 19.0, StopPrice: 17.0,
+	})
+	if err != nil {
+		t.Fatalf("create position: %v", err)
+	}
+	// 已加码到第3腿，下次突破不应再发 pyramid
+	legDates := []string{"2026-10-01", "2026-10-05", "2026-10-08"}
+	for i, d := range legDates {
+		if err := st.TradeRepo.AddLeg(posID, i+1, d, 100, 19.0, 17.0, 0); err != nil {
+			t.Fatalf("add leg %d: %v", i+1, err)
+		}
+	}
+	eng := New(st)
+
+	if _, err := eng.Evaluate(context.Background(), "2026-10-14"); err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	sigs := mustSigs(t, st, "2026-10-14")
+	if len(sigs) != 0 {
+		t.Fatalf("已3腿应不再发pyramid, got %v", sigs)
 	}
 }
 

@@ -206,6 +206,7 @@ type TradeRepo interface {
     PositionPnlHistory(code string) ([]map[string]any, error) // 个股历史持仓盈亏视图（B3战绩复用）
     AddLeg(positionID int64, legNo int, date string, qty int, price, stopAfter float64, planOrderID int64) error
     LegsByPosition(positionID int64) ([]map[string]any, error)
+    LegCountByCode(code string) (int, error)             // 当前未平仓持仓腿数（signal 金字塔钳制，docs/07 #2）
     AllPositions() ([]Position, error)                     // 含closed（交易记录视图）
     EquityAll() ([]EquitySnapshot, error)
     LatestEquity() (*EquitySnapshot, error)

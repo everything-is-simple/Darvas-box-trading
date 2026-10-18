@@ -82,10 +82,10 @@ pyramid: 同上                                                  // forming → 
 - 现有 signal/pool/planner/store 单测全绿（修复对齐了单元测试已假设的语义）。
 
 **残留（未修，观察期内排期）**：#2（watch.BoxCount 不递增 → flat_too_long 出池规则死，  
-独立逻辑，方案A 不碰）。#6（UpsertBoxes prev_box_id FK 自引用保护缺失）已于  
-2026-10-19 修复（见 #6 修复段）。
+独立逻辑，方案A 不碰）已于 2026-10-19 用户拍板例外授权修复（见 #2 修复段）。#6  
+（UpsertBoxes prev_box_id FK 自引用保护缺失）已于 2026-10-19 修复（见 #6 修复段）。
 
-## #2 [P1] watch.BoxCount 从不递增
+## #2 [P1·已修复 2026-10-19] watch.BoxCount 从不递增
 
 **症状**：`watch.BoxCount` 仅在 `pool.Sync` 入池时置 0（pool.go:90），全代码无  
 任何递增点。`grep BoxCount internal/ --exclude-dirs=_test.go` 确认。
@@ -99,6 +99,33 @@ pyramid: 同上                                                  // forming → 
 **修复方向**：在 boxscan 状态迁移确认时（box1 confirmed→broken_up/down），按  
 关联 watch 累加 BoxCount。需关联当前形成态箱体与 watch.current_box_id 的迁移  
 判定（与 #1 方案A 配套）。
+
+### 修复（2026-10-19 落地，用户拍板例外授权）
+
+观察期规则冻结纪律（PROMPT.md M8 附加纪律 #1）要求规则层修复走周五复盘 +  
+用户拍板；2026-10-19 用户明确指示"一并修订完成"，视为直接拍板授权，提前落地。
+
+**实施**：
+- `internal/pool/pool.go` watching 循环：换箱（`box.ID != w.CurrentBoxID`）即  
+  累加 `BoxCount`——箱体破裂（broken_up/broken_down）等同"走完一个箱体"，
+  对齐 docs/03 ERD `box_count` 注释「已走完的箱体数」。首次入池  
+  （`CurrentBoxID=0`）不累加（append 语义，不污染入池前状态）。
+- `internal/signal/signal.go` 金字塔钳制改用 `position_leg` 真实腿数替代  
+  `w.BoxCount`——两语义解耦：BoxCount 严格"已走完箱体数"（出池用），
+  position_leg.COUNT "已加码腿数"（金字塔钳制用）。
+- `internal/store/repo_trade.go` 新增 `LegCountByCode(code) int`：取当前  
+  未平仓持仓的 position_leg COUNT；docs/04 §3.3 TradeRepo 方法表已同步。
+
+**回归测试**：
+- `internal/pool/pool_test.go` 新增 `TestBoxCountIncrementsOnBoxChange`：4 次换  
+  箱累计 BoxCount=4 → flat_too_long 出池；`TestBoxCountDoesNotIncrementOnFirstSync`：
+  首次入池不累加。
+- `internal/signal/signal_test.go` 新增 `TestPyramidMaxLegsReached`：3 腿后不再  
+  发 pyramid 信号；`TestPyramidOnlyOnBrokenDate` 改用真实 `AddLeg` 替代 watch.  
+  BoxCount 模拟。
+
+**修后验证**：`go test ./...` 全绿 + `check_consistency.py` 全部一致；真实 20 日  
+verify 重跑结果见 git log / 观察期日记。
 
 ## #3 [P1·已修复 2026-10-18] poolsync 自动出池两条路径均不可达
 
@@ -239,9 +266,9 @@ progressive（未来缺席）的决策输出必然分叉——首个分叉日由
 分叉字段由决策表语义 dump 定位。
 
 **#1 方案A 修复后**：事件驱动链路恢复——breakout 信号会出、跌破出池会触发、  
-pool 会演化。观察期（2026-10-19 启动）可在修复后的系统上运行。#6（UpsertBoxes  
-FK 自引用保护）已于 2026-10-19 修复；残留 #2（flat_too_long 出池死）不阻塞观察期，  
-留观至周五复盘。
+pool 会演化。观察期（2026-10-19 启动）可在修复后的系统上运行。#2（watch.  
+BoxCount 不递增）与 #6（UpsertBoxes FK 自引用保护）均已于 2026-10-19 修复；
+观察期无残留死路。
 
 **附：真实回放与 10-17 演练的对照**（佐证 #4 引导泄漏）：
 

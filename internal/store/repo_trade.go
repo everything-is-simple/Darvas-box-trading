@@ -414,6 +414,19 @@ func (r *TradeRepo) LegsByPosition(positionID int64) ([]map[string]any, error) {
 	return out, rows.Err()
 }
 
+// LegCountByCode 当前未平仓持仓的金字塔腿数（用于 signal pyramid 钳制，docs/07 #2）。
+// 取 position_leg 数量；position_status='open' 时有效；非持仓/已平仓返回 0。
+func (r *TradeRepo) LegCountByCode(code string) (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM position_leg pl
+		JOIN position p ON p.id = pl.position_id
+		WHERE p.code = ? AND p.status = 'open'`, code).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // AllPositions 取全部持仓含 closed（交易记录视图）。
 func (r *TradeRepo) AllPositions() ([]contract.Position, error) {
 	rows, err := r.db.Query(`SELECT id, code, CAST(opened_date AS TEXT), COALESCE(entry_box_id,0), qty, avg_cost,
