@@ -12,3 +12,10 @@ var/
 .idea/
 .vscode/
 *.code-workspace
+.trae/
+
+# 分发产物（便携包随时可由源码+构建脚本重建，不入库）
+dist/
+
+# 编辑器分享/临时产物
+.trae-html-share-packages/
