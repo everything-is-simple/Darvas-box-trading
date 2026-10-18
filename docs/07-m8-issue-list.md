@@ -169,8 +169,15 @@ prev_box_id FROM box WHERE code=? AND prev_box_id IS NOT NULL)`。撞铁律 6
   修复前以完全相同的 FK 787 报错失败，修复后通过；阶梯语义 = 前驱被引用的
   stale 箱体保留（与 position/watch/signal 引用保留一致的历史事实语义）。
 - 铁律 6 不受影响：(top,bottom) 复用策略未动，保护只影响 DELETE 的筛选集。
-- 修后验证：`go test ./...` 全绿 + `check_consistency.py` 全部一致；真实 20 日
-  verify 重跑结果见 git log / 观察期日记（期望差分全等 + sz300411 信号出现）。
+- 修后验证（2026-10-19 重跑 `darvas backtest --src var/perf_test.db --from
+  2026-09-11 --to 2026-10-16 --mode verify`，12m17s）：
+  - `go test ./...` 全绿 + `check_consistency.py` 全部一致；
+  - 差分全等 ✓（20 交易日 prefill ≡ progressive）；
+  - 信号与上轮（修复前 #1 方案A 验证）一致：09-17 sz300739、09-21 sz300473
+    各 1 个 breakout（两模式一致）——#6 修复未改变本窗口决策输出；
+  - sz300411 期望落空的原因查清：其 (9.17,7.92) 箱体已正确持久化
+    （broken_up 2026-10-16，即回放末日），但它在整个回放窗口从未入跟踪池
+    （池 8/8 满员按 screen 排名竞争）→ 信号不发属规则层结果，非存储 bug。
 
 ## #7 [P3] weekly 周报 LastClose 无日期界
 
