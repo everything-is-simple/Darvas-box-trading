@@ -202,6 +202,7 @@ type BoxParams struct {
 	VolWindow     int     // 均量窗口，默认50
 	BreakPremium  float64 // 收盘>上轨×该值确认突破，默认1.03
 	MinBoxWidth   float64 // 箱体最小宽度（比例），默认0.05
+	ConfirmDays   int     // 轨道确认天数（三日法则），默认3；0由引擎归一为3（M8.4a参数化，未设置=旧行为）
 }
 
 // ScreenParams 初选参数

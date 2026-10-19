@@ -36,6 +36,11 @@ func (Engine) Scan(bars []contract.DailyBar, params contract.BoxParams) []contra
 	if len(bars) == 0 {
 		return nil
 	}
+	// 三日法则参数化（M8.4a 体制标签敏感性扫描）：ConfirmDays<=0 归一为默认 3，
+	// 未显式设置的现有调用方（生产 boxscan/ladder/regime）行为完全不变。
+	if params.ConfirmDays <= 0 {
+		params.ConfirmDays = 3
+	}
 	s := &scanner{params: params, code: bars[0].Code}
 	for i := range bars {
 		s.step(i, bars)
@@ -89,8 +94,8 @@ func (s *scanner) step(i int, bars []contract.DailyBar) {
 			cur.topCount = 0
 		} else {
 			cur.topCount++
-			if cur.topCount >= 3 {
-				// 连续3日未再创新高 → 上轨确认（§3.1.2）
+			if cur.topCount >= s.params.ConfirmDays {
+				// 连续N日未再创新高 → 上轨确认（§3.1.2，N=三日法则，默认3）
 				cur.topConfirmedDate = b.Date
 				cur.top = cur.topCandidate
 				// 上轨确认日开始跟踪下轨
@@ -114,8 +119,8 @@ func (s *scanner) step(i int, bars []contract.DailyBar) {
 			cur.bottomCount = 0
 		} else {
 			cur.bottomCount++
-			if cur.bottomCount >= 3 {
-				// 连续3日未再创新低 → 下轨确认（§3.2.2）
+			if cur.bottomCount >= s.params.ConfirmDays {
+				// 连续N日未再创新低 → 下轨确认（§3.2.2，N=三日法则，默认3）
 				cur.bottomConfirmedDate = b.Date
 				cur.bottom = cur.bottomCandidate
 				// 宽度校验：top>bottom 且 (top-bottom)/top >= MinBoxWidth（ERD §2.1）
@@ -255,5 +260,6 @@ func DefaultParams() contract.BoxParams {
 		VolWindow:     50,
 		BreakPremium:  1.03,
 		MinBoxWidth:   0.05,
+		ConfirmDays:   3,
 	}
 }

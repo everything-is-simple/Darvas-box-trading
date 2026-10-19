@@ -25,6 +25,7 @@ import (
 	"darvas/internal/ledger"
 	"darvas/internal/pipeline"
 	"darvas/internal/pool"
+	"darvas/internal/regimesweep"
 	"darvas/internal/scheduler"
 	"darvas/internal/store"
 )
@@ -50,8 +51,9 @@ func main() {
 	rule := fs.String("rule", "", "review add: 规则执行评价（followed/violated/自由文本）")
 	from := fs.String("from", "", "backtest: 回放窗口起点 YYYY-MM-DD（空=源库最近20交易日）")
 	to := fs.String("to", "", "backtest: 回放窗口终点 YYYY-MM-DD")
-	src := fs.String("src", "", "backtest: 源库路径（只读；灌历史K线/证券表/日历）")
-	btMode := fs.String("mode", "", "backtest: prefill|progressive|verify（verify=as-of差分审计）")
+	src := fs.String("src", "", "backtest/regimesweep: 源库路径（只读）")
+	btMode := fs.String("mode", "", "backtest: prefill|progressive|verify|regime")
+	out := fs.String("out", "var/bt/regime_sweep.html", "regimesweep: 报告输出路径")
 	// Go flag 遇首个非 flag 即停止；这里把 flag 与位置参数分离，使
 	// `darvas ladder <code> --db <path>` 这样的混合顺序也能正确解析。
 	flagArgs, positional := splitFlags(os.Args[2:])
@@ -94,6 +96,8 @@ func main() {
 		runServe(*db, *addr)
 	case "backtest":
 		runBacktest(*db, *from, *to, *src, *btMode)
+	case "regimesweep":
+		runRegimeSweep(*src, *out)
 	default:
 		usage()
 		os.Exit(2)
@@ -143,9 +147,12 @@ func usage() {
   darvas fills  [file] [--yes]               成交录入（粘贴文本；.csv=炒股手导出→审核报告）
   darvas ui     [--addr]                     本地GUI（浏览器四视图，M6）
   darvas serve  [--addr]                     常驻模式（调度+GUI+备份，M7.1）
-  darvas backtest --src <库> [--from <起>] [--to <止>] --mode prefill|progressive|verify
+  darvas backtest --src <库> [--from <起>] [--to <止>] --mode prefill|progressive|verify|regime
                                              内置回放器 M8：scratch库重放as-of六任务链；
                                              verify=双模式差分审计（as-of纪律运行时证明）
+  darvas regimesweep --src <全历史库> [--out <报告路径>]
+                                             M8.4a 体制标签参数敏感性扫描（480组网格，
+                                             只读sh000001+四年回放库，输出敏感性HTML报告）
 
 每日时间表（docs/01 §4 唯一事实源；此处由 scheduler.ScheduleSummary 派生，禁止他处硬编码）:
   ` + scheduler.ScheduleSummary() + ` → 备份轮转
@@ -756,6 +763,21 @@ func runBacktest(db, from, to, src, mode string) {
 		fmt.Fprintln(os.Stderr, "错误:", err)
 		os.Exit(1)
 	}
+}
+
+// runRegimeSweep M8.4a 体制标签参数敏感性扫描入口（PROMPT.md P4 / HANDOFF.md 任务书）。
+// 只读源库（full_hist.db）的 sh000001 日线 + 同目录下四年回放库（bt_2014/2015/2016/bt_regime.db），
+// 网格扫描箱体参数，输出敏感性 HTML 报告。纯 scratch 研究，不碰生产。
+func runRegimeSweep(src, out string) {
+	if src == "" {
+		fmt.Fprintln(os.Stderr, "错误: regimesweep 必须指定 --src <全历史源库路径>（如 var/bt/full_hist.db）")
+		os.Exit(2)
+	}
+	if err := regimesweep.Run(src, out); err != nil {
+		fmt.Fprintln(os.Stderr, "错误:", err)
+		os.Exit(1)
+	}
+	_ = openReport(out)
 }
 
 // runUI 启动本地HTTP GUI（M6，docs/02 §2 GUI降级预案：embed静态资产+JSON API）。

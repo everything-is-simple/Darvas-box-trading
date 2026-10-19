@@ -169,6 +169,42 @@ func TestBottomResetOnNewLow(t *testing.T) {
 	}
 }
 
+// ─── 确认天数参数化（M8.4a 三日法则 → ConfirmDays）──
+
+// 8a. ConfirmDays=2 → 连续2日无新高即确认上轨（比默认3快一日）
+func TestConfirmDaysTwoConfirmsFaster(t *testing.T) {
+	p := tp()
+	p.ConfirmDays = 2
+	boxes := New().Scan([]contract.DailyBar{
+		bar("sh1", d(0), 10, 9, 9.5, 100), // 新高 10
+		bar("sh1", d(1), 9.5, 9, 9.2, 100), // 1
+		bar("sh1", d(2), 9.8, 9, 9.5, 100), // 2 → 确认（默认3要到d(3)）
+	}, p)
+	if boxes[0].TopConfirmed != d(2) || boxes[0].Top != 10 {
+		t.Fatalf("ConfirmDays=2 topConfirmed=%s top=%.2f want %s/10", boxes[0].TopConfirmed, boxes[0].Top, d(2))
+	}
+}
+
+// 8b. ConfirmDays=0（未设置）→ 引擎归一为3，与旧硬编码行为完全一致
+func TestConfirmDaysZeroDefaultsToThree(t *testing.T) {
+	p := tp() // ConfirmDays 零值
+	bars := []contract.DailyBar{
+		bar("sh1", d(0), 10, 9, 9.5, 100),
+		bar("sh1", d(1), 9.5, 9, 9.2, 100),
+		bar("sh1", d(2), 9.8, 9, 9.5, 100),
+		bar("sh1", d(3), 9.6, 9, 9.3, 100), // 第3日 → 确认
+	}
+	boxes := New().Scan(bars, p)
+	if boxes[0].TopConfirmed != d(3) {
+		t.Fatalf("ConfirmDays=0 should behave as 3: topConfirmed=%s want %s", boxes[0].TopConfirmed, d(3))
+	}
+	// 二日时不应确认
+	boxes2 := New().Scan(bars[:3], p)
+	if boxes2[0].TopConfirmed != "" {
+		t.Fatalf("ConfirmDays=0 must not confirm at day 2: %+v", boxes2[0])
+	}
+}
+
 // ─── 作废规则（§3.2.4 / 宽度）──
 
 // 9. 下轨确认时宽度不足(<5%) → 箱体 invalid，重启
