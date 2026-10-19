@@ -4,7 +4,8 @@
 // 信号是"状态迁移事件"，只在迁移发生当日发一次；条件持续满足不重复发。
 //
 //	breakout        箱体当日迁移为 broken_up（BrokenDate==当日）→ 买（watching 突破）
-//	pyramid         持仓股新箱体当日再突破（leg_no<maxlegs）→ 加码（holding 再突破）
+//	pyramid         持仓股新箱体当日再突破（leg_no<maxlegs）；或未触及止损且价在买点
+//	                上方 risk.addon_max_premium 内（M8.6 第②通道，布鲁斯案例）→ 加码
 //	stop            收盘首次跌破最新箱体下轨（昨收≥下轨 且 今收<下轨）→ 卖
 //	failed_breakout 突破后3日内收盘首次跌回箱体上轨之下（昨收≥上轨 且 今收<上轨）→ 卖
 //
@@ -129,7 +130,71 @@ func (e *Engine) evalOne(w contract.Watch, date string, premium float64, maxLegs
 			},
 		}
 	}
+
+	// 第②通道（M8.6）：未触及止损 + 买点上方N%内 → 加码（不等新箱体）。
+	// 达瓦斯原书布鲁斯案例 line 1504；规则见 docs/10-m8.6 §2.2。当日已发第①条则不重复。
+	if s := e.checkAddon(w, date, today); s != nil {
+		return s
+	}
 	return nil
+}
+
+// checkAddon 达瓦斯金字塔第②通道（M8.6，原书布鲁斯案例）：
+// 「当我看到公司股价没有触及止损位后，我开始继续补仓」——同一箱体内连续加码，
+// 5 笔 50.75→53.625（+5.7%）。欧奈尔量化边界「加仓要在买点上涨5%以内」，
+// 参数 risk.addon_max_premium（用户拍板 0.07，留余量）。
+//
+// 五条件（docs/10-m8.6-pyramid-addon-proposal.md §2.2）：
+//
+//	C1 today.Low > 止损位（盘中未触及止损——原书"没有触及止损位"的最严格对应）
+//	C2 today.Close ≥ 上次成交价（顺势加码，绝不摊低成本——原书"绝不要摊低亏损的头寸"）
+//	C3 today.Close ≤ 首腿成交价×(1+addon_max_premium)（不追高，欧奈尔边界）
+//	C4 第一版：仅首腿（legN==1）允许加一次——避开 position_leg.leg_no CHECK(1,2,3)
+//	   （若已在 legN≥2 状态下再发，planner 会给 leg=3 撞号，ledger 顺延到 leg4 被 CHECK 拒）
+//	C5 高优先级信号（stop / failed_breakout / 第①条）已在前序返回
+func (e *Engine) checkAddon(w contract.Watch, date string, today contract.DailyBar) *contract.Signal {
+	if w.Stage != contract.StageHolding {
+		return nil
+	}
+	pos, err := e.st.TradeRepo.PositionByCode(w.Code)
+	if err != nil || pos == nil || pos.Status != "open" || pos.Qty <= 0 {
+		return nil
+	}
+	if pos.StopPrice <= 0 || today.Low <= pos.StopPrice {
+		return nil // C1 盘中触及/跌破止损 → 不加码
+	}
+	legs, err := e.st.TradeRepo.LegsByPosition(pos.ID)
+	if err != nil {
+		return nil
+	}
+	if len(legs) != 1 {
+		return nil // C4 第一版仅首腿可加一次
+	}
+	leg1Price, _ := legs[0]["price"].(float64)
+	if leg1Price <= 0 {
+		return nil
+	}
+	premium := e.st.ParamRepo.GetFloat("risk.addon_max_premium", 0.07)
+	if today.Close < leg1Price {
+		return nil // C2 不摊低成本
+	}
+	if today.Close > leg1Price*(1+premium) {
+		return nil // C3 不追高
+	}
+	var boxID int64
+	var boxLevel float64
+	if box, _ := e.st.BoxRepo.LatestNonFormingBox(w.Code); box != nil {
+		boxID = box.ID
+		boxLevel = box.Bottom
+	}
+	return &contract.Signal{
+		Date: date, Code: w.Code, Type: contract.SignalPyramid,
+		BoxID: boxID, ClosePx: today.Close, BoxLevel: boxLevel,
+		Payload: map[string]any{
+			"trigger": "addon", "leg1_price": leg1Price, "stop_price": pos.StopPrice,
+			"addon_max_premium": premium, "leg_no": 3,
+		},
+	}
 }
 
 // checkFailedBreakout 突破失败：最近一个 broken_up 箱体在3个日历日内、
