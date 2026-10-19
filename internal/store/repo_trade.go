@@ -497,7 +497,7 @@ func (r *TradeRepo) LegCountByCode(code string) (int, error) {
 // AllPositions 取全部持仓含 closed（交易记录视图）。
 func (r *TradeRepo) AllPositions() ([]contract.Position, error) {
 	rows, err := r.db.Query(`SELECT id, code, CAST(opened_date AS TEXT), COALESCE(entry_box_id,0), qty, avg_cost,
-		stop_price, status, COALESCE(closed_date,''), COALESCE(close_reason,'')
+		stop_price, status, COALESCE(closed_date,''), COALESCE(close_reason,''), COALESCE(realized_pnl,0)
 		FROM position ORDER BY status, opened_date, code`)
 	if err != nil {
 		return nil, err
@@ -507,7 +507,7 @@ func (r *TradeRepo) AllPositions() ([]contract.Position, error) {
 	for rows.Next() {
 		var p contract.Position
 		if err := rows.Scan(&p.ID, &p.Code, &p.OpenedDate, &p.EntryBoxID, &p.Qty, &p.AvgCost,
-			&p.StopPrice, &p.Status, &p.ClosedDate, &p.CloseReason); err != nil {
+			&p.StopPrice, &p.Status, &p.ClosedDate, &p.CloseReason, &p.RealizedPnl); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
