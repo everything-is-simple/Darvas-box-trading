@@ -103,6 +103,34 @@ func LabelBoxes(bars []contract.DailyBar, params contract.BoxParams) map[string]
 	return labels
 }
 
+// DefaultIndex 晴雨表唯一指数（M8.7 仓位随市缩放，2026-10-20 用户拍板：只看上证指数）。
+// 用户拍板放弃多指数投票（上证+深成+创业板+科创50），简化为单一上证指数 sh000001——
+// 只为验证达瓦斯策略，不做复杂化。
+var DefaultIndex = "sh000001"
+
+// ClassifyDate 实时标注某日的市场体制（盘中可用，M8.7）：
+// 读上证指数「至 date」的日线，用箱体法 LabelBoxes 标牛/熊/猴。
+// 只用 date 及之前数据，零未来信息（单一理论）。
+//
+//   - indices 为空时只用 DefaultIndex（上证指数）；
+//   - 上证指数在 date 无数据则返回 range（无市场信号，中性仓位）。
+func ClassifyDate(st *store.Store, date string, params contract.BoxParams, indices []string) Regime {
+	code := DefaultIndex
+	if len(indices) > 0 && indices[0] != "" {
+		code = indices[0] // 允许显式覆盖，但仅取第一个（单一指数）
+	}
+	bars, err := st.BarRepo.BarsRange(code, "", date, 100000)
+	if err != nil || len(bars) == 0 {
+		return Range // 上证无数据：无市场信号，中性仓位
+	}
+	labels := LabelBoxes(bars, params)
+	r, ok := labels[date]
+	if !ok {
+		return Range // 当日无标注（如数据缺失），记猴
+	}
+	return r
+}
+
 // Segment 连续同体制的一段。
 type Segment struct {
 	Regime     Regime

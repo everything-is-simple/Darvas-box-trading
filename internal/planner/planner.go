@@ -17,10 +17,12 @@ import (
 	"context"
 	"log"
 	"math"
+	"strings"
 	"time"
 
 	"darvas/internal/contract"
 	"darvas/internal/ledger"
+	"darvas/internal/regime"
 	"darvas/internal/store"
 )
 
@@ -62,6 +64,9 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	if eq == nil {
 		p.st.TradeRepo.SetEquityDefault(planDate, equity)
 	}
+	// M8.7 仓位随市缩放：标注当日市场体制（牛/熊/猴），算仓位系数乘到风险预算。
+	// 只用 planDate 及之前数据（零未来信息）；复用箱体法（单一理论，不引入均线等）。
+	mult, regimeLabel := p.regimeMultiplier(planDate)
 	// 信号
 	sigs, err := p.st.SignalRepo.SignalsOn(planDate)
 	if err != nil {
@@ -103,7 +108,9 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		}
 		switch s.Type {
 		case contract.SignalBreakout, contract.SignalPyramid:
-			o := p.buyOrder(s, box, equity, pLeg1, pLeg23, maxPos, buyPrem, sellDisc, maxLegs, posByCode, planDate, executeDate)
+			// M8.7：市场状态缩放仓位——风险预算与单股上限同时乘系数。
+			o := p.buyOrder(s, box, equity, pLeg1*mult, pLeg23*mult, maxPos*mult,
+				buyPrem, sellDisc, maxLegs, posByCode, planDate, executeDate)
 			if o != nil {
 				orders = append(orders, *o)
 			}
@@ -190,9 +197,38 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	res.Status = "ok"
 	res.AffectedRows = int64(len(orders))
 	res.DurationMS = time.Since(start).Milliseconds()
-	p.log.Printf("plan %s→%s: %d signals → %d orders, equity=%.0f, 止损上移=%d, %s",
-		planDate, executeDate, len(sigs), len(orders), equity, stopMoves, time.Since(start).Round(time.Millisecond))
+	p.log.Printf("plan %s→%s: %d signals → %d orders, equity=%.0f, 止损上移=%d, 体制=%s(×%.2f), %s",
+		planDate, executeDate, len(sigs), len(orders), equity, stopMoves, regimeLabel, mult, time.Since(start).Round(time.Millisecond))
 	return res, nil
+}
+
+// regimeMultiplier 计算当日市场体制对应的仓位系数（M8.7）。
+// 复用 regime.ClassifyDate（箱体法，单一上证指数 sh000001，零未来信息），
+// 返回 (系数, 体制标签)。标签用中文「牛/熊/猴」便于日志审计。
+func (p *Planner) regimeMultiplier(date string) (float64, string) {
+	// 单一晴雨表指数（缺省用 regime.DefaultIndex = sh000001）
+	idxStr := p.st.ParamRepo.GetString("regime.indices", regime.DefaultIndex)
+	var indices []string
+	for _, c := range strings.Split(idxStr, ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			indices = append(indices, c)
+		}
+	}
+	params := contract.BoxParams{
+		VolMultiplier: p.st.ParamRepo.GetFloat("box.volmult", 2.0),
+		VolWindow:     p.st.ParamRepo.GetInt("box.volwindow", 50),
+		BreakPremium:  p.st.ParamRepo.GetFloat("buy.premium", 1.03),
+		MinBoxWidth:   0.05,
+	}
+	r := regime.ClassifyDate(p.st, date, params, indices)
+	switch r {
+	case regime.Bull:
+		return p.st.ParamRepo.GetFloat("regime.mult.bull", 2.0), "牛"
+	case regime.Bear:
+		return p.st.ParamRepo.GetFloat("regime.mult.bear", 0.2), "熊"
+	default:
+		return p.st.ParamRepo.GetFloat("regime.mult.range", 0.5), "猴"
+	}
 }
 
 // raiseStops 止损上移（M4.4）：对每只持仓，若最新箱体下轨已3日确认

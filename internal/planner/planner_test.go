@@ -350,6 +350,13 @@ func newPlannerStore(t *testing.T) *store.Store {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
+	// 仓位公式测试聚焦 B4 动态仓位本身，隔离 regime 缩放（M8.7）——
+	// 三态系数统一设 1.0（中性），regime 缩放由 regime 包单测单独覆盖。
+	if _, err := st.DB().Exec(`INSERT INTO param(key,value) VALUES
+		('regime.mult.bull','1.0'),('regime.mult.range','1.0'),('regime.mult.bear','1.0')
+		ON CONFLICT(key) DO UPDATE SET value='1.0'`); err != nil {
+		t.Fatal(err)
+	}
 	return st
 }
 
