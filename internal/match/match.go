@@ -64,6 +64,12 @@ func (m *Matcher) Match(ctx context.Context, date string) (int, error) {
 		}
 		cleared[pos.Code] = true
 		n++
+		// 复权清仓后，在途订单（止损卖单/突破买单）同步作废：卖单不取消会次日触发
+		// 「卖出成交但无持仓」（2018-05-23 sz300630 暴露）；买单不取消会以复权前
+		// 箱体逻辑开幻影新仓。复权后箱体重算、重新出信号属正常流程。
+		if _, err := m.st.TradeRepo.CancelOpenOrders(pos.Code); err != nil {
+			return n, err
+		}
 	}
 
 	// 2. 撮合 execute_date==date 的待成交订单（先卖后买，满足 T+1）

@@ -340,6 +340,18 @@ func (r *TradeRepo) PendingOrdersFor(code, side, date string) ([]PendingOrder, e
 	return out, rows.Err()
 }
 
+// CancelOpenOrders 取消某股全部未成交订单（pending/placed → cancelled），
+// 返回取消笔数。用途：复权日强制清仓后，在途卖单不取消会次日触发「卖出成交但无持仓」
+// （2018-05-23 sz300630 暴露）；在途买单不取消会以复权前箱体开幻影新仓。
+func (r *TradeRepo) CancelOpenOrders(code string) (int64, error) {
+	res, err := r.db.Exec(`UPDATE plan_order SET status = 'cancelled', updated_at = datetime('now','localtime')
+		WHERE code = ? AND status IN ('pending','placed')`, code)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // ExpireStaleOrders 把执行日已过仍 pending 的订单置为 expired（每日流水线收尾）。
 func (r *TradeRepo) ExpireStaleOrders(today string) (int64, error) {
 	res, err := r.db.Exec(`UPDATE plan_order SET status='expired', updated_at=datetime('now','localtime')

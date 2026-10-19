@@ -1,10 +1,12 @@
 package match
 
 import (
+	"context"
 	"math"
 	"testing"
 
 	"darvas/internal/contract"
+	"darvas/internal/store"
 )
 
 func bar(o, h, l, c float64) contract.DailyBar {
@@ -103,5 +105,76 @@ func TestGapThreshold(t *testing.T) {
 		if got := gapThreshold(code); !near(got, want) {
 			t.Errorf("%s 阈值=%.4f want %.4f", code, got, want)
 		}
+	}
+}
+
+// TestMatchDividendClearCancelsPendingOrders 回归：除权日强制清仓后，在途订单必须取消。
+// 场景复刻 2018-05-23 sz300630：05-21 持仓 + 挂 05-23 止损卖单 → 05-22 除权跳空清仓
+// → 修复前 05-23 陈旧卖单触发「卖出成交但无持仓」报错，回放中断无汇总报告。
+func TestMatchDividendClearCancelsPendingOrders(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer st.Close()
+	if err := st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity("sz300630", "")}); err != nil {
+		t.Fatalf("seed secs: %v", err)
+	}
+	mkBar := func(date string, o, h, l, c float64) contract.DailyBar {
+		return contract.DailyBar{Code: "sz300630", Date: date, Open: o, High: h, Low: l, Close: c}
+	}
+	if _, err := st.BarRepo.UpsertBars([]contract.DailyBar{
+		mkBar("2018-05-21", 104, 105, 103, 104),
+		mkBar("2018-05-22", 70, 71, 69, 69.28), // 除权跳空 -33%（创业板阈值 19%）
+		mkBar("2018-05-23", 69.5, 70, 68.5, 69.0),
+	}); err != nil {
+		t.Fatalf("seed bars: %v", err)
+	}
+
+	m := New(st)
+	ctx := context.Background()
+
+	// 05-21 买入开仓 500 股
+	if _, err := m.l.ApplyFill(contract.Fill{Code: "sz300630", Date: "2018-05-21",
+		Side: "buy", Price: 104, Qty: 500, RawText: "sim:order"}); err != nil {
+		t.Fatalf("buy fill: %v", err)
+	}
+
+	// 05-22 盘后计划：05-23 执行的止损卖单（trigger=92.344，复权前价格）
+	planID, err := st.TradeRepo.CreatePlan(contract.TradePlan{PlanDate: "2018-05-22", ExecuteDate: "2018-05-23", EquityBase: 1e6})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	if err := st.TradeRepo.AddOrders(planID, []contract.PlanOrder{{
+		PlanDate: "2018-05-22", ExecuteDate: "2018-05-23", Code: "sz300630", Side: "sell",
+		OrderKind: "stop_sell", TriggerPrice: 92.344, LimitPrice: 92.344, Qty: 500,
+	}}); err != nil {
+		t.Fatalf("AddOrders: %v", err)
+	}
+
+	// 05-22 撮合：除权跳空 → 强制清仓 + 取消在途订单
+	n, err := m.Match(ctx, "2018-05-22")
+	if err != nil {
+		t.Fatalf("除权日撮合报错: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("除权日成交笔数=%d want 1（sim:dividend 清仓）", n)
+	}
+
+	// 05-23 撮合：修复前这里报「卖出成交但无持仓」；修复后应零成交、无报错
+	n2, err := m.Match(ctx, "2018-05-23")
+	if err != nil {
+		t.Fatalf("次日撮合报错（陈旧卖单未取消）: %v", err)
+	}
+	if n2 != 0 {
+		t.Fatalf("次日成交笔数=%d want 0", n2)
+	}
+	// 在途卖出单应为空（已 cancelled）
+	remaining, err := st.TradeRepo.PendingOrdersFor("sz300630", "sell", "2018-05-23")
+	if err != nil {
+		t.Fatalf("PendingOrdersFor: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("在途卖出单残留 %d 笔，应已取消", len(remaining))
 	}
 }
