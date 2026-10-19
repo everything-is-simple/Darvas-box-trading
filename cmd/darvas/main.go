@@ -127,7 +127,7 @@ func usage() {
 	fmt.Print(`darvas —— 达瓦斯箱体交易系统（` + version + `）
 
 用法:
-  darvas ingest  [--date] [--since] [--db]   数据同步（默认增量；--since=full 全量）
+  darvas ingest  [--date] [--since] [--db]   数据同步（默认增量；--since=full 2024起；--since=all 全历史1990起）
   darvas doctor [--db]                       数据库/schema/数据新鲜度体检
   darvas ladder  <code>                      个股箱体阶梯（M2）
   darvas param   get|set                     参数读写
@@ -184,7 +184,7 @@ func runIngest(db, since, date string) {
 	ctx := context.Background()
 
 	var res contract.TaskResult
-	if since == "full" || since == "FULL" {
+	if since == "full" || since == "FULL" || since == "all" || since == "ALL" {
 		res, err = g.FullImport(ctx)
 	} else {
 		res, err = g.SyncIncremental(ctx, date)

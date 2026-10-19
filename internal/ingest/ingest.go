@@ -27,9 +27,13 @@ type Ingester struct {
 
 // New 构造。fullSince 为空或 "full"（CLI 标志）时默认 "2024-01-01"
 // （箱体引擎+52周新高+RS窗口最多需要约2年历史）。
+// fullSince="all" 表示全历史（1990 起，M8.3 全历史体制校准专用，数据量约 3000 万条）。
 func New(reader contract.DayFileReader, st *store.Store, fullSince string) *Ingester {
 	if fullSince == "" || fullSince == "full" || fullSince == "FULL" {
 		fullSince = "2024-01-01"
+	}
+	if fullSince == "all" || fullSince == "ALL" {
+		fullSince = "1990-01-01"
 	}
 	return &Ingester{
 		reader:    reader,
