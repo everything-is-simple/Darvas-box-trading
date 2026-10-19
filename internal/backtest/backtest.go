@@ -196,7 +196,10 @@ func runRegime(o Options) error {
 	}
 	fmt.Printf("[bt] regime: 窗口 %s ~ %s（%d 个交易日）\n", from, to, len(days))
 
-	scratch := defaultScratch("regime")
+	scratch := o.ScratchDB
+	if scratch == "" {
+		scratch = defaultScratch("regime")
+	}
 	if err = Bootstrap(o.SrcDB, scratch, from, false); err != nil {
 		return err
 	}
