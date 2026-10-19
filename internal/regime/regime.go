@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"darvas/internal/box"
 	"darvas/internal/contract"
 	"darvas/internal/store"
 )
@@ -47,7 +48,8 @@ func (r Regime) cn() string {
 	}
 }
 
-// Classify 纯函数：动量 → 体制。bullThresh/bearThresh 为正数（如 0.15 表示 ±15%）。
+// Classify 保留但已废弃（动量法，2026-10-19 用户拍板改用箱体法 LabelBoxes）。
+// 仅 LabelBoxes 用于体制标注，Classify 仅供向后兼容的测试引用，勿再使用。
 func Classify(momentum, bullThresh, bearThresh float64) Regime {
 	if momentum > bullThresh {
 		return Bull
@@ -58,25 +60,44 @@ func Classify(momentum, bullThresh, bearThresh float64) Regime {
 	return Range
 }
 
-// LabelBars 给收盘价序列标注体制（动量规则，只用过去数据）。
-// dates/closes 按日期升序对齐；n 为动量窗口；bullThresh/bearThresh 为正数阈值。
-// 前 n 个交易日数据不足 → 标 range（中性）。
-func LabelBars(dates []string, closes []float64, n int, bullThresh, bearThresh float64) map[string]Regime {
-	out := make(map[string]Regime, len(dates))
-	for i, d := range dates {
-		j := i - n
-		if j < 0 {
-			out[d] = Range
-			continue
-		}
-		prev := closes[j]
-		if prev <= 0 {
-			out[d] = Range
-			continue
-		}
-		out[d] = Classify(closes[i]/prev-1, bullThresh, bearThresh)
+// LabelBoxes 用达瓦斯箱体引擎给指数序列标注体制（单一理论，复用 box engine）：
+//
+//	指数向上突破箱体（broken_up）   → 牛（上涨市场）
+//	指数向下破位（broken_down）     → 熊（下跌市场）
+//	箱体内（forming/confirmed）     → 猴（震荡）
+//
+// 突破/破位是事件（BrokenDate 当日判定，只用当日及之前数据，禁摘樱桃）；
+// 事件后延续该方向，直到反向事件。bars 为 sh000001 升序 K 线。
+func LabelBoxes(bars []contract.DailyBar, params contract.BoxParams) map[string]Regime {
+	boxes := box.New().Scan(bars, params)
+	// 提取突破/破位事件（boxes 按时间顺序 emit，事件天然有序）
+	type event struct {
+		date   string
+		regime Regime
 	}
-	return out
+	var events []event
+	for _, b := range boxes {
+		if b.BrokenDate == "" {
+			continue
+		}
+		switch b.Status {
+		case contract.BoxBrokenUp:
+			events = append(events, event{b.BrokenDate, Bull})
+		case contract.BoxBrokenDown:
+			events = append(events, event{b.BrokenDate, Bear})
+		}
+	}
+	labels := make(map[string]Regime, len(bars))
+	cur := Range
+	ei := 0
+	for _, b := range bars {
+		for ei < len(events) && events[ei].date <= b.Date {
+			cur = events[ei].regime
+			ei++
+		}
+		labels[b.Date] = cur
+	}
+	return labels
 }
 
 // Segment 连续同体制的一段。
@@ -221,23 +242,19 @@ type ReportData struct {
 // Run 生成分体制 HTML 报告，返回文件路径。
 // 从 store 读 sh000001 日线、权益快照、成交、持仓；体制参数走 param。
 func Run(ctx context.Context, st *store.Store, from, to, outDir string) (string, error) {
-	window := st.ParamRepo.GetInt("regime.window", 60)
-	bullThresh := st.ParamRepo.GetFloat("regime.bull_thresh", 0.10)
-	bearThresh := st.ParamRepo.GetFloat("regime.bear_thresh", 0.10)
-
-	// 动量窗口需要 from 之前的 N 根K线——读 sh000001 全历史（到 to）再标注；
-	// Summarize 只用 [from,to] 内的权益，labels 覆盖更早日期无妨。
+	// 读 sh000001 全历史（到 to）——箱体引擎需完整序列识别阶梯与突破事件。
 	bars, err := st.BarRepo.BarsRange("sh000001", "", to, 100000)
 	if err != nil {
 		return "", fmt.Errorf("读 sh000001 日线: %w", err)
 	}
-	dates := make([]string, 0, len(bars))
-	closes := make([]float64, 0, len(bars))
-	for _, b := range bars {
-		dates = append(dates, b.Date)
-		closes = append(closes, b.Close)
+	// 箱体法：复用 boxscan 的箱体参数（判断市场与判断个股用同一套工具，单一理论）
+	params := contract.BoxParams{
+		VolMultiplier: st.ParamRepo.GetFloat("box.volmult", 2.0),
+		VolWindow:     st.ParamRepo.GetInt("box.volwindow", 50),
+		BreakPremium:  st.ParamRepo.GetFloat("buy.premium", 1.03),
+		MinBoxWidth:   0.05,
 	}
-	labels := LabelBars(dates, closes, window, bullThresh, bearThresh)
+	labels := LabelBoxes(bars, params)
 
 	equities, err := st.TradeRepo.EquityRange(from, to)
 	if err != nil {
