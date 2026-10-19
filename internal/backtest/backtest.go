@@ -36,6 +36,7 @@ import (
 	"darvas/internal/contract"
 	"darvas/internal/match"
 	"darvas/internal/pipeline"
+	"darvas/internal/regime"
 	"darvas/internal/store"
 
 	_ "modernc.org/sqlite"
@@ -51,6 +52,8 @@ const (
 	ModeProgressive Mode = "progressive"
 	// ModeVerify 双模式重放 + 差分（M8.1 as-of 审计入口）。
 	ModeVerify Mode = "verify"
+	// ModeRegime 长窗口 prefill 回放 + 分体制报告（M8.3 体制运行器）。
+	ModeRegime Mode = "regime"
 )
 
 // Options 回放入口参数。
@@ -83,10 +86,12 @@ func Run(o Options) error {
 		return nil
 	case ModeVerify:
 		return runVerify(o)
+	case ModeRegime:
+		return runRegime(o)
 	case "":
-		return fmt.Errorf("必须指定 --mode prefill|progressive|verify")
+		return fmt.Errorf("必须指定 --mode prefill|progressive|verify|regime")
 	default:
-		return fmt.Errorf("未知模式 %q（可选 prefill|progressive|verify）", o.Mode)
+		return fmt.Errorf("未知模式 %q（可选 prefill|progressive|verify|regime）", o.Mode)
 	}
 }
 
@@ -177,6 +182,42 @@ func runVerify(o Options) error {
 		fmt.Println("  " + d)
 	}
 	return fmt.Errorf("as-of 差分审计失败：%d 处差异", len(diffs))
+}
+
+// runRegime 长窗口分体制回放（M8.3）：prefill 全历史回放 + 分体制 HTML 报告。
+// 必须指定 --from --to（长窗口覆盖牛熊猴；默认 20 日窗口对体制切分无意义）。
+func runRegime(o Options) error {
+	if o.From == "" || o.To == "" {
+		return fmt.Errorf("regime 模式必须指定 --from --to（长窗口，如 --from 2014-01-01）")
+	}
+	from, to, days, err := resolveWindow(o)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("[bt] regime: 窗口 %s ~ %s（%d 个交易日）\n", from, to, len(days))
+
+	scratch := defaultScratch("regime")
+	if err = Bootstrap(o.SrcDB, scratch, from, false); err != nil {
+		return err
+	}
+	if _, fails, err := Replay(scratch, days, nil); err != nil {
+		return err
+	} else if len(fails) > 0 {
+		return fmt.Errorf("regime 回放存在失败任务:\n  %s", strings.Join(fails, "\n  "))
+	}
+
+	st, err := store.Open(scratch)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	reportDir := strings.TrimSuffix(scratch, ".db") + "_reports"
+	path, err := regime.Run(context.Background(), st, from, to, reportDir)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("[bt] regime 报告已生成: %s\n", path)
+	return nil
 }
 
 // resolveWindow 推导窗口与交易日历（ADR-2：sh000001 为交易日历权威）。

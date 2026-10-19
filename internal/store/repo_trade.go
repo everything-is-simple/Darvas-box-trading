@@ -298,6 +298,26 @@ func (r *TradeRepo) PendingOrdersForExecuteDate(date string) ([]MatchOrder, erro
 	return out, rows.Err()
 }
 
+// PendingSellCodes 返回已有 pending/placed 卖出单的股票代码（planner 避免重复生成
+// 卖出单：time_stop 等持续条件每日重复挂单，撮合清仓后剩余单「卖出无持仓」——M8.3 暴露）。
+func (r *TradeRepo) PendingSellCodes() ([]string, error) {
+	rows, err := r.db.Query(`SELECT DISTINCT code FROM plan_order
+		WHERE side='sell' AND status IN ('pending','placed')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // PendingOrdersFor 取某股某方向仍可成交的订单（pending/placed，execute_date≤date，按计划日先后）。
 // 成交回录时用它把 fill 关联到 plan_order。
 func (r *TradeRepo) PendingOrdersFor(code, side, date string) ([]PendingOrder, error) {

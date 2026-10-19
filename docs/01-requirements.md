@@ -193,6 +193,9 @@
 | 单笔最低佣金 | `fee.commission_min` | 5元 | 券商最低收费（M8.2 撮合） |
 | 印花税 | `fee.stamp_tax` | 千1 | 卖出单边（M8.2 撮合） |
 | 过户费 | `fee.transfer_rate` | 万0.1 | 双向简化（M8.2 撮合） |
+| 体制动量窗口 | `regime.window` | 60日 | 牛熊猴标注窗口（M8.3） |
+| 牛阈值 | `regime.bull_thresh` | +10% | 动量超此判牛（M8.3） |
+| 熊阈值 | `regime.bear_thresh` | -10% | 动量低此判熊（M8.3） |
 | TDX数据根目录 | `tdx.root` | H:/new_tdx64/vipdoc | 运行时路径配置 |
 
 ---

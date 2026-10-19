@@ -3,6 +3,7 @@ package planner
 import (
 	"context"
 	"testing"
+	"time"
 
 	"darvas/internal/box"
 	"darvas/internal/contract"
@@ -415,6 +416,71 @@ func itoa(n int) string {
 }
 
 func approx(a, b, tol float64) bool { return a-b < tol && b-a < tol }
+
+// TestPlannerNoDuplicateSell M8.3 暴露的时序 bug 防回归：time_stop 是持续条件，
+// 撮合器把首个卖出单成交清仓后，后续重复生成的卖出单「卖出无持仓」。修复：planner
+// 生成卖出单前检查是否已有在途（pending/placed）卖出单，有则跳过。
+func TestPlannerNoDuplicateSell(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	st.SecRepo.UpsertSecurities([]contract.Security{
+		store.DeriveSecurity(code, ""),
+		store.DeriveSecurity("sh000001", ""),
+	})
+
+	// 连续日期灌 K 线 09-01~10-20（sh000001 日历 + 股票不获利：close 19 < avg_cost 20）
+	var ib, sb []contract.DailyBar
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 50; i++ {
+		d := day.AddDate(0, 0, i).Format("2006-01-02")
+		ib = append(ib, contract.DailyBar{Code: "sh000001", Date: d, Open: 3000, High: 3010, Low: 2990, Close: 3000, Volume: 1000, Amount: 1e8})
+		sb = append(sb, contract.DailyBar{Code: code, Date: d, Open: 19, High: 20, Low: 18, Close: 19, Volume: 1000, Amount: 6e7})
+	}
+	if _, err := st.BarRepo.UpsertBars(ib); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.BarRepo.UpsertBars(sb); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.TradeRepo.CreatePosition(contract.Position{
+		Code: code, OpenedDate: "2026-09-01", Qty: 500, AvgCost: 20, StopPrice: 16,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-14"); err != nil {
+		t.Fatalf("Build#1: %v", err)
+	}
+	// 前提：10-14 确实生成了 time_stop 卖出单
+	_, orders1, err := st.TradeRepo.PlanOn("2026-10-14")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, o := range orders1 {
+		if o.Side == "sell" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("10-14 应生成 time_stop 卖出单（测试前提未满足）")
+	}
+
+	// 第二次 Build：持仓仍在（卖出单未撮合），应有 pending 卖出单 → 跳过不再生成
+	if _, err := p.Build(context.Background(), "2026-10-15"); err != nil {
+		t.Fatalf("Build#2: %v", err)
+	}
+	_, orders2, err := st.TradeRepo.PlanOn("2026-10-15")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range orders2 {
+		if o.Side == "sell" {
+			t.Errorf("10-15 不应再生成卖出单（已有在途卖出单），got code=%s qty=%d", o.Code, o.Qty)
+		}
+	}
+}
 
 // TestPlannerRaiseStop M4.4 验收：新箱体确认 → 止损只升不降。
 // ① 更高下轨的确认箱体 → 止损上移；② 更低候选不降（应用层跳过 + 触发器ABORT双防护）。

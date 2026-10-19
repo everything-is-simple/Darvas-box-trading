@@ -83,6 +83,15 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	// DB 触发器保证只升不降（降则 ABORT），此处仅在候选值更高时调用。
 	stopMoves := p.raiseStops(positions, sellDisc)
 
+	// 已有在途卖出单的股票：避免重复生成（time_stop 持续条件每日重复挂单，
+	// 撮合清仓后剩余单「卖出无持仓」——M8.3 暴露，docs/09）。
+	pendingSell := map[string]bool{}
+	if codes, err := p.st.TradeRepo.PendingSellCodes(); err == nil {
+		for _, c := range codes {
+			pendingSell[c] = true
+		}
+	}
+
 	executeDate := p.nextTradingDate(planDate)
 	var orders []contract.PlanOrder
 	for _, s := range sigs {
@@ -99,6 +108,9 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 				orders = append(orders, *o)
 			}
 		case contract.SignalStop, contract.SignalFailed:
+			if pendingSell[s.Code] {
+				continue // 已有在途卖出单，不重复生成（M8.3）
+			}
 			o := p.sellOrder(s, box, sellDisc, posByCode, planDate, executeDate)
 			if o != nil {
 				orders = append(orders, *o)
@@ -113,6 +125,9 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		pos := &positions[i]
 		if pos.Qty <= 0 {
 			continue
+		}
+		if pendingSell[pos.Code] {
+			continue // 已有在途卖出单，不重复生成（M8.3）
 		}
 		n, err := p.st.BarRepo.BarCount(pos.Code, pos.OpenedDate, planDate)
 		if err != nil || n < staleDays {
