@@ -1,20 +1,15 @@
-// Package regime 实现 M8.3 体制运行器（PROMPT.md P4 M8.3）：
-// 用客观规则「事先」标注牛/熊/猴窗口（禁摘樱桃），分体制聚合权益曲线/回撤/胜率/
-// 暴露时间，输出 HTML 报告——为「大盘闸门要不要加」提供证据，不做主。
+// Package regime 实现市场体制标定与事后分体制统计。
 //
-// 体制标注规则（客观、只用过去数据、零未来信息、单一理论、不引入均线等其他理论）：
-// 以 sh000001 上证指数为市场代理，复用达瓦斯箱体引擎（box.New().Scan）给指数标箱体：
+// M8.8 标定规则（docs/13，宪法第 0 条「众人恐慌我更恐慌，众人贪婪我更贪婪」）：
+// 不向外求（不看指数箱体/动量公式/人工标签），只用系统自身 box.Scan 扫出的全市场
+// 个股 broken_up/broken_down 事件流：20 交易日滚动宽度比率 ratio=ΣU/(ΣU+ΣD)，
+// 连续 3 日 ratio≥bull_thresh 判牛（启用主力仓），连续 3 日 <bear_thresh 细分熊
+// （熊猴仓位规则相同，仅日志区分）。
 //
-//	指数向上突破箱体（broken_up）   → 牛（bull）
-//	指数向下破位（broken_down）     → 熊（bear）
-//	箱体内（forming/confirmed）     → 猴（range，震荡）
+// 零未来信息：ClassifyDate 只统计 broken_date ≤ 当日且落在滚动窗口内的完成事件。
 //
-// 突破/破位是事件（BrokenDate 当日判定，只用当日及之前数据）；事件后延续该方向直到反向事件。
-// 复用判断个股的同一套箱体参数（box.volmult / box.volwindow / buy.premium）——单一理论。
-// 趋势跟随固有滞后：牛熊转换初期箱体未突破，标为 range 属「不用未来信息」的诚实代价。
-//
-// 历史：初版用动量法（过去 N 日涨跌幅超 ±阈值），2026-10-19 用户拍板改用箱体法（commit 994cc16），
-// Classify 函数保留仅供旧测试引用，勿再使用。
+// 历史：M8.3 曾用动量法；M8.7 改用上指箱体法（2026-10-20 证伪退役，docs/12）；
+// M8.8 改为内生宽度法。LabelBoxes/Classify 保留供旧测试与报告函数引用，勿再用于实盘标定。
 package regime
 
 import (
@@ -103,32 +98,84 @@ func LabelBoxes(bars []contract.DailyBar, params contract.BoxParams) map[string]
 	return labels
 }
 
-// DefaultIndex 晴雨表唯一指数（M8.7 仓位随市缩放，2026-10-20 用户拍板：只看上证指数）。
-// 用户拍板放弃多指数投票（上证+深成+创业板+科创50），简化为单一上证指数 sh000001——
-// 只为验证达瓦斯策略，不做复杂化。
+// DefaultIndex 交易日历权威（ADR-2）。M8.8 不再用它标指数箱体（M8.7 已退役，docs/12），
+// 只取 sh000001 的日期序列作为「交易日」定义；行情标定完全来自个股箱体事件流。
 var DefaultIndex = "sh000001"
 
-// ClassifyDate 实时标注某日的市场体制（盘中可用，M8.7）：
-// 读上证指数「至 date」的日线，用箱体法 LabelBoxes 标牛/熊/猴。
-// 只用 date 及之前数据，零未来信息（单一理论）。
+// ClassifyDate 实时标注某日的市场体制（M8.8 宽度法）：
+// 不读指数箱体、不用动量公式；改查系统自身 box 表的全市场个股 broken_up/broken_down
+// 事件流，按 20 交易日滚动窗口算 ratio，末 confirm 日连续 ≥ bull_thresh 判牛，
+// 连续 < bear_thresh 细分熊（熊猴仓位规则相同，仅日志区分）。
 //
-//   - indices 为空时只用 DefaultIndex（上证指数）；
-//   - 上证指数在 date 无数据则返回 range（无市场信号，中性仓位）。
+// 零未来信息：只统计 broken_date ≤ date 且落在滚动窗口内的完成事件；
+// params/indices 参数保留仅为向后兼容调用方，内部忽略（M8.7 指数法退役，docs/12/13）。
 func ClassifyDate(st *store.Store, date string, params contract.BoxParams, indices []string) Regime {
-	code := DefaultIndex
-	if len(indices) > 0 && indices[0] != "" {
-		code = indices[0] // 允许显式覆盖，但仅取第一个（单一指数）
+	_ = params
+	_ = indices
+	window := st.ParamRepo.GetInt("regime.breadth.window", 20)
+	bullThresh := st.ParamRepo.GetFloat("regime.breadth.bull_thresh", 0.55)
+	bearThresh := st.ParamRepo.GetFloat("regime.breadth.bear_thresh", 0.40)
+	confirm := st.ParamRepo.GetInt("regime.breadth.confirm", 3)
+	minHistory := st.ParamRepo.GetInt("regime.breadth.min_history", 60)
+	if window <= 0 || confirm <= 0 {
+		return Range
 	}
-	bars, err := st.BarRepo.BarsRange(code, "", date, 100000)
-	if err != nil || len(bars) == 0 {
-		return Range // 上证无数据：无市场信号，中性仓位
+
+	// 交易日历仍以 sh000001 为权威（ADR-2），但只取日期，不读指数行情/箱体。
+	span := window + confirm - 1
+	cal, err := st.BarRepo.BarsRange(DefaultIndex, "", date, span)
+	if err != nil || len(cal) < span {
+		return Range // 历史不足以形成 window+confirm-1 个交易日：中性
 	}
-	labels := LabelBoxes(bars, params)
-	r, ok := labels[date]
-	if !ok {
-		return Range // 当日无标注（如数据缺失），记猴
+	dates := make([]string, len(cal))
+	for i, b := range cal {
+		dates[i] = b.Date
 	}
-	return r
+	up, down, err := st.BoxRepo.BreadthAgg(dates[0], date, minHistory)
+	if err != nil {
+		return Range
+	}
+
+	su, sd := 0, 0
+	ratios := make([]float64, 0, confirm)
+	for i, d := range dates {
+		su += up[d]
+		sd += down[d]
+		if i >= window {
+			old := dates[i-window]
+			su -= up[old]
+			sd -= down[old]
+		}
+		if i < window-1 {
+			continue
+		}
+		ratio := 0.0 // 与 scripts/dbg_breadth 口径一致：窗口无事件 = 0，偏保守（不误触牛）
+		if su+sd > 0 {
+			ratio = float64(su) / float64(su+sd)
+		}
+		if len(dates)-i <= confirm {
+			ratios = append(ratios, ratio)
+		}
+	}
+	if len(ratios) < confirm {
+		return Range
+	}
+	bull, bear := true, true
+	for _, r := range ratios {
+		if r < bullThresh {
+			bull = false
+		}
+		if r >= bearThresh {
+			bear = false
+		}
+	}
+	if bull {
+		return Bull
+	}
+	if bear {
+		return Bear
+	}
+	return Range
 }
 
 // Segment 连续同体制的一段。
@@ -237,7 +284,7 @@ func Summarize(equities []contract.EquitySnapshot, labels map[string]Regime,
 		if s.MaxDD < st.MaxDD {
 			st.MaxDD = s.MaxDD
 		}
-		st.Return = (1 + st.Return) * (1 + s.Return) - 1
+		st.Return = (1+st.Return)*(1+s.Return) - 1
 	}
 	stats := make([]Stat, 0, 3)
 	for _, r := range order {
@@ -260,14 +307,14 @@ type SeriesPoint struct {
 
 // ReportData 报告模板数据。
 type ReportData struct {
-	From, To      string
-	TotalDays     int
-	StartTotal    float64
-	TotalReturn   float64
-	TotalMaxDD    float64
-	Stats         []Stat
-	Segments      []Segment
-	Series        []SeriesPoint
+	From, To    string
+	TotalDays   int
+	StartTotal  float64
+	TotalReturn float64
+	TotalMaxDD  float64
+	Stats       []Stat
+	Segments    []Segment
+	Series      []SeriesPoint
 }
 
 // Run 生成分体制 HTML 报告，返回文件路径。

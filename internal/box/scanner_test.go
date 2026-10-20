@@ -82,6 +82,40 @@ func TestPrefilterShortHistory(t *testing.T) {
 	}
 }
 
+// TestPrefilterBrokenBelowConfirmedBox M8.8 破位兜底：无量阴跌、无新高，
+// 但最新 confirmed 箱体下轨被今日收盘跌破 → 必须重算（否则 broken_down 事件漏记）。
+func TestPrefilterBrokenBelowConfirmedBox(t *testing.T) {
+	s, st := newTestScanner(t)
+	code := "sh600005"
+	seedStock(t, st, code, flatSeries(code, 60))
+	if _, err := st.BoxRepo.UpsertBoxes([]contract.Box{{
+		Code: code, Top: 12, Bottom: 10.5, TopConfirmed: d(50), BottomConfirmed: d(55),
+		Status: contract.BoxConfirmed,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if !s.prefilter(context.Background(), code, d(60), 2.0) {
+		t.Fatal("confirmed box bottom broken by close should trigger M8.8 fallback")
+	}
+}
+
+// TestPrefilterAlreadyBrokenDownNotRetrigger 已是 broken_down 的旧箱体不会因
+// 价格持续低于下轨而每日重复重算（避免兜底退化成全量扫描）。
+func TestPrefilterAlreadyBrokenDownNotRetrigger(t *testing.T) {
+	s, st := newTestScanner(t)
+	code := "sh600006"
+	seedStock(t, st, code, flatSeries(code, 60))
+	if _, err := st.BoxRepo.UpsertBoxes([]contract.Box{{
+		Code: code, Top: 12, Bottom: 10.5, TopConfirmed: d(50), BottomConfirmed: d(55),
+		Status: contract.BoxBrokenDown, BrokenDate: d(59),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if s.prefilter(context.Background(), code, d(60), 2.0) {
+		t.Fatal("already broken_down box should not retrigger every day")
+	}
+}
+
 // TestRescanAllSmoke 全量重算冒烟：3 只股票 → 箱体持久化、可读回。
 func TestRescanAllSmoke(t *testing.T) {
 	s, st := newTestScanner(t)

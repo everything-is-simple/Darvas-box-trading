@@ -215,14 +215,20 @@ type ScreenParams struct {
 	LateDays    int     // B2①太晚规则：突破后第N交易日（默认4，原书"四天已超箱体=太晚"）
 }
 
-// PlanParams 计划参数
+// PlanParams 计划参数（M8.8 单位制；旧 risk.leg1/leg23/maxpos 体系退役禁用，保留参数作对照）
 type PlanParams struct {
-	RiskLeg1     float64 // 第1腿风险，默认0.01
-	RiskLeg23    float64 // 第2/3腿风险，默认0.02
-	MaxPosition  float64 // 单股仓位上限，默认0.20
-	BuyPremium   float64 // 买入触发溢价，默认1.03
-	SellDiscount float64 // 卖出触发折价，默认0.97
-	MaxLegs      int     // 最大腿数，默认3
+	UnitPct           float64 // 1 单位 = 权益 × UnitPct，默认0.02
+	UnitsTotal        float64 // 总单位数，默认50（5试探+30主力+15预备）
+	UnitsProbe        float64 // 试探仓总顶，默认5
+	UnitsMain         float64 // 主力仓总顶，默认30（仅牛市启用）
+	UnitsReserve      float64 // 预备仓永不动，默认15
+	PerStockProbeBear float64 // 熊猴单票试探单位，默认1
+	PerStockProbeBull float64 // 牛市单票试探单位，默认2
+	PerStockMainMax   float64 // 单票主力上限（单位），默认10（=20%）
+	PerStockMainStep  float64 // 单次主力最小加码（单位），默认3
+	BuyPremium        float64 // 买入触发溢价，默认1.03
+	SellDiscount      float64 // 卖出触发折价，默认0.97
+	MaxLegs           int     // 最大腿数，默认3
 }
 
 // ---------------------------------------------------------------------------

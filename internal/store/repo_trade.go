@@ -134,6 +134,56 @@ func (r *TradeRepo) OpenPositions() ([]contract.Position, error) {
 	return out, rows.Err()
 }
 
+// OpenExposureUnits 当前未平仓敞口折算成 M8.8 单位制仓位预算占用。
+// 规则（docs/13 §3.2）：持仓只有 leg1 = 试探仓；有 leg2+ = 主力仓（全部腿计入 main）。
+// 估值用最新收盘价（无行情回退 avg_cost）；unitValue = 权益 × pos.unit（调用方传入）。
+func (r *TradeRepo) OpenExposureUnits(unitValue float64) (probeUnits, mainUnits float64, err error) {
+	if unitValue <= 0 {
+		return 0, 0, fmt.Errorf("unitValue must be positive, got %v", unitValue)
+	}
+	rows, err := r.db.Query(`SELECT p.code, p.qty, p.avg_cost, COALESCE(MAX(l.leg_no),0)
+		FROM position p
+		LEFT JOIN position_leg l ON l.position_id = p.id
+		WHERE p.status = 'open' AND p.qty > 0
+		GROUP BY p.id
+		ORDER BY p.code`)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+	type exposure struct {
+		code     string
+		qty      int
+		avgCost  float64
+		maxLegNo int
+	}
+	var list []exposure
+	for rows.Next() {
+		var e exposure
+		if err := rows.Scan(&e.code, &e.qty, &e.avgCost, &e.maxLegNo); err != nil {
+			return 0, 0, err
+		}
+		list = append(list, e)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, 0, err
+	}
+	for _, e := range list {
+		price := e.avgCost
+		var close float64
+		if err := r.db.QueryRow(`SELECT close FROM daily_bar WHERE code = ? ORDER BY date DESC LIMIT 1`, e.code).Scan(&close); err == nil && close > 0 {
+			price = close
+		}
+		units := float64(e.qty) * price / unitValue
+		if e.maxLegNo >= 2 {
+			mainUnits += units
+		} else {
+			probeUnits += units
+		}
+	}
+	return probeUnits, mainUnits, nil
+}
+
 // UpdateStop 更新止损位（DB 触发器保证只升不降，docs/03 §2.3）。
 func (r *TradeRepo) UpdateStop(positionID int64, newStop float64) error {
 	_, err := r.db.Exec(`UPDATE position SET stop_price = ? WHERE id = ?`, newStop, positionID)

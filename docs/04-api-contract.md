@@ -157,6 +157,8 @@ type BoxRepo interface {
     UpsertBoxes(boxes []Box) ([]int64, error)
     LatestBox(code string) (*Box, error)
     Ladder(code string) ([]Box, error)          // 阶梯链
+    LatestNonFormingBox(code string) (*Box, error) // 决策用最新落定箱体（修复 docs/07 #1）
+    BreadthAgg(from, to string, minHistory int) (upByDate, downByDate map[string]int, err error) // M8.8 市场宽度事件聚合
 }
 
 type PoolRepo interface {
@@ -210,6 +212,7 @@ type TradeRepo interface {
     AddLeg(positionID int64, legNo int, date string, qty int, price, stopAfter float64, planOrderID int64) error
     LegsByPosition(positionID int64) ([]map[string]any, error)
     LegCountByCode(code string) (int, error)             // 当前未平仓持仓腿数（signal 金字塔钳制，docs/07 #2）
+    OpenExposureUnits(unitValue float64) (probeUnits, mainUnits float64, err error) // M8.8 组合级单位预算占用（leg1=试探，leg2+=主力）
     AllPositions() ([]Position, error)                     // 含closed（交易记录视图）
     EquityAll() ([]EquitySnapshot, error)
     LatestEquity() (*EquitySnapshot, error)
@@ -342,17 +345,19 @@ type SignalEngine interface {
 ```go
 type Planner interface {
     Build(ctx context.Context, planDate string) (TaskResult, error)
-    // 输入：当日signal + 持仓 + param + equity_snapshot
+    // 输入：当日signal + 持仓 + param + equity_snapshot + M8.8 市场体制（内生宽度法）
     // 输出：trade_plan + plan_order（停损买/卖单，含触发价、委托价、数量、腿号）
-    // 数量公式：qty = floor(equity×risk% / (trigger−stop) / 100)×100
+    // 数量公式（M8.8 单位制）：1单位=权益×pos.unit；单位股数=floor(单位值/价/100)×100。
+    // 腿1：熊猴1单位/牛2单位（试探预算；牛市试探满5后改占主力预算）；腿2/3仅牛市，递进至单票10单位。
 }
 
 type PlanParams struct {
-    RiskLeg1, RiskLeg23 float64  // 0.01 / 0.02
-    MaxPosition  float64         // 0.20 单股上限
-    BuyPremium   float64         // 1.03
-    SellDiscount float64         // 0.97
-    MaxLegs      int             // 3
+    UnitPct, UnitsTotal float64  // 0.02 / 50（5试探+30主力+15预备）
+    UnitsProbe, UnitsMain, UnitsReserve float64 // 5 / 30 / 15（预备永不动）
+    PerStockProbeBear, PerStockProbeBull float64 // 1 / 2
+    PerStockMainMax, PerStockMainStep float64    // 10 / 3（单票主力上限与单次最小加码）
+    BuyPremium, SellDiscount float64 // 1.03 / 0.97
+    MaxLegs int // 3
 }
 ```
 

@@ -168,3 +168,45 @@ func TestUpsertBoxesStaleDeleteKeepsPrevRef(t *testing.T) {
 		t.Fatalf("ladder len=%d want 3 (prev-referenced stale box kept, docs/07 #6)", len(ladder))
 	}
 }
+
+// TestBreadthAgg 宽度法聚合：只统计个股、按 min_history 剔次新、按 broken_date 分桶。
+func TestBreadthAgg(t *testing.T) {
+	st := newTestStore(t)
+	seedSecs(t, st, "sh600519", "sh600000", "sh000001")
+	// sh600519：老股（2025-12-01 已有 K 线，满足 60×1.5=90 个日历日），事件应计入。
+	if _, err := st.BarRepo.UpsertBars([]contract.DailyBar{
+		mkBar("sh600519", "2025-12-01", 10, 10, 10, 10, 100, 1e5),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st.BoxRepo.UpsertBoxes([]contract.Box{{
+		Code: "sh600519", Top: 12, Bottom: 10, Status: contract.BoxBrokenUp,
+		BrokenDate: "2026-03-02", TopConfirmed: "2026-02-20", BottomConfirmed: "2026-02-25",
+	}})
+	// sh600000：次新股（2026-03-01 才有 K 线），min_history=60（90 个日历日）应剔除。
+	if _, err := st.BarRepo.UpsertBars([]contract.DailyBar{
+		mkBar("sh600000", "2026-03-01", 10, 10, 10, 10, 100, 1e5),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st.BoxRepo.UpsertBoxes([]contract.Box{{
+		Code: "sh600000", Top: 12, Bottom: 10, Status: contract.BoxBrokenUp,
+		BrokenDate: "2026-03-02", TopConfirmed: "2026-03-01", BottomConfirmed: "2026-03-01",
+	}})
+	// 指数事件不计入市场宽度（只统计 kind='stock'）。
+	st.BoxRepo.UpsertBoxes([]contract.Box{{
+		Code: "sh000001", Top: 3300, Bottom: 3000, Status: contract.BoxBrokenDown,
+		BrokenDate: "2026-03-02", TopConfirmed: "2026-02-20", BottomConfirmed: "2026-02-25",
+	}})
+
+	up, down, err := st.BoxRepo.BreadthAgg("2026-03-01", "2026-03-03", 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up["2026-03-02"] != 1 || len(up) != 1 {
+		t.Fatalf("up=%v want only sh600519 2026-03-02=1（次新 sh600000 与指数剔除）", up)
+	}
+	if len(down) != 0 {
+		t.Fatalf("down=%v want empty", down)
+	}
+}

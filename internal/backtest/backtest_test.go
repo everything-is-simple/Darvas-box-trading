@@ -179,7 +179,7 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 	}
 
 	// ⑤ 计划与权益：每日一份计划；t15 breakout 信号 → 1 笔买单（leg1，exec t16），
-	//    M8.2 撮合器 t16 成交（status=filled）；权益 ≈ 本金−买入支出+市值 ≈ 999415
+	//    M8.2 撮合器 t16 成交（status=filled）；权益 ≈ 本金−买入支出+市值 ≈ 999774
 	var nPlan, nOrder, nEq int
 	if err := one(`SELECT COUNT(*) FROM trade_plan`).Scan(&nPlan); err != nil || nPlan != len(days) {
 		t.Fatalf("trade_plan = %d err=%v, 期望 %d", nPlan, err, len(days))
@@ -187,7 +187,8 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 	if err := one(`SELECT COUNT(*) FROM plan_order`).Scan(&nOrder); err != nil || nOrder != 1 {
 		t.Fatalf("plan_order = %d err=%v, 期望 1（t15 breakout → leg1 买单）", nOrder, err)
 	}
-	// 订单明细：buy/leg1/filled，执行日 t16，数量 4400（试探仓钳制：probeUpper=4400）
+	// 订单明细：buy/leg1/filled，执行日 t16，数量 1700（M8.8 单位制：1单位=20000元，
+	//   触发价 11.33 → 1单位股数=floor(20000/11.33/100)*100=1700）
 	var oSide, oKind, oStatus string
 	var oQty, oLeg int
 	var oExec string
@@ -199,21 +200,21 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 	if oSide != "buy" || oKind != "stop_buy" || oLeg != 1 || oStatus != "filled" || oExec != d(16) {
 		t.Fatalf("plan_order = %s/%s/leg%d/%s/exec%s, 期望 buy/stop_buy/leg1/filled/exec%s", oSide, oKind, oLeg, oStatus, oExec, d(16))
 	}
-	if oQty != 4400 {
-		t.Fatalf("plan_order qty = %d, 期望 4400（试探仓钳制：equity×probe_max_pct/trigger 探测）", oQty)
+	if oQty != 1700 {
+		t.Fatalf("plan_order qty = %d, 期望 1700（M8.8 单位制：20000/11.33 取整手）", oQty)
 	}
 	if err := one(`SELECT COUNT(*) FROM equity_snapshot`).Scan(&nEq); err != nil || nEq != len(days) {
 		t.Fatalf("equity_snapshot = %d err=%v, 期望 %d", nEq, err, len(days))
 	}
 	var eq float64
-	if err := one(`SELECT total FROM equity_snapshot ORDER BY date DESC LIMIT 1`).Scan(&eq); err != nil || math.Abs(eq-999415.04) > 1 {
-		t.Fatalf("期末权益 = %v err=%v, 期望 ≈999415.04（t16 成交 4400@11.33 + 手续费）", eq, err)
+	if err := one(`SELECT total FROM equity_snapshot ORDER BY date DESC LIMIT 1`).Scan(&eq); err != nil || math.Abs(eq-999773.81) > 1 {
+		t.Fatalf("期末权益 = %v err=%v, 期望 ≈999773.81（t16 成交 1700@11.33 + 手续费，t24 收盘 11.2）", eq, err)
 	}
 
-	// ⑥ 成交与持仓（M8.2 撮合）：t16 成交 1 笔买入，sh600001 开仓 4400 股
+	// ⑥ 成交与持仓（M8.2 撮合）：t16 成交 1 笔买入，sh600001 开仓 1700 股
 	var nFill int
 	if err := one(`SELECT COUNT(*) FROM trade_fill`).Scan(&nFill); err != nil || nFill != 1 {
-		t.Fatalf("trade_fill = %d err=%v, 期望 1（t16 buy 4400）", nFill, err)
+		t.Fatalf("trade_fill = %d err=%v, 期望 1（t16 buy 1700）", nFill, err)
 	}
 	var fCode, fSide string
 	var fPx float64
@@ -222,8 +223,8 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 		Scan(&fCode, &fSide, &fPx, &fQty); err != nil {
 		t.Fatalf("读 trade_fill: %v", err)
 	}
-	if fCode != "sh600001" || fSide != "buy" || fQty != 4400 || math.Abs(fPx-11.33) > 1e-6 {
-		t.Fatalf("fill = %s/%s/%d@%.4f, 期望 sh600001/buy/4400@11.33", fCode, fSide, fQty, fPx)
+	if fCode != "sh600001" || fSide != "buy" || fQty != 1700 || math.Abs(fPx-11.33) > 1e-6 {
+		t.Fatalf("fill = %s/%s/%d@%.4f, 期望 sh600001/buy/1700@11.33", fCode, fSide, fQty, fPx)
 	}
 	var nPos int
 	if err := one(`SELECT COUNT(*) FROM position WHERE status='open'`).Scan(&nPos); err != nil || nPos != 1 {

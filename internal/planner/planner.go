@@ -3,13 +3,14 @@
 // 输入：当日 signal + 持仓 + param + equity_snapshot
 // 输出：trade_plan + plan_order（停损买/卖单，含触发价、委托价、数量、腿号）
 //
-// 数量公式（FR-404）：qty = floor(equity × risk% / (trigger − stop) / 100) × 100（A股整手）
-// 动态仓位（B4 2026-10-18，原书§4.1「试探→放大→自设上限」）：腿1试探单钳制到
-// 名义≤权益×risk.probe_max_pct 且 ≥risk.probe_min_shares 股；腿3加码=持仓×risk.scale
-// 倍且加码后总名义≤risk.maxpos（单股上限）；参数见 migrations/0005，详见 buyOrder。
+// 数量公式（M8.8 单位制，docs/13 §3）：1 单位 = 权益 × pos.unit（默认 2%），
+// 单位股数 = floor(equity × pos.unit / price / 100) × 100（A股整手）。
+// 三层预算：试探 5 单位（熊猴单票 1 / 牛单票 2）+ 主力 30 单位（仅牛市启用，
+// 单票共 10 单位、单次加码 ≥3 单位）+ 预备 15 单位永不动；永远留 30% 现金。
 //   - breakout → 腿1停损买单：trigger = box.top × buy.premium，stop = box.top × sell.discount
 //     （B1修正2026-10-18：首腿紧止损=被突破箱体上轨/突破点下方，原书§4.1；旧实现误挂箱体下轨下方）
 //   - pyramid → 腿2/3停损买单：trigger = box.top × buy.premium，stop = box.bottom × sell.discount
+//     熊猴市不生成（M8.8 硬规则：试探后不放大）；牛市递进至单票 10 单位
 //   - stop/failed_breakout → 止损卖单：trigger = box.bottom × sell.discount，qty = 持仓全部（一次全出）
 package planner
 
@@ -17,7 +18,6 @@ import (
 	"context"
 	"log"
 	"math"
-	"strings"
 	"time"
 
 	"darvas/internal/contract"
@@ -46,13 +46,17 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	start := time.Now()
 	res := contract.TaskResult{Task: "plan", Date: planDate}
 
-	// 参数
-	pLeg1 := p.st.ParamRepo.GetFloat("risk.leg1", 0.01)
-	pLeg23 := p.st.ParamRepo.GetFloat("risk.leg23", 0.02)
-	maxPos := p.st.ParamRepo.GetFloat("risk.maxpos", 0.20)
+	// 参数（M8.8 单位制；旧 risk.leg1/leg23/maxpos/probe_* 保留禁用，不再读取）
 	buyPrem := p.st.ParamRepo.GetFloat("buy.premium", 1.03)
 	sellDisc := p.st.ParamRepo.GetFloat("sell.discount", 0.97)
 	maxLegs := p.st.ParamRepo.GetInt("risk.maxlegs", 3)
+	unitPct := p.st.ParamRepo.GetFloat("pos.unit", 0.02)
+	probeCap := p.st.ParamRepo.GetFloat("pos.units.probe", 5)
+	mainCap := p.st.ParamRepo.GetFloat("pos.units.main", 30)
+	probeBear := p.st.ParamRepo.GetFloat("pos.units.per_stock_probe_bear", 1)
+	probeBull := p.st.ParamRepo.GetFloat("pos.units.per_stock_probe_bull", 2)
+	mainMax := p.st.ParamRepo.GetFloat("pos.units.per_stock_main_max", 10)
+	mainStep := p.st.ParamRepo.GetFloat("pos.units.per_stock_main_step", 3)
 
 	// 权益基准
 	eq, _ := p.st.TradeRepo.LatestEquity()
@@ -64,9 +68,18 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	if eq == nil {
 		p.st.TradeRepo.SetEquityDefault(planDate, equity)
 	}
-	// M8.7 仓位随市缩放：标注当日市场体制（牛/熊/猴），算仓位系数乘到风险预算。
-	// 只用 planDate 及之前数据（零未来信息）；复用箱体法（单一理论，不引入均线等）。
-	mult, regimeLabel := p.regimeMultiplier(planDate)
+	unitValue := equity * unitPct
+	market := p.regimeLabel(planDate)
+
+	// M8.8 组合级预算：试探满 5 不加新试探，主力满 30 不再加码。
+	openProbe, openMain, err := p.st.TradeRepo.OpenExposureUnits(unitValue)
+	if err != nil {
+		res.Status, res.Error = "failed", err.Error()
+		return res, err
+	}
+	budget := &unitBudget{probeUsed: openProbe, mainUsed: openMain, probeCap: probeCap, mainCap: mainCap}
+	plannedQty := map[string]int{} // 同日多信号同票时，避免重复超配
+
 	// 信号
 	sigs, err := p.st.SignalRepo.SignalsOn(planDate)
 	if err != nil {
@@ -108,9 +121,9 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		}
 		switch s.Type {
 		case contract.SignalBreakout, contract.SignalPyramid:
-			// M8.7：市场状态缩放仓位——风险预算与单股上限同时乘系数。
-			o := p.buyOrder(s, box, equity, pLeg1*mult, pLeg23*mult, maxPos*mult,
-				buyPrem, sellDisc, maxLegs, posByCode, planDate, executeDate)
+			// M8.8：单位制仓位 + 组合级预算检查（熊猴 pyramid 在 buyOrder 内硬拦截）
+			o := p.buyOrder(s, box, market, unitValue, probeBear, probeBull, mainMax, mainStep,
+				buyPrem, sellDisc, maxLegs, posByCode, budget, plannedQty, planDate, executeDate)
 			if o != nil {
 				orders = append(orders, *o)
 			}
@@ -197,38 +210,58 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	res.Status = "ok"
 	res.AffectedRows = int64(len(orders))
 	res.DurationMS = time.Since(start).Milliseconds()
-	p.log.Printf("plan %s→%s: %d signals → %d orders, equity=%.0f, 止损上移=%d, 体制=%s(×%.2f), %s",
-		planDate, executeDate, len(sigs), len(orders), equity, stopMoves, regimeLabel, mult, time.Since(start).Round(time.Millisecond))
+	p.log.Printf("plan %s→%s: %d signals → %d orders, equity=%.0f, 止损上移=%d, 体制=%s, 单位预算=试探%.2f/%.0f+主力%.2f/%.0f, %s",
+		planDate, executeDate, len(sigs), len(orders), equity, stopMoves, regimeName(market),
+		budget.probeUsed, probeCap, budget.mainUsed, mainCap, time.Since(start).Round(time.Millisecond))
 	return res, nil
 }
 
-// regimeMultiplier 计算当日市场体制对应的仓位系数（M8.7）。
-// 复用 regime.ClassifyDate（箱体法，单一上证指数 sh000001，零未来信息），
-// 返回 (系数, 体制标签)。标签用中文「牛/熊/猴」便于日志审计。
-func (p *Planner) regimeMultiplier(date string) (float64, string) {
-	// 单一晴雨表指数（缺省用 regime.DefaultIndex = sh000001）
-	idxStr := p.st.ParamRepo.GetString("regime.indices", regime.DefaultIndex)
-	var indices []string
-	for _, c := range strings.Split(idxStr, ",") {
-		if c = strings.TrimSpace(c); c != "" {
-			indices = append(indices, c)
-		}
-	}
-	params := contract.BoxParams{
-		VolMultiplier: p.st.ParamRepo.GetFloat("box.volmult", 2.0),
-		VolWindow:     p.st.ParamRepo.GetInt("box.volwindow", 50),
-		BreakPremium:  p.st.ParamRepo.GetFloat("buy.premium", 1.03),
-		MinBoxWidth:   0.05,
-	}
-	r := regime.ClassifyDate(p.st, date, params, indices)
+// regimeLabel 标注当日市场体制（M8.8 内生宽度法，零未来信息）。
+// params/indices 传空即可：ClassifyDate 保留签名仅为向后兼容，内部忽略。
+func (p *Planner) regimeLabel(date string) regime.Regime {
+	return regime.ClassifyDate(p.st, date, contract.BoxParams{}, nil)
+}
+
+// regimeName 日志中文名。
+func regimeName(r regime.Regime) string {
 	switch r {
 	case regime.Bull:
-		return p.st.ParamRepo.GetFloat("regime.mult.bull", 2.0), "牛"
+		return "牛"
 	case regime.Bear:
-		return p.st.ParamRepo.GetFloat("regime.mult.bear", 0.2), "熊"
+		return "熊"
 	default:
-		return p.st.ParamRepo.GetFloat("regime.mult.range", 0.5), "猴"
+		return "猴"
 	}
+}
+
+// unitBudget M8.8 组合级单位预算（试探 5 / 主力 30；预备 15 永不动）。
+type unitBudget struct {
+	probeUsed, mainUsed float64
+	probeCap, mainCap   float64
+}
+
+func (b *unitBudget) takeProbe(units float64) bool {
+	if b.probeUsed+units > b.probeCap+1e-9 {
+		return false
+	}
+	b.probeUsed += units
+	return true
+}
+
+func (b *unitBudget) takeMain(units float64) bool {
+	if b.mainUsed+units > b.mainCap+1e-9 {
+		return false
+	}
+	b.mainUsed += units
+	return true
+}
+
+// unitShares 1 单位股数 = floor(unitValue/price/100)×100；不足 1 手返回 0。
+func unitShares(unitValue, price float64) int {
+	if unitValue <= 0 || price <= 0 {
+		return 0
+	}
+	return int(math.Floor(unitValue/price/100)) * 100
 }
 
 // raiseStops 止损上移（M4.4）：对每只持仓，若最新箱体下轨已3日确认
@@ -269,14 +302,16 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 }
 
 // buyOrder 构造停损买单（breakout=leg1, pyramid=leg2/3）。
-// 动态仓位（B4 2026-10-18，原书§4.1「试探→放大→自设上限」，参数见 0005 migration）：
-//   - 腿1 试探单：风险公式基准钳制到名义≤权益×probe_max_pct/触发价，且不低于
-//     probe_min_shares 股（上限允许时）——原书"首批200-500股小仓"的A股适配；
-//   - 腿2 确认单（pyramid 但无持仓=新入场）：风险公式(2%) + 单股上限；
-//   - 腿3 加码单（pyramid 且有持仓）：max(风险公式(2%), 持仓股数×scale)，且加码后
-//     总名义不超过单股上限（room=maxQty−持仓；不足1手则不加码）——原书"确认后放大3-10倍"。
-func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, equity, leg1, leg23, maxPos, buyPrem, sellDisc float64,
-	maxLegs int, posByCode map[string]*contract.Position, planDate, execDate string) *contract.PlanOrder {
+// M8.8 单位制仓位（docs/13 §3.3）：
+//   - 腿1 试探单：熊猴 qty=1 单位股数，牛市 qty=2 单位股数；占用试探预算，
+//     牛市试探 5 单位用满后改占主力预算（docs/13 §3.4）；
+//   - 腿2/3 主力单：仅牛市生成，熊猴 pyramid 硬规则不生成订单；
+//     腿2 起步=per_stock_main_step 单位，腿3 单次 3-5 单位并递进至单票 10 单位；
+//   - 组合预算：试探满 5 / 主力满 30 即跳过；单票上限=per_stock_main_max 单位。
+func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
+	probeBear, probeBull, mainMax, mainStep float64,
+	buyPrem, sellDisc float64, maxLegs int, posByCode map[string]*contract.Position,
+	budget *unitBudget, plannedQty map[string]int, planDate, execDate string) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
 	// 初始止损（B1修正，原书§4.1）：腿1=被突破箱体上轨（突破点）下方——紧止损；
 	// 腿2/3=新箱体下轨下方（新箱体确立后止损上移至其下轨，符合原书阶梯规则）。
@@ -284,13 +319,17 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, equity, leg1, l
 	if s.Type == contract.SignalBreakout {
 		stop = box.Top * sellDisc
 	}
-	riskPerUnit := trigger - stop
-	if riskPerUnit <= 0 || box.Bottom <= 0 {
-		return nil // 无下轨或触发≤止损，不生成买单
+	if trigger <= 0 || stop <= 0 || box.Bottom <= 0 {
+		return nil // 无下轨或触发/止损非法，不生成买单
 	}
-	// 腿号：breakout=第1腿（测试单）；pyramid=第2/3腿（确认/加码）
+	shares := unitShares(unitValue, trigger)
+	if shares <= 0 {
+		p.log.Printf("跳过 %s：1单位=%.0f元在触发价%.2f下不足1手", s.Code, unitValue, trigger)
+		return nil
+	}
+
+	// 腿号：breakout=第1腿（试探单）；pyramid=第2/3腿（确认/加码）
 	leg := 1
-	riskPct := leg1
 	var pos *contract.Position
 	if s.Type == contract.SignalPyramid {
 		if pp, ok := posByCode[s.Code]; ok {
@@ -299,53 +338,107 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, equity, leg1, l
 		} else {
 			leg = 2 // 第2腿（确认单）
 		}
-		riskPct = leg23
 	}
 	if leg > maxLegs {
 		return nil
 	}
-	// 动态仓位参数（B4）
-	probeMin := p.st.ParamRepo.GetInt("risk.probe_min_shares", 200)
-	probeMaxPct := p.st.ParamRepo.GetFloat("risk.probe_max_pct", 0.05)
-	scale := p.st.ParamRepo.GetInt("risk.scale", 5)
-	// 数量公式 + 单股仓位上限（FR-404）；maxQty=自设单股名义上限
-	qty := int(math.Floor(equity*riskPct/riskPerUnit/100)) * 100
-	maxQty := int(math.Floor(equity*maxPos/trigger/100)) * 100
-	// 腿3 加码：原书"确认后放大"——以持仓股数为基放大 scale 倍（不低于风险公式）
-	if leg == 3 && pos != nil && pos.Qty > 0 {
-		if scaled := pos.Qty / 100 * scale * 100; scaled > qty {
-			qty = scaled
+	if pos == nil {
+		if pp, ok := posByCode[s.Code]; ok {
+			pos = pp // 防御：breakout 信号若已有持仓，也纳入单票上限
 		}
 	}
-	// 上限：腿1=试探仓名义上限；腿3=加码后总名义≤单股上限（room=maxQty−持仓）；其余=maxQty
-	upper := maxQty
-	if leg == 1 {
-		if probeUpper := int(math.Floor(equity*probeMaxPct/trigger/100)) * 100; probeUpper < upper {
-			upper = probeUpper
+
+	units := 0.0
+	bucket := ""
+	qty := 0
+	switch {
+	case s.Type == contract.SignalBreakout:
+		units = probeBear
+		if market == regime.Bull {
+			units = probeBull
 		}
-	} else if leg == 3 && pos != nil {
-		if room := maxQty - pos.Qty; room < upper {
-			upper = room
+		qty = int(math.Floor(units)) * shares
+		if qty <= 0 {
+			return nil
 		}
-	}
-	if qty > upper {
-		qty = upper
-	}
-	// 下限：试探仓不低于原书绝对下限（上限允许时）；其余腿 A股整手 100 股
-	if leg == 1 && qty < probeMin && probeMin <= upper {
-		qty = probeMin
-	}
-	if qty <= 0 {
+		// 单票上限（主力上限=10单位；试探腿1也计入该票总敞口）
+		maxQty := int(math.Floor(mainMax*unitValue/trigger/100)) * 100
+		current := plannedQty[s.Code]
+		if pos != nil {
+			current += pos.Qty
+		}
+		if current+qty > maxQty {
+			p.log.Printf("跳过 %s 腿1：单票上限 %d 股", s.Code, maxQty)
+			return nil
+		}
+		// 预算：熊猴/牛市都先吃试探；牛市试探满后改吃主力（docs/13 §3.4）
+		if market == regime.Bull && budget.probeUsed+units > budget.probeCap+1e-9 {
+			if !budget.takeMain(units) {
+				p.log.Printf("跳过 %s 腿1：主力预算不足（已用%.2f/%.0f）", s.Code, budget.mainUsed, budget.mainCap)
+				return nil
+			}
+			bucket = "main"
+		} else {
+			if !budget.takeProbe(units) {
+				p.log.Printf("跳过 %s 腿1：试探预算不足（已用%.2f/%.0f）", s.Code, budget.probeUsed, budget.probeCap)
+				return nil
+			}
+			bucket = "probe"
+		}
+
+	case market != regime.Bull:
+		// 熊/猴市 pyramid 不生成订单（硬规则：试探后不放大）。
+		p.log.Printf("拦截 %s pyramid：%s市不放大（试探后不放大）", s.Code, regimeName(market))
 		return nil
+
+	default: // Bull 主力仓腿2/3
+		current := plannedQty[s.Code]
+		if pos != nil {
+			current += pos.Qty
+		}
+		maxQty := int(math.Floor(mainMax*unitValue/trigger/100)) * 100
+		if current >= maxQty {
+			p.log.Printf("跳过 %s 腿%d：单票已达主力上限 %d 股", s.Code, leg, maxQty)
+			return nil
+		}
+		desiredUnits := mainStep
+		if leg == 3 {
+			// 正常路径：腿1=2单位 + 腿2=3单位 → 腿3补到10单位=5单位（3-5单位区间内）。
+			// 若腿2缺单，最多也只补 5 单位，不一次跨档硬凑。
+			currentUnits := float64(current) * trigger / unitValue
+			desiredUnits = math.Max(mainStep, mainMax-currentUnits)
+			desiredUnits = math.Min(desiredUnits, 5)
+		}
+		qty = int(math.Floor(desiredUnits)) * shares
+		if minStepQty := int(math.Floor(mainStep)) * shares; qty < minStepQty {
+			p.log.Printf("跳过 %s 腿%d：剩余空间不足单次最小加码 %d 股", s.Code, leg, minStepQty)
+			return nil
+		}
+		if current+qty > maxQty {
+			qty = maxQty - current
+		}
+		if qty < int(math.Floor(mainStep))*shares || qty <= 0 {
+			p.log.Printf("跳过 %s 腿%d：单票上限裁剪后不足最小加码", s.Code, leg)
+			return nil
+		}
+		units = float64(qty) / float64(shares)
+		if !budget.takeMain(units) {
+			p.log.Printf("跳过 %s 腿%d：主力预算不足（已用%.2f/%.0f）", s.Code, leg, budget.mainUsed, budget.mainCap)
+			return nil
+		}
+		bucket = "main"
 	}
+
+	plannedQty[s.Code] += qty
 	return &contract.PlanOrder{
 		PlanDate: planDate, ExecuteDate: execDate, Code: s.Code,
 		Side: "buy", OrderKind: "stop_buy",
 		TriggerPrice: trigger, LimitPrice: trigger, Qty: qty, LegNo: leg,
 		Reason: map[string]any{
 			"signal": string(s.Type), "box_top": box.Top, "box_bottom": box.Bottom,
-			"trigger": trigger, "stop": stop, "risk_pct": riskPct, "equity": equity, "leg": leg,
-			"probe_min_shares": probeMin, "probe_max_pct": probeMaxPct, "scale": scale, "max_qty": maxQty,
+			"trigger": trigger, "stop": stop, "leg": leg,
+			"regime": string(market), "budget_bucket": bucket,
+			"unit_value": unitValue, "unit_shares": shares, "units": units,
 		},
 	}
 }

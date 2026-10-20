@@ -3,8 +3,9 @@
 // 设计依据 docs/02-architecture.md §6 boxscan 增量策略：
 //   - 全量（RescanAll）：首次/参数变更时，全市场逐 code 读 K 线窗口 → Engine.Scan → 持久化；
 //   - 增量（RescanIncremental）：跟踪池+候选池全量重放（正确性优先，量小）；
-//     其余全市场只对「今日创 60 日新高 或 今日量≥均量×倍数」的股票重放——
-//     不满足预过滤的股票不可能新产生符合四条件的箱体事件（突破必伴随新高/放量）。
+//     其余全市场只对「今日创 60 日新高 或 今日量≥均量×倍数 或 最新confirmed箱体下轨被收盘跌破」
+//     的股票重放——前两条覆盖突破/箱体形成，第三条是 M8.8 宽度法补的破位兜底：
+//     无量阴跌破位不伴随新高/放量，若漏记会让 broken_down 事件延迟入库、市场宽度分母慢性欠账。
 package box
 
 import (
@@ -22,9 +23,9 @@ const rescanWindow = 800
 
 // Scanner 面向 DB 的箱体批处理器（contract.BoxScanner）。
 type Scanner struct {
-	eng     contract.BoxEngine
-	st      *store.Store
-	log     *log.Logger
+	eng contract.BoxEngine
+	st  *store.Store
+	log *log.Logger
 }
 
 // NewScanner 构造。eng 通常为 box.New()（确定性纯函数）。
@@ -100,7 +101,7 @@ func (s *Scanner) RescanAll(ctx context.Context, date string) (contract.TaskResu
 }
 
 // RescanIncremental 增量重算（docs/02 §6 增量路径，每日盘后）。
-// 跟踪池全量重放 + 其余全市场预过滤（今日创 60 日新高 或 量≥均量×倍数）。
+// 跟踪池全量重放 + 其余全市场预过滤（新高/放量/破位兜底）。
 func (s *Scanner) RescanIncremental(ctx context.Context, date string) (contract.TaskResult, error) {
 	start := time.Now()
 	res := contract.TaskResult{Task: "boxscan", Date: date}
@@ -154,8 +155,9 @@ func (s *Scanner) RescanIncremental(ctx context.Context, date string) (contract.
 	return res, nil
 }
 
-// prefilter 增量预过滤（docs/02 §6）：今日创 60 日新高 或 今日量≥均量×倍数。
-// 任一成立即需重算（可能产生新箱体事件）；都不成立则跳过。
+// prefilter 增量预过滤（docs/02 §6 + M8.8 破位兜底）：
+// 今日创 60 日新高、今日量≥均量×倍数、或最新 confirmed 箱体下轨被今日收盘跌破。
+// 任一成立即需重算；否则跳过。
 func (s *Scanner) prefilter(ctx context.Context, code, date string, volMult float64) bool {
 	select {
 	case <-ctx.Done():
@@ -178,9 +180,16 @@ func (s *Scanner) prefilter(ctx context.Context, code, date string, volMult floa
 		return true
 	}
 	// 今日量≥均量×倍数（放量）
-	avg, err := s.st.BarRepo.AvgVolume(code, date, 50)
-	if err != nil || avg <= 0 {
+	if avg, err := s.st.BarRepo.AvgVolume(code, date, 50); err == nil && avg > 0 &&
+		float64(today.Volume) >= avg*volMult {
+		return true
+	}
+	// M8.8 破位兜底：最新 confirmed 箱体下轨被今日收盘跌破。
+	// 只兜 confirmed → broken_down 这一次迁移；broken_down 后引擎通常转为 forming，
+	// 不会因价格持续低于旧下轨而每日重复重算。
+	lb, err := s.st.BoxRepo.LatestNonFormingBox(code)
+	if err != nil || lb == nil {
 		return false
 	}
-	return float64(today.Volume) >= avg*volMult
+	return lb.Status == contract.BoxConfirmed && lb.Bottom > 0 && today.Close < lb.Bottom
 }

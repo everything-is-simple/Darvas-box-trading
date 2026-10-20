@@ -242,6 +242,52 @@ func (r *BoxRepo) Ladder(code string) ([]contract.Box, error) {
 	return out, rows.Err()
 }
 
+// BreadthAgg 聚合全市场个股箱体突破/破位事件（M8.8 市场宽度标定）。
+// 返回按 broken_date 聚合的 up/down 事件数；只统计 kind='stock' 且事件发生时
+// 已有 minHistory 根以上日线的个股（JULIANDAY 用 1.5×minHistory 过滤次新股噪）。
+//
+// 注意：本方法只读 box 表；boxscan 增量路径必须保证破位事件及时入库
+//（box/scanner.go 的 confirmed 箱体下轨破位兜底），否则宽度法分母会慢性欠账。
+func (r *BoxRepo) BreadthAgg(from, to string, minHistory int) (upByDate, downByDate map[string]int, err error) {
+	upByDate, downByDate = map[string]int{}, map[string]int{}
+	minDays := float64(minHistory) * 1.5
+	rows, err := r.db.Query(`WITH ev AS (
+			SELECT b.code, CAST(b.broken_date AS TEXT) AS d, b.status
+			FROM box b
+			JOIN security s ON s.code = b.code AND s.kind = 'stock'
+			WHERE b.status IN ('broken_up','broken_down')
+			  AND b.broken_date >= ? AND b.broken_date <= ?
+		), first_date AS (
+			SELECT fd.code, MIN(fd.date) AS first_date
+			FROM daily_bar fd
+			JOIN (SELECT DISTINCT code FROM ev) e ON e.code = fd.code
+			GROUP BY fd.code
+		)
+		SELECT ev.d, ev.status, COUNT(*)
+		FROM ev
+		JOIN first_date f ON f.code = ev.code
+		WHERE (JULIANDAY(ev.d) - JULIANDAY(f.first_date) + 1) >= ?
+		GROUP BY ev.d, ev.status`, from, to, minDays)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d, status string
+		var n int
+		if err := rows.Scan(&d, &status, &n); err != nil {
+			return nil, nil, err
+		}
+		switch contract.BoxStatus(status) {
+		case contract.BoxBrokenUp:
+			upByDate[d] = n
+		case contract.BoxBrokenDown:
+			downByDate[d] = n
+		}
+	}
+	return upByDate, downByDate, rows.Err()
+}
+
 func nullEmpty(s string) any {
 	if s == "" {
 		return nil
