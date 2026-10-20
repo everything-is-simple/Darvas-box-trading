@@ -123,7 +123,7 @@ func TestLadderIncludesInvalid(t *testing.T) {
 	}
 }
 
-// TestUpsertBoxesStaleDeleteKeepsPrevRef docs/07 #6 回归：
+// TestUpsertBoxesStaleDeleteKeepsPrevRef archive/07 #6 回归：
 // 幸存箱体（此处靠 signal FK 保护，不在重算批次内、prev 不被重写）
 // 的 prev_box_id 指向的 stale 箱体被 DELETE 时，不得触发 box 自引用
 // FK 787 回滚整个事务（sz300411 曾每日复现：该股当日箱体更新全丢）。
@@ -153,7 +153,7 @@ func TestUpsertBoxesStaleDeleteKeepsPrevRef(t *testing.T) {
 		mkBox(1, "sh600519", 50, 40, contract.BoxConfirmed, 0),
 	})
 	if err != nil {
-		t.Fatalf("UpsertBoxes should tolerate prev_box_id self-reference (docs/07 #6): %v", err)
+		t.Fatalf("UpsertBoxes should tolerate prev_box_id self-reference (archive/07 #6): %v", err)
 	}
 	if len(newIDs) != 1 {
 		t.Fatalf("newIDs len=%d want 1", len(newIDs))
@@ -165,7 +165,7 @@ func TestUpsertBoxesStaleDeleteKeepsPrevRef(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(ladder) != 3 {
-		t.Fatalf("ladder len=%d want 3 (prev-referenced stale box kept, docs/07 #6)", len(ladder))
+		t.Fatalf("ladder len=%d want 3 (prev-referenced stale box kept, archive/07 #6)", len(ladder))
 	}
 }
 

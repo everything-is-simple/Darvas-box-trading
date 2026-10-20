@@ -94,9 +94,9 @@ func (m *Manager) Sync(ctx context.Context, date string) (contract.TaskResult, e
 	}
 
 	// 2) 更新在池股票的当前箱体 + 出池跌破者
-	// 修复 docs/07 #1/#3：用 LatestNonFormingBox——LatestBox 取 forming(0,0) 行致
+	// 修复 archive/07 #1/#3：用 LatestNonFormingBox——LatestBox 取 forming(0,0) 行致
 	// broken_down 出池判定永假（生产 watch 0 exited 佐证）。
-	// 修复 docs/07 #2：换箱（box.ID != w.CurrentBoxID）即累加 BoxCount——
+	// 修复 archive/07 #2：换箱（box.ID != w.CurrentBoxID）即累加 BoxCount——
 	// 箱体破裂（broken_up/broken_down）等同"走完一个箱体"，承载 FR-303 出池判定。
 	watching, err := m.st.PoolRepo.WatchByStage(contract.StageWatching)
 	if err != nil {

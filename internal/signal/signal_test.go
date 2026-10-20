@@ -106,7 +106,7 @@ func TestBreakoutFiresOnlyOnBrokenDate(t *testing.T) {
 }
 
 // TestPyramidOnlyOnBrokenDate holding 股新箱体突破 → pyramid（同样当日一次）。
-// docs/07 #2 修复后：金字塔钳制改用 position_leg 真实腿数替代 watch.BoxCount。
+// archive/07 #2 修复后：金字塔钳制改用 position_leg 真实腿数替代 watch.BoxCount。
 func TestPyramidOnlyOnBrokenDate(t *testing.T) {
 	st := newTestStore(t)
 	code := "sh600003"
@@ -139,7 +139,7 @@ func TestPyramidOnlyOnBrokenDate(t *testing.T) {
 }
 
 // TestPyramidMaxLegsReached 持仓已达最大腿数（maxlegs=3）→ 不再发 pyramid
-// 信号（即 watch.BoxCount 与金字塔钳制解耦后的回归测试，docs/07 #2）。
+// 信号（即 watch.BoxCount 与金字塔钳制解耦后的回归测试，archive/07 #2）。
 func TestPyramidMaxLegsReached(t *testing.T) {
 	st := newTestStore(t)
 	code := "sh600004"

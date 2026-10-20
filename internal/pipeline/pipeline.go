@@ -38,7 +38,7 @@ func New(st *store.Store, ing *ingest.Ingester) *Pipeline {
 }
 
 // SetReportDir 重定向日报输出目录（M8.1 回放专用：scratch 日报绝不写生产 var/reports，
-// docs/07-m8-issue-list.md #5）。生产路径（run/serve/rerun）不受影响。
+// archive/07-m8-issue-list.md #5）。生产路径（run/serve/rerun）不受影响。
 func (p *Pipeline) SetReportDir(dir string) {
 	p.report = reporter.New(p.st, dir)
 }

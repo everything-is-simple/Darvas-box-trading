@@ -2,7 +2,7 @@
 // scratch 测试库引导 + 交易日历循环 + as-of 纪律差分审计。
 //
 // M8 附加纪律（PROMPT.md，违反任何一条=返工）：
-//   1. 观察期内规则冻结：回放只产出「问题清单」（docs/07-m8-issue-list.md），不改规则；
+//   1. 观察期内规则冻结：回放只产出「问题清单」（archive/07-m8-issue-list.md），不改规则；
 //   2. 回放必须跑独立测试库，禁止污染实时库心跳——本包所有写入仅落在 scratch 库；
 //   3. 源库只读（mode=ro 打开，铁律 7：var/perf_test.db 禁止破坏性操作）。
 //
@@ -17,7 +17,7 @@
 //   决策输出必然分叉；Compare 全等 = as-of 纪律成立的运行时证明。
 //   两模式均保留 sh000001 全历史（日历权威），其余差异仅在「D 日之后的价格是否存在」。
 //
-// 引导教训（2026-10-17 演练复盘，docs/07 #4）：演练 reset 未清 box 表，回放从
+// 引导教训（2026-10-17 演练复盘，archive/07 #4）：演练 reset 未清 box 表，回放从
 // 「未来箱体状态」上启动，候选池被污染——本包引导把 box 一并清空，箱体状态必须
 // 由回放逐日重算累积（as-of by construction）。
 package backtest
@@ -276,7 +276,7 @@ func resolveWindow(o Options) (from, to string, days []string, err error) {
 // ---------------------------------------------------------------------------
 
 // wipeTables 引导清空的事务态表（子先于父，FK 安全顺序）。
-// 注意必须包含 box：箱体是回放逐日重算的状态（10-17 演练教训，docs/07 #4）。
+// 注意必须包含 box：箱体是回放逐日重算的状态（10-17 演练教训，archive/07 #4）。
 var wipeTables = []string{
 	"trade_review", "trade_fill", "position_leg", "position",
 	"plan_order", "trade_plan", "signal", "equity_snapshot",
@@ -421,7 +421,7 @@ func Replay(scratch string, days []string, dayBars map[string][]contract.DailyBa
 	}
 	defer st.Close()
 
-	// 回放日报绝不写生产 var/reports（docs/07 #5）：按 scratch 名派生输出目录
+	// 回放日报绝不写生产 var/reports（archive/07 #5）：按 scratch 名派生输出目录
 	reportDir := strings.TrimSuffix(scratch, ".db") + "_reports"
 	pipe := pipeline.New(st, nil) // ingest 不在回放链上，ingester 传 nil（禁用 ingest 任务）
 	pipe.SetReportDir(reportDir)

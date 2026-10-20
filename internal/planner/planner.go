@@ -102,7 +102,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	stopMoves := p.raiseStops(positions, sellDisc)
 
 	// 已有在途卖出单的股票：避免重复生成（time_stop 持续条件每日重复挂单，
-	// 撮合清仓后剩余单「卖出无持仓」——M8.3 暴露，docs/09）。
+	// 撮合清仓后剩余单「卖出无持仓」——M8.3 暴露，archive/09）。
 	pendingSell := map[string]bool{}
 	if codes, err := p.st.TradeRepo.PendingSellCodes(); err == nil {
 		for _, c := range codes {
@@ -113,7 +113,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	executeDate := p.nextTradingDate(planDate)
 	var orders []contract.PlanOrder
 	for _, s := range sigs {
-		// 修复 docs/07 #1：用 LatestNonFormingBox——LatestBox 取 forming(0,0) 行致
+		// 修复 archive/07 #1：用 LatestNonFormingBox——LatestBox 取 forming(0,0) 行致
 		// box.Top/Bottom=0，buyOrder 因 box.Bottom<=0 直接 return nil，订单永不生成。
 		box, _ := p.st.BoxRepo.LatestNonFormingBox(s.Code)
 		if box == nil {
@@ -269,7 +269,7 @@ func unitShares(unitValue, price float64) int {
 // 入场箱体本身不参与（B1修正后：腿1初始止损=其上轨下方、腿2/3初始止损=其下轨下方，
 // 均不随入场箱体自身重算）。返回上移笔数。
 //
-// 修复 docs/07 #1：用 LatestNonFormingBox——LatestBox 取 forming(bottom=0) 致
+// 修复 archive/07 #1：用 LatestNonFormingBox——LatestBox 取 forming(bottom=0) 致
 // `lb.Bottom <= 0 → continue`，止损上移永不触发。
 func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) int {
 	moves := 0

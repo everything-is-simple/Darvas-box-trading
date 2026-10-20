@@ -157,7 +157,7 @@ type BoxRepo interface {
     UpsertBoxes(boxes []Box) ([]int64, error)
     LatestBox(code string) (*Box, error)
     Ladder(code string) ([]Box, error)          // 阶梯链
-    LatestNonFormingBox(code string) (*Box, error) // 决策用最新落定箱体（修复 docs/07 #1）
+    LatestNonFormingBox(code string) (*Box, error) // 决策用最新落定箱体（修复 archive/07 #1）
     BreadthAgg(from, to string, minHistory int) (upByDate, downByDate map[string]int, err error) // M8.8 市场宽度事件聚合
 }
 
@@ -211,7 +211,7 @@ type TradeRepo interface {
     PositionPnlHistory(code string) ([]map[string]any, error) // 个股历史持仓盈亏视图（B3战绩复用）
     AddLeg(positionID int64, legNo int, date string, qty int, price, stopAfter float64, planOrderID int64) error
     LegsByPosition(positionID int64) ([]map[string]any, error)
-    LegCountByCode(code string) (int, error)             // 当前未平仓持仓腿数（signal 金字塔钳制，docs/07 #2）
+    LegCountByCode(code string) (int, error)             // 当前未平仓持仓腿数（signal 金字塔钳制，archive/07 #2）
     OpenExposureUnits(unitValue float64) (probeUnits, mainUnits float64, err error) // M8.8 组合级单位预算占用（leg1=试探，leg2+=主力）
     AllPositions() ([]Position, error)                     // 含closed（交易记录视图）
     EquityAll() ([]EquitySnapshot, error)
@@ -472,13 +472,38 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
                               # M8 内置回放器（docs/01 §9）：scratch独立库重放as-of六任务链；
                               #   prefill=全历史预灌（M8.2+常规模式）
                               #   progressive=逐日灌K线（差分审计的地面真值）
-                              #   verify=双模式差分（as-of纪律运行时证明，详见 docs/07）
+                              #   verify=双模式差分（as-of纪律运行时证明，详见 archive/07）
                               # 默认窗口=源库最近20交易日；scratch默认 var/bt/bt_<mode>.db（gitignored）
                               # 铁律 M8-2：scratch 独立库不污染实时库心跳；--src 以 mode=ro 只读（铁律 7）
 ```
 
 > serve 与 ui 的区别：ui 只起 GUI（一次性看盘）；serve = scheduler + GUI 双连接
 > （WAL读写分离：调度写 `stW`、GUI读 `stR`，互不阻塞，ADR-5），无人值守日常入口。
+
+---
+
+## 7.5 模拟撮合器成交语义（← 沉淀自 docs/08）
+
+> 本节是回测执行模型的契约，定义「停损单如何被 OHLC 撮合」。当前实现缺跳空上限（见 docs/18 P0-2），
+> 沉淀本节的目的是让后续修复有对照契约。完整设计文档 `docs/08-m8.2-matcher.md` 仍活跃。
+
+**触发判定**（T = trigger_price，O/H/L/C 为当日 OHLC）：
+
+| 单类 | 触发条件 | 成交价 |
+|------|----------|--------|
+| stop_buy | `O >= T`（跳空高开越过）| O（市价成交）|
+| stop_buy | `H >= T` 且 `O < T`（盘中上穿）| T |
+| stop_sell | `O <= T`（跳空低开跌破）| O |
+| stop_sell | `L <= T` 且 `O > T`（盘中下穿）| T |
+| 其他 | — | 不触发，次日 planner 过期 |
+
+**涨跌停约束**（简化版）：一字板判定 `H == L`。一字涨停买入单跳过、卖出单正常成交；一字跌停卖出单跳过、买入单正常成交。非一字板按上表处理。
+
+**T+1 与费用**：撮合顺序「先卖后买」；qty 由 planner 整手锁定。费用参数 `fee.commission_rate`(0.00025 双向)、`fee.commission_min`(5)、`fee.stamp_tax`(0.001 卖出单边)、`fee.transfer_rate`(0.00001 双向)。
+
+**复权日处理（不复权方案，用户拍板 2026-10-19）**：跳空检测（当日跌幅超涨跌停限制+ε）→ 判定除权日。持仓股当日撮合器最前强制清仓（价=前日收盘，reason=dividend），清仓后 CancelOpenOrders 标记该股在途订单 cancelled。watch 股不额外处理。
+
+**⚠️ 待沉淀修复（docs/18 P0-2，当前缺失）**：当前成交规则 `O >= T` 取开盘价成交**无追高上限**，导致 71 笔买腿中 63.4% 高于计划买点 >5%、中位 +7.35%、8 笔超 +50%。需加 `max_entry_gap`（建议 1.05）参数：撮合器检测 `fill/trigger - 1 > max_entry_gap` 则弃单并记 `skipped_gap` 事件；planner 生成订单前校验 `abs(trigger/现价 - 1) < 阈值`，违反直接拒绝并告警。
 
 ---
 

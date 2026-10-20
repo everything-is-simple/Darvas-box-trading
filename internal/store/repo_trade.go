@@ -531,7 +531,7 @@ func (r *TradeRepo) LegsByPosition(positionID int64) ([]map[string]any, error) {
 	return out, rows.Err()
 }
 
-// LegCountByCode 当前未平仓持仓的金字塔腿数（用于 signal pyramid 钳制，docs/07 #2）。
+// LegCountByCode 当前未平仓持仓的金字塔腿数（用于 signal pyramid 钳制，archive/07 #2）。
 // 取 position_leg 数量；position_status='open' 时有效；非持仓/已平仓返回 0。
 func (r *TradeRepo) LegCountByCode(code string) (int, error) {
 	var n int

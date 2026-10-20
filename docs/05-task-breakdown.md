@@ -286,7 +286,7 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 
 > 立项：PROMPT.md P4/M8（2026-10-18）；范围修订：docs/01 §9（外部回测框架全部否决，
 > 改为 Go 内置 `darvas backtest` 在 scratch 测试库重放生产流水线本身）。
-> 纪律：观察期内规则冻结——回放只产出「问题清单」（docs/07-m8-issue-list.md），
+> 纪律：观察期内规则冻结——回放只产出「问题清单」（已归档至 archive/07-m8-issue-list.md），
 > 改规则走周五复盘+用户拍板；scratch 库独立不污染实时库心跳；源库只读（铁律 7）。
 
 | # | 任务 | 内容 | 验收 | 状态 |
@@ -297,18 +297,18 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 | 8.4 | 参数扫描 | box.volmult/buy.premium/risk.scale敏感性矩阵 | - | ⏳（可选） |
 
 > **M8.1 已实现（2026-10-18）**：`internal/backtest/backtest.go` + CLI `darvas backtest`。
-> - **引导**：整库拷贝源库 → 清空全部事务态表（含 box，10-17 演练遗漏教训 docs/07 #4）→
+> - **引导**：整库拷贝源库 → 清空全部事务态表（含 box，10-17 演练遗漏教训 archive/07 #4）→
 >   progressive 模式额外裁掉窗口后的非指数K线；sh000001 全历史保留（日历权威，ADR-2）。
 > - **回放循环**：按 sh000001 日历逐日重放六任务链（boxscan→screen→poolsync→signal→
 >   plan→report，走生产路径 `pipeline.RerunTask`，规则零重写）；ingest 由引导替代。
 > - **差分审计**：prefill（未来在场）vs progressive（未来缺席=地面真值）双模式
 >   重放同窗口 → 逐日箱体哈希 + 决策表语义 dump 比较；全等 = as-of 纪律成立的运行时证明。
 > - **护栏**：拒用 darvas.db/perf_test.db 作 scratch；源库 mode=ro 打开（fallback immutable=1）；
->   日报重定向到 `<scratch>_reports/`（绝不写生产 var/reports，docs/07 #5）。
+>   日报重定向到 `<scratch>_reports/`（绝不写生产 var/reports，archive/07 #5）。
 > - **测试**：`TestSyntheticAsOfDifferential` 合成全链条差分+机制断言；
 >   `TestBootstrapGuards` 护栏单测；go test ./... 全绿；C1-C4 一致性全绿。
 > - **审计结论**：六任务链未读到任何未来K线（#9 日历读为 ADR-2 豁免）；as-of 纪律成立。
->   审计同时发现事件驱动链路三条死路（docs/07 #1-#3，规则冻结期不改，待用户拍板）。
+>   审计同时发现事件驱动链路三条死路（archive/07 #1-#3，规则冻结期不改，待用户拍板）。
 
 ---
 

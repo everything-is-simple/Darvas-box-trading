@@ -235,7 +235,7 @@ func mkPoolBox(id int64, code string, top, bottom float64, status contract.BoxSt
 	}
 }
 
-// TestBoxCountIncrementsOnBoxChange docs/07 #2 回归：
+// TestBoxCountIncrementsOnBoxChange archive/07 #2 回归：
 // watching 循环每次"换箱"（box.ID != w.CurrentBoxID）即累加 BoxCount，
 // 累计到 flatMax(4) 后 → flat_too_long 出池。
 func TestBoxCountIncrementsOnBoxChange(t *testing.T) {
@@ -312,7 +312,7 @@ func TestBoxCountIncrementsOnBoxChange(t *testing.T) {
 	}
 }
 
-// TestBoxCountDoesNotIncrementOnFirstSync docs/07 #2 边界：
+// TestBoxCountDoesNotIncrementOnFirstSync archive/07 #2 边界：
 // 首次入池（CurrentBoxID=0）→ Sync 时拿到首个 box 不应累加 BoxCount。
 func TestBoxCountDoesNotIncrementOnFirstSync(t *testing.T) {
 	st := newPoolStore(t)

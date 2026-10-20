@@ -8,7 +8,7 @@
 //
 // 零未来信息：ClassifyDate 只统计 broken_date ≤ 当日且落在滚动窗口内的完成事件。
 //
-// 历史：M8.3 曾用动量法；M8.7 改用上指箱体法（2026-10-20 证伪退役，docs/12）；
+// 历史：M8.3 曾用动量法；M8.7 改用上指箱体法（2026-10-20 证伪退役，archive/12）；
 // M8.8 改为内生宽度法。LabelBoxes/Classify 保留供旧测试与报告函数引用，勿再用于实盘标定。
 package regime
 
@@ -98,7 +98,7 @@ func LabelBoxes(bars []contract.DailyBar, params contract.BoxParams) map[string]
 	return labels
 }
 
-// DefaultIndex 交易日历权威（ADR-2）。M8.8 不再用它标指数箱体（M8.7 已退役，docs/12），
+// DefaultIndex 交易日历权威（ADR-2）。M8.8 不再用它标指数箱体（M8.7 已退役，archive/12），
 // 只取 sh000001 的日期序列作为「交易日」定义；行情标定完全来自个股箱体事件流。
 var DefaultIndex = "sh000001"
 
@@ -108,7 +108,7 @@ var DefaultIndex = "sh000001"
 // 连续 < bear_thresh 细分熊（熊猴仓位规则相同，仅日志区分）。
 //
 // 零未来信息：只统计 broken_date ≤ date 且落在滚动窗口内的完成事件；
-// params/indices 参数保留仅为向后兼容调用方，内部忽略（M8.7 指数法退役，docs/12/13）。
+// params/indices 参数保留仅为向后兼容调用方，内部忽略（M8.7 指数法退役，archive/12/13）。
 func ClassifyDate(st *store.Store, date string, params contract.BoxParams, indices []string) Regime {
 	_ = params
 	_ = indices

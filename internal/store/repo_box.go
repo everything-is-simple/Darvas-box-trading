@@ -124,7 +124,7 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 
 	// 删除本次重算中消失的箱体（未被复用的旧箱）；
 	// position/watch/signal 仍引用的保留（FK 安全，历史事实不可删）；
-	// 幸存箱体的 prev_box_id 前驱也保留（box 自引用 FK，docs/07 #6：
+	// 幸存箱体的 prev_box_id 前驱也保留（box 自引用 FK，archive/07 #6：
 	// 漏保护曾致整个事务回滚、该股当日箱体更新全丢）
 	var stale []string
 	for _, e := range existing {
@@ -180,7 +180,7 @@ func (r *BoxRepo) LatestBox(code string) (*contract.Box, error) {
 
 // LatestNonFormingBox 取某证券最新的「已落定」箱体（confirmed/broken_up/broken_down；
 // 排除 forming 暂态与 invalid 作废）。决策逻辑（signal/poolsync 出池/planner）专用——
-// 修复 docs/07 #1：突破日引擎输出 [broken_up箱体, forming(0,0)箱体]，LatestBox(id DESC)
+// 修复 archive/07 #1：突破日引擎输出 [broken_up箱体, forming(0,0)箱体]，LatestBox(id DESC)
 // 必取 forming → 四类信号判定全跳过（生产 signal 表 0 行佐证）。LatestNonFormingBox
 // 跳过 forming，返回突破箱体本身，恢复事件判定。排除 invalid 避免（bottom 可能已填）
 // spuriously 触发 stop 信号。

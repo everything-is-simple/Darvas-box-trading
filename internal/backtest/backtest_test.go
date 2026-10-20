@@ -19,7 +19,7 @@ import (
 // 对同一窗口分别以 progressive（未来K线物理缺席）与 prefill（全历史在场）重放，
 // 断言全部决策输出全等——任何任务偷读未来K线都会导致 dump 分叉。
 //
-// 机制断言锁定 docs/07 #1 方案A 修复 + M8.2 撮合后的语义（2026-10-19）：
+// 机制断言锁定 archive/07 #1 方案A 修复 + M8.2 撮合后的语义（2026-10-19）：
 // signal/poolsync/planner 改用 LatestNonFormingBox 后，突破日 t15 出 breakout 信号 →
 // 买单（leg1，exec t16）→ M8.2 撮合器在 t16 盘中上穿 trigger 成交 → watch 持仓化 holding。
 // 修复前四类信号全死（signal=0）；M8.2 撮合前该买单会在 t17 过期（无成交、watch 回 watching）。
@@ -77,7 +77,7 @@ func TestSyntheticAsOfDifferential(t *testing.T) {
 	assertMechanics(t, pre, days)
 }
 
-// assertMechanics 锁定 #1 方案A 修复后的确定性行为（docs/07 #1-#3 修复后）。
+// assertMechanics 锁定 #1 方案A 修复后的确定性行为（archive/07 #1-#3 修复后）。
 func assertMechanics(t *testing.T, scratch string, days []string) {
 	t.Helper()
 	db, err := openScratchDump(scratch)
@@ -91,7 +91,7 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 	// ① 信号表：1 条 breakout@t15 sh600001（#1 修复前为 0——死路已通）
 	var nSig int
 	if err := one(`SELECT COUNT(*) FROM signal`).Scan(&nSig); err != nil || nSig != 1 {
-		t.Fatalf("signal 行数=%d err=%v（期望 1——breakout@t15，docs/07 #1 修复后）", nSig, err)
+		t.Fatalf("signal 行数=%d err=%v（期望 1——breakout@t15，archive/07 #1 修复后）", nSig, err)
 	}
 	var sigDate, sigCode, sigType string
 	if err := one(`SELECT CAST(date AS TEXT), code, type FROM signal ORDER BY date LIMIT 1`).

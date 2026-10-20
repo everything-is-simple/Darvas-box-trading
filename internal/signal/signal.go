@@ -72,7 +72,7 @@ func (e *Engine) Evaluate(ctx context.Context, date string) (contract.TaskResult
 
 // evalOne 对单只在池股票判定信号（首次事件语义）。优先级：stop > failed_breakout > breakout/pyramid。
 func (e *Engine) evalOne(w contract.Watch, date string, premium float64, maxLegs int) *contract.Signal {
-	// 修复 docs/07 #1：用 LatestNonFormingBox 而非 LatestBox——突破日引擎输出
+	// 修复 archive/07 #1：用 LatestNonFormingBox 而非 LatestBox——突破日引擎输出
 	// [broken_up箱体, forming(0,0)箱体]，LatestBox(id DESC) 必取 forming 致四类信号全死。
 	box, err := e.st.BoxRepo.LatestNonFormingBox(w.Code)
 	if err != nil || box == nil {
@@ -108,7 +108,7 @@ func (e *Engine) evalOne(w contract.Watch, date string, premium float64, maxLegs
 	// （boxscan 引擎已用当日窗口完成放量/非一字板等形态判定，此处只消费状态迁移。）
 	if box.Status == contract.BoxBrokenUp && box.BrokenDate == date {
 		// 持仓且未达最大腿数 → 加码；否则 → 突破买入
-		// docs/07 #2：金字塔钳制改用 position_leg 真实腿数，
+		// archive/07 #2：金字塔钳制改用 position_leg 真实腿数，
 		// 不再用 watch.BoxCount（watch.BoxCount 现严格语义为"已走完箱体数"，见 pool.go）。
 		var sigType contract.SignalType
 		if w.Stage == contract.StageHolding {
