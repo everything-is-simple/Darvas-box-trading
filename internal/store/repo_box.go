@@ -251,22 +251,19 @@ func (r *BoxRepo) Ladder(code string) ([]contract.Box, error) {
 func (r *BoxRepo) BreadthAgg(from, to string, minHistory int) (upByDate, downByDate map[string]int, err error) {
 	upByDate, downByDate = map[string]int{}, map[string]int{}
 	minDays := float64(minHistory) * 1.5
+	// 次新股过滤用相关子查询按 code 求首根K线日期——借助 idx_daily_bar_code_date
+	// （migration 0011）每次索引定位 O(1)；旧写法 JOIN+GROUP BY 会扫全表分组（11s+）。
 	rows, err := r.db.Query(`WITH ev AS (
 			SELECT b.code, CAST(b.broken_date AS TEXT) AS d, b.status
 			FROM box b
 			JOIN security s ON s.code = b.code AND s.kind = 'stock'
 			WHERE b.status IN ('broken_up','broken_down')
 			  AND b.broken_date >= ? AND b.broken_date <= ?
-		), first_date AS (
-			SELECT fd.code, MIN(fd.date) AS first_date
-			FROM daily_bar fd
-			JOIN (SELECT DISTINCT code FROM ev) e ON e.code = fd.code
-			GROUP BY fd.code
 		)
 		SELECT ev.d, ev.status, COUNT(*)
 		FROM ev
-		JOIN first_date f ON f.code = ev.code
-		WHERE (JULIANDAY(ev.d) - JULIANDAY(f.first_date) + 1) >= ?
+		WHERE (JULIANDAY(ev.d) - JULIANDAY((
+			SELECT MIN(fd.date) FROM daily_bar fd WHERE fd.code = ev.code)) + 1) >= ?
 		GROUP BY ev.d, ev.status`, from, to, minDays)
 	if err != nil {
 		return nil, nil, err
