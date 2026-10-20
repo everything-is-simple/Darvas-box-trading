@@ -194,13 +194,27 @@
 | 单笔最低佣金 | `fee.commission_min` | 5元 | 券商最低收费（M8.2 撮合） |
 | 印花税 | `fee.stamp_tax` | 千1 | 卖出单边（M8.2 撮合） |
 | 过户费 | `fee.transfer_rate` | 万0.1 | 双向简化（M8.2 撮合） |
-| 体制动量窗口 | `regime.window` | 60日 | 已废弃（动量法，2026-10-19 改箱体法） |
-| 牛阈值 | `regime.bull_thresh` | +10% | 已废弃（动量法，改箱体法） |
-| 熊阈值 | `regime.bear_thresh` | -10% | 已废弃（动量法，改箱体法） |
-| 仓位系数·牛 | `regime.mult.bull` | 2.0 | 牛市委放倍仓位（M8.7，2026-10-20） |
-| 仓位系数·猴 | `regime.mult.range` | 0.5 | 震荡市半仓试单（M8.7） |
-| 仓位系数·熊 | `regime.mult.bear` | 0.2 | 熊市大幅缩仓（M8.7，达瓦斯"众人恐慌我更恐慌"） |
-| 晴雨表指数 | `regime.indices` | sh000001 | 单一上证指数（M8.7，2026-10-20 用户拍板简化） |
+| 体制动量窗口 | `regime.window` | 60日 | **已退役**（M8.3 动量法，2026-10-19 改箱体法；M8.7 证伪后保留禁用作对照） |
+| 牛阈值 | `regime.bull_thresh` | +10% | **已退役**（动量法） |
+| 熊阈值 | `regime.bear_thresh` | -10% | **已退役**（动量法） |
+| 仓位系数·牛 | `regime.mult.bull` | 2.0 | **已退役**（M8.7 证伪，docs/12；保留禁用，M8.8 失败可回滚） |
+| 仓位系数·猴 | `regime.mult.range` | 0.5 | **已退役**（M8.7） |
+| 仓位系数·熊 | `regime.mult.bear` | 0.2 | **已退役**（M8.7） |
+| 晴雨表指数 | `regime.indices` | sh000001 | **已退役**（M8.7 单一上证指数版，证伪） |
+| 宽度窗口 | `regime.breadth.window` | 20 | 滚动窗口交易日（M8.8，2026-10-20 用户拍板） |
+| 牛触发阈值 | `regime.breadth.bull_thresh` | 0.55 | 连续 3 日 ≥ 触发牛（主力仓启用） |
+| 熊标记阈值 | `regime.breadth.bear_thresh` | 0.40 | 仅日志区分，仓位规则同猴 |
+| 确认日数 | `regime.breadth.confirm` | 3 | 与三日法则同构，过滤假脉冲 |
+| 次新过滤 | `regime.breadth.min_history` | 60 | 个股最少 60 根日线才计事件 |
+| 单位市值 | `pos.unit` | 0.02 | 1 单位 = 2% 权益（总资金分 50 单位，如"米"的计量单位） |
+| 单位总数 | `pos.units_total` | 50 | 5 试探 + 30 主力 + 15 预备 |
+| 试探仓总顶 | `pos.units.probe` | 5 | 1/10，牛市满 5 |
+| 主力仓总顶 | `pos.units.main` | 30 | 6/10，仅牛市启用 |
+| 预备仓 | `pos.units.reserve` | 15 | 永不动（3/10） |
+| 单票试探·熊猴 | `pos.units.per_stock_probe_bear` | 1 | 熊猴市单票 1 单位 |
+| 单票试探·牛 | `pos.units.per_stock_probe_bull` | 2 | 牛市单票 2 单位 |
+| 单票主力上限 | `pos.units.per_stock_main_max` | 10 | =20% 对齐 risk.maxpos |
+| 单票主力加码步长 | `pos.units.per_stock_main_step` | 3 | 单次加码 ≥3 单位 |
 | TDX数据根目录 | `tdx.root` | H:/new_tdx64/vipdoc | 运行时路径配置 |
 
 ---
