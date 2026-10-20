@@ -31,6 +31,8 @@
 | L0 数据 | 指标脚本年末取价用 2026 最新收盘 | 已发现 | 改用回测截止日收盘（20min） | docs/18 R6 |
 | L1 执行 | **进场无跳空上限（63.4% 买腿 >5% 偏离）** | 待修（本轮） | `max_entry_gap=1.05` + 拒单记事件 | docs/18 P0-2 |
 | L1 执行 | **ST1 首腿紧止损（B1）只写字段不执行**（2026-10-21 新增，见下） | **待修（本轮）** | 持仓期常驻初始止损单（trigger=pos.StopPrice），与下轨止损并存先到先触发 | 本轮新增 |
+| L3 信号 | **ST4 screener LatestBox 漏改 → 刚突破股进不了候选池**（2026-10-21 复查新增） | **待修（本轮，1 行）** | `screener.go:149` `LatestBox` → `LatestNonFormingBox`（archive/07 #1 修复 signal 时漏改一处） | 本轮新增 |
+| L4 仓位 | **ST5 池子满员后无换血机制**（P0-3 根因） | 已发现 | 满员后不剔不入，新机会永久进不来；提案 R2 轮：按 screener score 替换最低 watching | 本轮新增 |
 | L1 执行 | 撮合无滑点（约 0.3-0.8%/年） | 已发现 | 加滑点参数对照跑（P1） | docs/18 |
 | L2 计划 | planner 不校验 trigger 与现价（sh600825 型订单） | 待修（本轮） | 生成前校验 + 违反拒单告警 | docs/18 P0-2 |
 | L2 计划 | pendingSell 未回写 → 同仓位重复卖单（rc=1） | 待修（本轮） | 生成卖单后回写（10min） | docs/18 P0-3 |
@@ -61,6 +63,29 @@
 
 **其他观察项**：ST2 初选量比 `[2.0,5.0]` 硬编码未参数化（screener.go:41-42）；ST3 五年 20 笔 `manual` 平仓的成因（复权清仓 vs 计划外）待核实，不阻断。
 
+### ST4 详解（2026-10-21 07:36 复查新增，买什么链上的死分支）
+
+**事实**：archive/07 #1 修复四类信号死路时，把 `signal.evalOne` 用的 `LatestBox` 改成了 `LatestNonFormingBox`（跳过 forming(0,0) 箱体），但 **`screener.evaluate` 第 149 行的 `LatestBox` 漏改**。
+
+**实测**（var/darvas.db @ 2026-10-19）：
+- 候选池 166 支，`box_status` 全部为 `confirmed`，**零 `broken_up`**
+- 最近一周全市场 86 支刚 `broken_up` 的股票，**0 支进候选池**
+- 样例 sh600732：`box` 表 id DESC 第一条是 `forming(0,0)` → screener 看到 `status='forming'` → `boxOK=false` → 被滤掉
+
+**后果**：docs/00 §6 条件4 写"confirmed **或刚 broken_up**"——后半分支在 screener 里死了。新机会进不了候选池 → 进不了 watch 池 → signal 永远不会判它们的突破。10-19 的 7 张 breakout 单全部来自"老池股今天才被箱体引擎标 broken_up"，**不是新机会**——G1 观察期治不了这个，ST4 才能。
+
+**修复**：1 行——`screener.go:149` `s.st.BoxRepo.LatestBox(code)` → `LatestNonFormingBox(code)`。补单测：broken_up 当日应能进候选池。
+
+### ST5 详解（池子满员后无换血机制 = P0-3 真根因）
+
+**事实**：poolsync 在 `active >= maxwatch` 时直接 `break`（pool.go:72-77），**只入不剔**。watch 池一旦满员（如 10-16 frozen 的 114 支），新机会永久进不来。
+
+**书证**：L1063「最近四天已超出箱体，那我就不再关注」（剔除）+ L1895「每次只增加一支新股票」（加新）——合起来是**换血**。系统只实现了"剔除"（signal 出 stop/failed → exited 不占名额），没实现"加新时换血"。
+
+**后果**：与 ST4 耦合——即使 ST4 修好让新股票进候选池，poolsync 因满员仍不入；除非同时清池（P0-3）+ 加换血机制。
+
+**修法**：提案 R2 轮——满员时按 screener score 排名替换最低 `watching`（新候选 score > 最低 watching score 才换）。属规则层，需用户拍板。
+
 **检查结论 2（解决方向是否有）：全部有。** 见表内「修法方向」列——每项要么有明确代码修法与工作量（docs/18 第六节），要么有明确实验编号（H1-H6）。
 
 ---
@@ -75,8 +100,9 @@
 | 4 | P0-6：生产版本明确（推荐：生产切 M8.8 单位制，与回测同源；或声明生产=M8.6 并冻结） | reason_json 语义与声明一致 |
 | 5 | **G1（用户快速落实）：入池首日 `pool.min_watch_days`（建议 3 个交易日）内不产生首笔买入信号**——与 P0-2 同属 planner 改造，一起落地。落地点：planner.plan 主循环在 buyOrder 前，查 watch.AddedDate 距 planDate 不足 min_watch_days 即跳过首笔买入信号（pyramid 加码不受限） | 入池 <3 个交易日的新票不出首买单；10-19 单日 7 单的现象消失 |
 | 6 | **ST1（本轮新增）：首腿初始止损单**——持仓期每日生成 `trigger=pos.StopPrice` 的常驻止损卖单（reason=initial_stop），与下轨止损并存、先到先触发、成交后撤另一张 | 首腿亏损单的 close_reason 出现 `initial_stop`；单笔止损距离回到设计值 3-5.8% |
-| 7 | **P0-5：修好的撮合器 + G1 + ST1 重跑 2014-2018 全量 + verify 差分** | 新五年表；新旧表并列对比（预期：亏损单变浅、胜率可能变化） |
-| 8 | 按工程判据 E1-E5 打勾 → 通过后看策略判据 S1 | E 全绿才许看 S1 |
+| 7 | **ST4（本轮新增，1 行）：** `screener.go:149` `LatestBox` → `LatestNonFormingBox` + 单测 | 刚 broken_up 的股票能进候选池（10-19 验证：0 → 至少几十支） |
+| 8 | **P0-5：修好的撮合器 + G1 + ST1 + ST4 重跑 2014-2018 全量 + verify 差分** | 新五年表；新旧表并列对比 |
+| 9 | 按工程判据 E1-E5 打勾 → 通过后看策略判据 S1 | E 全绿才许看 S1 |
 
 ---
 
