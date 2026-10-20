@@ -201,6 +201,8 @@
 | 仓位系数·猴 | `regime.mult.range` | 0.5 | **已退役**（M8.7） |
 | 仓位系数·熊 | `regime.mult.bear` | 0.2 | **已退役**（M8.7） |
 | 晴雨表指数 | `regime.indices` | sh000001 | **已退役**（M8.7 单一上证指数版，证伪） |
+**市场宽度标定（M8.8 内生法，← 沉淀自 archive/13）**：宽度比率 `ratio = ΣU/(ΣU+ΣD)`，U/D 为窗口内全市场个股（kind=stock、上市≥min_history 日历日）`box.Scan` 产生的 broken_up / broken_down 事件数。`ratio ≥ bull_thresh` 连续 `confirm` 日 → 牛（主力仓启用）；`< bear_thresh` 连续 `confirm` 日 → 熊（仅日志区分，仓位同猴）。已知偏差：BreadthAgg 读 box 表最终状态，宽度信号不可离线复现（docs/18 二(3)），修复列 docs/19 E6。
+
 | 宽度窗口 | `regime.breadth.window` | 20 | 滚动窗口交易日（M8.8，2026-10-20 用户拍板） |
 | 牛触发阈值 | `regime.breadth.bull_thresh` | 0.55 | 连续 3 日 ≥ 触发牛（主力仓启用） |
 | 熊标记阈值 | `regime.breadth.bear_thresh` | 0.40 | 仅日志区分，仓位规则同猴 |

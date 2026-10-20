@@ -135,7 +135,7 @@ func (r *TradeRepo) OpenPositions() ([]contract.Position, error) {
 }
 
 // OpenExposureUnits 当前未平仓敞口折算成 M8.8 单位制仓位预算占用。
-// 规则（docs/13 §3.2）：持仓只有 leg1 = 试探仓；有 leg2+ = 主力仓（全部腿计入 main）。
+// 规则（archive/13 §3.2）：持仓只有 leg1 = 试探仓；有 leg2+ = 主力仓（全部腿计入 main）。
 // 估值用最新收盘价（无行情回退 avg_cost）；unitValue = 权益 × pos.unit（调用方传入）。
 func (r *TradeRepo) OpenExposureUnits(unitValue float64) (probeUnits, mainUnits float64, err error) {
 	if unitValue <= 0 {

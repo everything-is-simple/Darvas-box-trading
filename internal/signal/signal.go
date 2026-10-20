@@ -132,7 +132,7 @@ func (e *Engine) evalOne(w contract.Watch, date string, premium float64, maxLegs
 	}
 
 	// 第②通道（M8.6）：未触及止损 + 买点上方N%内 → 加码（不等新箱体）。
-	// 达瓦斯原书布鲁斯案例 line 1504；规则见 docs/10-m8.6 §2.2。当日已发第①条则不重复。
+	// 达瓦斯原书布鲁斯案例 line 1504；规则见 archive/10-m8.6 §2.2。当日已发第①条则不重复。
 	if s := e.checkAddon(w, date, today); s != nil {
 		return s
 	}
@@ -144,7 +144,7 @@ func (e *Engine) evalOne(w contract.Watch, date string, premium float64, maxLegs
 // 5 笔 50.75→53.625（+5.7%）。欧奈尔量化边界「加仓要在买点上涨5%以内」，
 // 参数 risk.addon_max_premium（用户拍板 0.07，留余量）。
 //
-// 五条件（docs/10-m8.6-pyramid-addon-proposal.md §2.2）：
+// 五条件（archive/10-m8.6-pyramid-addon-proposal.md §2.2）：
 //
 //	C1 today.Low > 止损位（盘中未触及止损——原书"没有触及止损位"的最严格对应）
 //	C2 today.Close ≥ 上次成交价（顺势加码，绝不摊低成本——原书"绝不要摊低亏损的头寸"）

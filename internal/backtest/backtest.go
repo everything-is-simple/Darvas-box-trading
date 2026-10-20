@@ -439,7 +439,7 @@ func Replay(scratch string, days []string, dayBars map[string][]contract.DailyBa
 		var rows []string
 		for _, task := range sixTasks {
 			if task == "report" {
-				// M8.2：report 之前撮合当日订单（match 插在 plan 之后、report 之前，docs/08 §5）
+				// M8.2：report 之前撮合当日订单（match 插在 plan 之后、report 之前，archive/08 §5）
 				if n, err := matcher.Match(ctx, d); err != nil {
 					fails = append(fails, fmt.Sprintf("%s match: %v", d, err))
 					rows = append(rows, "match=FAIL")

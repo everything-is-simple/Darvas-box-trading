@@ -3,7 +3,7 @@
 // 输入：当日 signal + 持仓 + param + equity_snapshot
 // 输出：trade_plan + plan_order（停损买/卖单，含触发价、委托价、数量、腿号）
 //
-// 数量公式（M8.8 单位制，docs/13 §3）：1 单位 = 权益 × pos.unit（默认 2%），
+// 数量公式（M8.8 单位制，archive/13 §3）：1 单位 = 权益 × pos.unit（默认 2%），
 // 单位股数 = floor(equity × pos.unit / price / 100) × 100（A股整手）。
 // 三层预算：试探 5 单位（熊猴单票 1 / 牛单票 2）+ 主力 30 单位（仅牛市启用，
 // 单票共 10 单位、单次加码 ≥3 单位）+ 预备 15 单位永不动；永远留 30% 现金。
@@ -302,9 +302,9 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 }
 
 // buyOrder 构造停损买单（breakout=leg1, pyramid=leg2/3）。
-// M8.8 单位制仓位（docs/13 §3.3）：
+// M8.8 单位制仓位（archive/13 §3.3）：
 //   - 腿1 试探单：熊猴 qty=1 单位股数，牛市 qty=2 单位股数；占用试探预算，
-//     牛市试探 5 单位用满后改占主力预算（docs/13 §3.4）；
+//     牛市试探 5 单位用满后改占主力预算（archive/13 §3.4）；
 //   - 腿2/3 主力单：仅牛市生成，熊猴 pyramid 硬规则不生成订单；
 //     腿2 起步=per_stock_main_step 单位，腿3 单次 3-5 单位并递进至单票 10 单位；
 //   - 组合预算：试探满 5 / 主力满 30 即跳过；单票上限=per_stock_main_max 单位。
@@ -371,7 +371,7 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 			p.log.Printf("跳过 %s 腿1：单票上限 %d 股", s.Code, maxQty)
 			return nil
 		}
-		// 预算：熊猴/牛市都先吃试探；牛市试探满后改吃主力（docs/13 §3.4）
+		// 预算：熊猴/牛市都先吃试探；牛市试探满后改吃主力（archive/13 §3.4）
 		if market == regime.Bull && budget.probeUsed+units > budget.probeCap+1e-9 {
 			if !budget.takeMain(units) {
 				p.log.Printf("跳过 %s 腿1：主力预算不足（已用%.2f/%.0f）", s.Code, budget.mainUsed, budget.mainCap)

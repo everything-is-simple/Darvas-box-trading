@@ -1,4 +1,4 @@
-// Package match 实现 M8.2 模拟撮合器（docs/08-m8.2-matcher.md）。
+// Package match 实现 M8.2 模拟撮合器（archive/08-m8.2-matcher.md）。
 //
 // 核心：把「人工贴成交单」替换成「当日 OHLC 模拟停损单触发」，触发则生成
 // contract.Fill 喂给 ledger.ApplyFill——持仓状态机/金字塔/止损上移/两亏拉黑/
@@ -31,7 +31,7 @@ func New(st *store.Store) *Matcher {
 }
 
 // Match 撮合 execute_date==date 的待成交订单 + 复权日强制清仓，返回当日成交笔数。
-// 调用方须在当日六任务链 plan 之后、report 之前调用（docs/08 §5 时序）。
+// 调用方须在当日六任务链 plan 之后、report 之前调用（archive/08 §5 时序）。
 func (m *Matcher) Match(ctx context.Context, date string) (int, error) {
 	fp := loadFeeParams(m.st)
 	n := 0
