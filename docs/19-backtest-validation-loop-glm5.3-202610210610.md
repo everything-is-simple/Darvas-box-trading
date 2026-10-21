@@ -94,18 +94,25 @@
 
 ## 2. 本轮（R1 轮）任务清单，顺序不可换
 
+> **状态更新（2026-10-22 02:30，docs/21 统一后）**：8 项已完成 6，剩 P0-4/P0-6（生产侧，**不阻塞回测**，与 P0-5 并行）。
+> 回测前代码收尾仅剩 2 项（A1 RS 超额收益 + A2 ST 排除，来自 docs/20 裁决），见 docs/21 第一段。
+
 | 序 | 任务 | 预期产出 |
 |----|------|---------|
 | 1 | **P0-2 ✅ 已完成（2026-10-21）：进场跳空上限 `match.max_entry_gap=1.05`**——match 成交时 px/trigger>1.05 弃单置 cancelled + planner 生成前 trigger 与现价比值>1.05 拒单；migration 0013 + 单测 TestMatchRejectGapChase / TestPlannerRejectStaleBoxOrder | 跳空追高单被拒；sh600825 型陈旧箱体订单被拒 |
-| 2 | P0-3：pendingSell 同批次回写 + 单测 | 同日同仓位仅一张卖单 |
-| 3 | P0-4（清池）+ 一致性加 trigger 偏移上限断言（**ST5 已废弃 maxwatch 断言**） | check_consistency 新增 trigger 偏移上限；active 不再设上限 |
-| 4 | P0-6：生产版本明确（推荐：生产切 M8.8 单位制，与回测同源；或声明生产=M8.6 并冻结） | reason_json 语义与声明一致 |
-| 5 | **G1 ✅ 已完成（2026-10-21）：入池 `pool.min_watch_days`(3) 个交易日内不产生首笔买单**——planner 主循环 buyOrder 前查 watch.AddedDate；pyramid 加码不受限。migration 0012 + 单测 TestPlannerMinWatchDays/Expired | 入池 <3 交易日的新票不出首买单 |
-| 5b | **G2 ✅ 已完成（2026-10-21）：老朋友优先纳入**——`IsOldFriend`(连续2笔盈利) 判定，planner 对老朋友 breakout 稳定排序排前，竞争试探预算优先成交；止损不动。单测 TestIsOldFriend | 老朋友优先成交 |
-| 6 | **ST1 ✅ 已完成（2026-10-21）：首腿初始止损单**——planner 持仓期每日挂 trigger=pos.StopPrice 的 initial_stop 卖单（reason.signal=initial_stop），与下轨止损并存先到先触发；单测 TestPlannerInitialStopOrder | 首腿亏损单 close_reason 出现 initial_stop；止损距离回到设计值 3-5.8% |
-| 7 | **ST4（本轮新增，1 行）：** `screener.go:149` `LatestBox` → `LatestNonFormingBox` + 单测 | 刚 broken_up 的股票能进候选池（10-19 验证：0 → 至少几十支） |
-| 8 | **P0-5：修好的撮合器 + G1 + G2 + ST1 + ST4 重跑 2014-2018 全量 + verify 差分** | 新五年表；新旧表并列对比 |
+| 2 | **P0-3 ✅ 已完成（2026-10-21）：pendingSell 同批次回写**——两处生成卖单后均回写；单测 TestPlannerNoDuplicateSell | 同日同仓位仅一张卖单 |
+| 3 | P0-4（清池）→ **移入 docs/21 第四段**（生产侧，与 P0-5 并行，不阻塞回测） | 生产 watch 换血 |
+| 4 | P0-6：生产版本明确 → **移入 docs/21 第四段**（停 serve→换新 exe→重启，与回测同源） | reason_json 语义与回测一致 |
+| 5 | **G1 ✅ 已完成（2026-10-21）：入池 `pool.min_watch_days`(3) 个交易日内不产生首笔买单**——migration 0012 + 单测 | 入池 <3 交易日的新票不出首买单 |
+| 5b | **G2 ✅ 已完成（2026-10-21）：老朋友优先纳入**——IsOldFriend + 稳定排序；单测 TestIsOldFriend | 老朋友优先成交 |
+| 6 | **ST1 ✅ 已完成（2026-10-21）：首腿初始止损单**——每日挂 initial_stop 常驻卖单；单测 TestPlannerInitialStopOrder | 首腿亏损单 close_reason 出现 initial_stop |
+| 7 | **ST4 ✅ 已完成（2026-10-21）：screener.go LatestBox → LatestNonFormingBox**——单测 TestScreenBrokenUpBehindForming；差分测试断言同步更新 | 刚 broken_up 的股票能进候选池 |
+| 7b | **新增（docs/21 第一段，回测前最后代码收尾）：A1 RS 超额收益 + A2 ST 排除 + C4 滑点 + C5 注释** | RS 熊市可筛抗跌股；ST 不入池 |
+| 8 | **P0-5：修好的撮合器 + G1/G2 + ST1/ST4 + 方案A + A1/A2 重跑 2014-2018 全量 + verify 差分** | 新五年表；新旧表并列对比 |
 | 9 | 按工程判据 E1-E5 打勾 → 通过后看策略判据 S1 | E 全绿才许看 S1 |
+
+> 注：方案 A（2026-10-21 用户拍板，撤「牛市才主力」体制门槛回归不择时）已落地（commit 047e113），
+> P0-5 重跑将首次包含方案 A 仓位规则 + 第 0 条改写后的完整规则集。
 
 ---
 
