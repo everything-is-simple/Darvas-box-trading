@@ -166,6 +166,10 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 			o := p.sellOrder(s, box, sellDisc, posByCode, planDate, executeDate)
 			if o != nil {
 				orders = append(orders, *o)
+				// P0-3（2026-10-21）：生成卖单后立即回写 pendingSell，
+				// 否则同批次后续（time_stop 循环）会对同一仓位再生成一张卖单，
+				// 次日第一张成交清仓、第二张「卖出成交但无持仓」→ rc=1。
+				pendingSell[s.Code] = true
 			}
 		}
 	}
@@ -198,6 +202,8 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 				"avg_cost": pos.AvgCost, "last_close": px, "qty": pos.Qty, "position_id": pos.ID,
 			},
 		})
+		// P0-3（2026-10-21）：回写 pendingSell，防御同批次重复卖单（与信号循环同源）。
+		pendingSell[pos.Code] = true
 		p.log.Printf("3周不获利离场 %s（持有%d日 收盘%.2f≤成本%.2f）", pos.Code, n, px, pos.AvgCost)
 	}
 

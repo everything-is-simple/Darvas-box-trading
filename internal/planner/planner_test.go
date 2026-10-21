@@ -372,6 +372,54 @@ func TestPlannerSellOrderQty(t *testing.T) {
 	}
 }
 
+// TestPlannerNoDuplicateSell P0-3（2026-10-21）：同仓位同批次只产一张卖单。
+// 持仓既有 stop 信号（跌破箱下轨）又满足 time_stop（持有≥staledays 且收盘≤成本），
+// 修复前 pendingSell 未回写会生成两张卖单；修复后仅一张。
+func TestPlannerNoDuplicateSell(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	boxes[0].Status = contract.BoxBrokenDown
+	boxes[0].Bottom = 17
+	boxes[0].BrokenDate = "2026-10-16"
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	lb, _ := st.BoxRepo.LatestNonFormingBox(code)
+	if lb == nil {
+		t.Fatal("no box after upsert")
+	}
+	// 持仓：开仓于 2026-09-01（距 10-16 远超 staledays=15），成本 20 > 现价 16 → 同时满足 time_stop
+	st.DB().Exec(`INSERT INTO position(code, opened_date, qty, avg_cost, stop_price, status)
+		VALUES (?, '2026-09-01', 500, 20, 16.49, 'open')`, code)
+	// 收盘价 16（≤成本 20）触发 time_stop；seedBars 已有 10-16 收盘约 23.5，需覆盖为 16
+	st.DB().Exec(`UPDATE daily_bar SET close=16 WHERE code=? AND date='2026-10-16'`, code)
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+	st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalStop,
+		BoxID: lb.ID, ClosePx: 16, BoxLevel: 17,
+	}})
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatal(err)
+	}
+	_, orders, _ := st.TradeRepo.PlanOn("2026-10-16")
+	sellCount := 0
+	for _, o := range orders {
+		if o.Side == "sell" {
+			sellCount++
+		}
+	}
+	if sellCount != 1 {
+		t.Fatalf("同仓位同批次卖单数=%d，期望 1（stop 与 time_stop 去重）", sellCount)
+	}
+}
+
 // TestPlannerExecuteDate P1修复验收（2026-10-17）：执行日=下一交易日（ADR-2），非日历+1。
 func TestPlannerExecuteDate(t *testing.T) {
 	st := newPlannerStore(t)

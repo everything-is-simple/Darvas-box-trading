@@ -149,7 +149,10 @@ func (s *Screener) evaluate(code, date string, p contract.ScreenParams, idxRet f
 	// 条件4 箱体形态：confirmed 或刚 broken_up（达瓦斯核心，候选门槛）
 	// B2① 太晚规则（原书：股价四天都收在突破点之上=看到太晚，放弃）：
 	//   broken_up 箱体突破后已走过 ≥ LateDays 个交易日 → 不入候选池。
-	if box, err := s.st.BoxRepo.LatestBox(code); err == nil && box != nil {
+	// 修复 ST4（2026-10-21）：LatestBox → LatestNonFormingBox。archive/07 #1 修复 signal
+	// 时漏改此处——LatestBox 取 id DESC 第一条 forming(0,0)，boxOK 恒 false，
+	// 导致「刚 broken_up」分支长期死掉（实测 10-19 候选池 166 支全 confirmed、0 broken_up）。
+	if box, err := s.st.BoxRepo.LatestNonFormingBox(code); err == nil && box != nil {
 		boxOK := box.Status == contract.BoxConfirmed || box.Status == contract.BoxBrokenUp
 		if boxOK && box.Status == contract.BoxBrokenUp && box.BrokenDate != "" && p.LateDays > 0 {
 			if n, err := s.st.BarRepo.BarCount(code, box.BrokenDate, date); err == nil && n >= p.LateDays {

@@ -114,8 +114,9 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 		t.Fatalf("sh600001 第二箱(11.8/11.0) confirmed = %d err=%v", nBox2, err)
 	}
 
-	// ③ 候选池：t13/t14 有（第一箱确认），t15~t20 断档（LatestBox=forming），
-	//    t21~ 恢复（第二箱确认）；sh600003 只在 t20 出现（箱体在 t20 才物化）
+	// ③ 候选池：t13/t14 有（第一箱确认）；t15 突破（broken_up）→ ST4 修复后
+	//    t15~t18 进候选（broken_up 未到 latedays=4 太晚线）；t19~t20 太晚不进；
+	//    t21~ 第二箱确认恢复；sh600003 只在 t20 出现（箱体 t20 才物化）
 	countCand := func(code, d string) int {
 		var n int
 		if err := one(`SELECT COUNT(*) FROM candidate WHERE code=? AND CAST(screen_date AS TEXT)=?`,
@@ -124,14 +125,14 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 		}
 		return n
 	}
-	for _, dd := range []string{d(13), d(14), d(21), d(22), d(23), d(24)} {
+	for _, dd := range []string{d(13), d(14), d(15), d(16), d(17), d(18), d(21), d(22), d(23), d(24)} {
 		if got := countCand("sh600001", dd); got != 1 {
 			t.Fatalf("sh600001 candidate@%s = %d, 期望 1", dd, got)
 		}
 	}
-	for _, dd := range []string{d(15), d(16), d(17), d(18), d(19), d(20)} {
+	for _, dd := range []string{d(19), d(20)} {
 		if got := countCand("sh600001", dd); got != 0 {
-			t.Fatalf("sh600001 candidate@%s = %d, 期望 0（forming 箱体不可选）", dd, got)
+			t.Fatalf("sh600001 candidate@%s = %d, 期望 0（突破后≥4日太晚）", dd, got)
 		}
 	}
 	if got := countCand("sh600003", d(20)); got != 1 {

@@ -69,3 +69,52 @@ func TestScreenTooLateRule(t *testing.T) {
 		t.Fatal("昨日刚突破（1 个交易日 < 4）应正常入候选")
 	}
 }
+
+// TestScreenBrokenUpBehindForming ST4 回归（2026-10-21）：真实 boxscan 会在 broken_up 后
+// 再输出 forming(0,0) 箱体（id 更大）。修复前 LatestBox 取 forming → boxOK=false，
+// 「刚 broken_up」分支死掉；修复后 LatestNonFormingBox 跳过 forming，刚突破股能进候选池。
+func TestScreenBrokenUpBehindForming(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/screen.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	code := "sh600519"
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
+	var bars []contract.DailyBar
+	for d := 1; d <= 8; d++ {
+		bars = append(bars, contract.DailyBar{
+			Code: code, Date: fmt.Sprintf("2026-10-%02d", d),
+			Open: 10, High: 11, Low: 9, Close: 10, Volume: 1000, Amount: 100000,
+		})
+	}
+	if _, err := st.BarRepo.UpsertBars(bars); err != nil {
+		t.Fatal(err)
+	}
+	// broken_up（昨日突破 10-07）+ forming(0,0)（id 更大，模拟真实 boxscan 输出顺序）
+	if _, err := st.BoxRepo.UpsertBoxes([]contract.Box{
+		{Code: code, Top: 11, Bottom: 9, Status: contract.BoxBrokenUp, BrokenDate: "2026-10-07"},
+		{Code: code, Top: 0, Bottom: 0, Status: contract.BoxForming},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(st)
+	if _, err := s.Screen(context.Background(), "2026-10-08"); err != nil {
+		t.Fatal(err)
+	}
+	cands, err := st.PoolRepo.CandidatesOn("2026-10-08")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range cands {
+		if c.Code == code {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("ST4 回归：broken_up 后有 forming 箱体时，刚突破股应能进候选池（修复前被 forming 挡住）")
+	}
+}
