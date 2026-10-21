@@ -419,12 +419,12 @@ func runLadder(db, code string) {
 	must(err)
 	defer st.Close()
 
-	// 从 param 表读箱体参数（与 0001_init.sql 种子一致）
+	// 从 param 表读箱体参数（与 0001_init.sql 种子一致；MinBoxWidth 走 box.min_width，A2 校订）
 	params := contract.BoxParams{
 		VolMultiplier: st.ParamRepo.GetFloat("box.volmult", 2.0),
 		VolWindow:     st.ParamRepo.GetInt("box.volwindow", 50),
 		BreakPremium:  st.ParamRepo.GetFloat("buy.premium", 1.03),
-		MinBoxWidth:   0.05,
+		MinBoxWidth:   st.ParamRepo.GetFloat("box.min_width", 0.05),
 	}
 
 	// 读全部 K 线（endDate 取远期，n 取大值以取尽）

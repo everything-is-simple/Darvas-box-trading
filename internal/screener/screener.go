@@ -41,7 +41,6 @@ func (s *Screener) params() contract.ScreenParams {
 		RSWindow:    s.st.ParamRepo.GetInt("screen.rswindow", 20),
 		RSExcessMin: s.st.ParamRepo.GetFloat("screen.rs_excess_min", 0.20),
 		VolRatioMin: 2.0,
-		VolRatioMax: 5.0,
 		LateDays:    s.st.ParamRepo.GetInt("screen.latedays", 4),
 	}
 }
@@ -136,14 +135,14 @@ func (s *Screener) evaluate(code, date string, p contract.ScreenParams, idxRet f
 		r["rs_pass"] = false
 	}
 
-	// 条件3 放量比：5 日均量/20 日均量 ∈ [min, max]
+	// 条件3 放量比：5 日均量/20 日均量 ≥ min（A1 校订 2026-10-22：删上限，原书只要求「显著放大」）
 	avg5, e1 := s.st.BarRepo.AvgVolume(code, date, 5)
 	avg20, e2 := s.st.BarRepo.AvgVolume(code, date, 20)
 	volOK := false
 	var ratio float64
 	if e1 == nil && e2 == nil && avg20 > 0 {
 		ratio = avg5 / avg20
-		volOK = ratio >= p.VolRatioMin && ratio <= p.VolRatioMax
+		volOK = ratio >= p.VolRatioMin
 	}
 	r["vol_ratio"] = ratio
 	r["vol_pass"] = volOK

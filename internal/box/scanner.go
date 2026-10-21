@@ -63,12 +63,13 @@ func (s *Scanner) rescanOne(ctx context.Context, code, date string) (int, error)
 }
 
 // boxParams 从 param 表读箱体参数（与 0001_init.sql 种子一致）。
+// MinBoxWidth 走 box.min_width（0015 参数化），兜底默认 0.05（A2 校订：工程假设，非原书规则）。
 func (s *Scanner) boxParams() contract.BoxParams {
 	return contract.BoxParams{
 		VolMultiplier: s.st.ParamRepo.GetFloat("box.volmult", 2.0),
 		VolWindow:     s.st.ParamRepo.GetInt("box.volwindow", 50),
 		BreakPremium:  s.st.ParamRepo.GetFloat("buy.premium", 1.03),
-		MinBoxWidth:   0.05,
+		MinBoxWidth:   s.st.ParamRepo.GetFloat("box.min_width", 0.05),
 	}
 }
 

@@ -210,8 +210,7 @@ type ScreenParams struct {
 	TurnoverMin float64 // 日均成交额下限（元），默认5000万
 	RSWindow    int     // 相对强度窗口，默认20
 	RSExcessMin float64 // RS超额收益下限（20日个股涨幅−上证涨幅），默认0.20（+20pp）。A1（2026-10-22）：旧 RSThreshold 比值算法熊市恒0已退役
-	VolRatioMin float64 // 放量比下限，默认2.0
-	VolRatioMax float64 // 放量比上限，默认5.0
+	VolRatioMin float64 // 放量比下限，默认2.0（A1 校订 2026-10-22：原书只要求「显著放大」，无上限；VolRatioMax 删除）
 	LateDays    int     // B2①太晚规则：突破后第N交易日（默认4，原书"四天已超箱体=太晚"）
 }
 

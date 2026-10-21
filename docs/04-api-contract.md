@@ -277,7 +277,7 @@ type BoxParams struct {
     VolMultiplier float64  // 放量倍数（突破确认），默认2.0
     VolWindow     int      // 均量窗口，默认50
     BreakPremium  float64  // 收盘>上轨×该值确认突破，默认1.03
-    MinBoxWidth   float64  // 箱体最小宽度%，默认0.05
+    MinBoxWidth   float64  // 箱体最小宽度%（工程假设非原书规则），默认0.05，参数化 box.min_width（0015，A2 校订）
     ConfirmDays   int      // 轨道确认天数（三日法则），默认3；0由引擎归一为3（M8.4a）
 }
 
@@ -306,7 +306,7 @@ type ScreenParams struct {
     RSWindow    int      // 默认20
     RSExcessMin float64  // RS超额收益下限（20日个股涨幅−上证涨幅），默认0.20（+20pp）。
                          // A1（2026-10-22）：旧 RSThreshold 比值法退役（极值失真，docs/00 §6 注2）
-    VolRatioMin, VolRatioMax float64 // 2.0 / 5.0
+    VolRatioMin float64 // 放量比下限，默认2.0（A1 校订 2026-10-22：删上限，原书只要求「显著放大」）
     LateDays    int      // B2①太晚规则：broken_up后≥N个交易日→不入候选（默认4，原书"四天=太晚"）
 }
 ```
