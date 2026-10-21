@@ -55,7 +55,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	probeCap := p.st.ParamRepo.GetFloat("pos.units.probe", 5)
 	mainCap := p.st.ParamRepo.GetFloat("pos.units.main", 30)
 	probeBear := p.st.ParamRepo.GetFloat("pos.units.per_stock_probe_bear", 1)
-	probeBull := p.st.ParamRepo.GetFloat("pos.units.per_stock_probe_bull", 2)
+	// 方案A（2026-10-21）：首腿统一 1 单位试探，不分牛熊——per_stock_probe_bull 已废弃不读。
 	mainMax := p.st.ParamRepo.GetFloat("pos.units.per_stock_main_max", 10)
 	mainStep := p.st.ParamRepo.GetFloat("pos.units.per_stock_main_step", 3)
 	// G1 观察期（2026-10-21）：入池后 N 个交易日内不产生首笔买入信号（原书 L1895/L1063）。
@@ -156,7 +156,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 				}
 			}
 			// M8.8：单位制仓位 + 组合级预算检查（熊猴 pyramid 在 buyOrder 内硬拦截）
-			o := p.buyOrder(s, box, market, unitValue, probeBear, probeBull, mainMax, mainStep,
+			o := p.buyOrder(s, box, market, unitValue, probeBear, mainMax, mainStep,
 				buyPrem, sellDisc, maxLegs, posByCode, budget, plannedQty, planDate, executeDate, maxEntryGap)
 			if o != nil {
 				orders = append(orders, *o)
@@ -373,7 +373,7 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 //     腿2 起步=per_stock_main_step 单位，腿3 单次 3-5 单位并递进至单票 10 单位；
 //   - 组合预算：试探满 5 / 主力满 30 即跳过；单票上限=per_stock_main_max 单位。
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
-	probeBear, probeBull, mainMax, mainStep float64,
+	probeBear, mainMax, mainStep float64,
 	buyPrem, sellDisc float64, maxLegs int, posByCode map[string]*contract.Position,
 	budget *unitBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
@@ -429,10 +429,9 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	qty := 0
 	switch {
 	case s.Type == contract.SignalBreakout:
-		units = probeBear
-		if market == regime.Bull {
-			units = probeBull
-		}
+		// 方案 A（2026-10-21，第0条撤回连锁）：首腿统一 1 单位试探，不分牛熊。
+		// 达瓦斯「不预测市场」（L1206），仓位只跟个股箱体走，不跟大盘牛熊走。
+		units = probeBear // =1 单位（熊猴牛统一）
 		qty = int(math.Floor(units)) * shares
 		if qty <= 0 {
 			return nil
@@ -447,8 +446,8 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 			p.log.Printf("跳过 %s 腿1：单票上限 %d 股", s.Code, maxQty)
 			return nil
 		}
-		// 预算：熊猴/牛市都先吃试探；牛市试探满后改吃主力（archive/13 §3.4）
-		if market == regime.Bull && budget.probeUsed+units > budget.probeCap+1e-9 {
+		// 预算：先吃试探；试探满后改吃主力（组合风控，不择时——方案A保留）。
+		if budget.probeUsed+units > budget.probeCap+1e-9 {
 			if !budget.takeMain(units) {
 				p.log.Printf("跳过 %s 腿1：主力预算不足（已用%.2f/%.0f）", s.Code, budget.mainUsed, budget.mainCap)
 				return nil
@@ -462,12 +461,7 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 			bucket = "probe"
 		}
 
-	case market != regime.Bull:
-		// 熊/猴市 pyramid 不生成订单（硬规则：试探后不放大）。
-		p.log.Printf("拦截 %s pyramid：%s市不放大（试探后不放大）", s.Code, regimeName(market))
-		return nil
-
-	default: // Bull 主力仓腿2/3
+	default: // pyramid 主力仓腿2/3（方案A：任何市况都允许金字塔加码，不择时）
 		current := plannedQty[s.Code]
 		if pos != nil {
 			current += pos.Qty

@@ -85,19 +85,21 @@ func TestPlannerBreakoutUnitQtyBull(t *testing.T) {
 		t.Fatalf("orders=%d want 1", len(orders))
 	}
 	o := orders[0]
-	if o.Qty != 1600 {
-		t.Errorf("qty=%d want 1600（牛市腿1=2单位×800股）", o.Qty)
+	// 方案A（2026-10-21）：首腿统一 1 单位，不分牛熊。牛市腿1 也是 1 单位=800 股。
+	if o.Qty != 800 {
+		t.Errorf("qty=%d want 800（方案A：首腿统一1单位，不分牛熊）", o.Qty)
 	}
-	if units, ok := o.Reason["units"].(float64); !ok || units != 2 {
-		t.Errorf("reason.units=%v want 2", o.Reason["units"])
+	if units, ok := o.Reason["units"].(float64); !ok || units != 1 {
+		t.Errorf("reason.units=%v want 1", o.Reason["units"])
 	}
 	if r, ok := o.Reason["regime"].(string); !ok || r != "bull" {
-		t.Errorf("reason.regime=%v want bull", o.Reason["regime"])
+		t.Errorf("reason.regime=%v want bull（体制仍记录为观察指标，不再作交易门槛）", o.Reason["regime"])
 	}
 }
 
-// TestPlannerPyramidSuppressedOutsideBull M8.8 硬规则：熊猴 pyramid 不生成订单。
-func TestPlannerPyramidSuppressedOutsideBull(t *testing.T) {
+// TestPlannerPyramidAllowedAnyRegime 方案A（2026-10-21）：熊猴也允许金字塔加码（不择时）。
+// 原 M8.8 硬规则「熊猴 pyramid 不生成」已撤，改为任何市况都按个股箱体加码。
+func TestPlannerPyramidAllowedAnyRegime(t *testing.T) {
 	st := newPlannerStore(t)
 	code := "sh600519"
 	seedBars(t, st, code)
@@ -122,10 +124,14 @@ func TestPlannerPyramidSuppressedOutsideBull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	found := false
 	for _, o := range orders {
-		if o.Side == "buy" {
-			t.Fatalf("熊猴不应生成 pyramid 买单: %+v", o)
+		if o.Side == "buy" && o.LegNo >= 2 {
+			found = true
 		}
+	}
+	if !found {
+		t.Fatalf("方案A：熊猴也应允许 pyramid 加码（不择时），实际订单 %d 笔", len(orders))
 	}
 }
 
@@ -230,8 +236,9 @@ func TestPlannerBullPyramidLeg3Qty(t *testing.T) {
 	}
 }
 
-// TestPlannerProbeCapBlocksNewProbe 试探 5 单位用满后，熊猴/普通试探不再开新票。
-func TestPlannerProbeCapBlocksNewProbe(t *testing.T) {
+// TestPlannerProbeCapFallsToMain 方案A（2026-10-21）：试探 5 单位用满后，改吃主力预算（不择时）。
+// 原 M8.8 熊猴试探满即拒；方案A 后试探满即改吃主力（组合风控保留，不跟牛市绑定）。
+func TestPlannerProbeCapFallsToMain(t *testing.T) {
 	st := newPlannerStore(t)
 	// 5 只已有试探仓：各 1 单位（close=25，qty=800，unitValue=20000）。
 	for i := 1; i <= 5; i++ {
@@ -258,10 +265,18 @@ func TestPlannerProbeCapBlocksNewProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 方案A：试探满后改吃主力，新票应能开单（bucket=main）
+	found := false
 	for _, o := range orders {
-		if o.Side == "buy" {
-			t.Fatalf("试探预算已满，不应再开新试探单: %+v", o)
+		if o.Side == "buy" && o.Code == code {
+			found = true
+			if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "main" {
+				t.Errorf("试探满后 bucket=%v want main（改吃主力预算）", o.Reason["budget_bucket"])
+			}
 		}
+	}
+	if !found {
+		t.Fatalf("方案A：试探满后应改吃主力开新单，实际订单 %d 笔", len(orders))
 	}
 }
 
