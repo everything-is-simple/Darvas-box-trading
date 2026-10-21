@@ -47,6 +47,13 @@ func TestSyntheticAsOfDifferential(t *testing.T) {
 	if err := Bootstrap(src, prog, from, true); err != nil {
 		t.Fatalf("bootstrap progressive: %v", err)
 	}
+	// 关闭滑点：本测试聚焦 as-of 差分纪律，撮合参数（滑点）不应污染期望值。
+	if st, err := store.Open(prog); err != nil {
+		t.Fatalf("open prog set slippage: %v", err)
+	} else {
+		_ = st.ParamRepo.Set("match.slippage", "0")
+		st.Close()
+	}
 	progHashes, fails, err := Replay(prog, days, dayBars)
 	if err != nil {
 		t.Fatalf("replay progressive: %v", err)
@@ -59,6 +66,12 @@ func TestSyntheticAsOfDifferential(t *testing.T) {
 	pre := filepath.Join(dir, "bt_prefill.db")
 	if err := Bootstrap(src, pre, from, false); err != nil {
 		t.Fatalf("bootstrap prefill: %v", err)
+	}
+	if st, err := store.Open(pre); err != nil {
+		t.Fatalf("open pre set slippage: %v", err)
+	} else {
+		_ = st.ParamRepo.Set("match.slippage", "0")
+		st.Close()
 	}
 	preHashes, fails, err := Replay(pre, days, nil)
 	if err != nil {

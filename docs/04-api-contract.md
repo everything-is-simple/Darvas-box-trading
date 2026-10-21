@@ -304,7 +304,8 @@ type Screener interface {
 type ScreenParams struct {
     TurnoverMin float64  // 日均成交额（元），默认5000万
     RSWindow    int      // 默认20
-    RSThreshold float64  // 默认1.2
+    RSExcessMin float64  // RS超额收益下限（20日个股涨幅−上证涨幅），默认0.20（+20pp）。
+                         // A1（2026-10-22）：旧 RSThreshold 比值法退役（极值失真，docs/00 §6 注2）
     VolRatioMin, VolRatioMax float64 // 2.0 / 5.0
     LateDays    int      // B2①太晚规则：broken_up后≥N个交易日→不入候选（默认4，原书"四天=太晚"）
 }
@@ -504,6 +505,10 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
 **复权日处理（不复权方案，用户拍板 2026-10-19）**：跳空检测（当日跌幅超涨跌停限制+ε）→ 判定除权日。持仓股当日撮合器最前强制清仓（价=前日收盘，reason=dividend），清仓后 CancelOpenOrders 标记该股在途订单 cancelled。watch 股不额外处理。
 
 **✅ 已修复（2026-10-21 P0-2，migration 0013）**：加 `match.max_entry_gap`（默认 1.05）。撮合器买入单 `成交价/触发价 > max_entry_gap` 则弃单置 cancelled；planner 生成买单前校验 `trigger 与现价 ClosePx 比值 > max_entry_gap` 则拒单。拦截了 71 笔买腿中 63.4% 高于计划买点 >5% 的跳空追高（含 sz002640 +63%、sz300168 +162% 两笔假利润来源）与 sh600825 型陈旧箱体灾难订单。
+
+**滑点（C4，2026-10-22，migration 0014）**：全部模拟成交（订单撮合 + 除权清仓）按 `match.slippage`（默认 0.002）买贵卖贱，0=关闭；先加滑点再过 max_entry_gap 闸门（闸门校验实际要付的价）。docs/18 R5 估算 20-40 笔/年换手下，滑点缺失约让年化乐观 0.3-0.8%。
+
+**股票池排除（A2，2026-10-22，纯代码）**：`SecRepo.ActiveStockCodes` 按名称排除 ST/*ST（±5% 涨跌停、退市风险，交易规则不同；实测 full_hist.db `%ST%` 匹配零误伤）。名称未知（空）保守保留；TDX 名称为当前快照，历史 ST 状态不可回溯（诚实标注）。
 
 ---
 

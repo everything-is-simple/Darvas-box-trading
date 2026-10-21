@@ -5,8 +5,9 @@
 // 恒等式审计全复用，规则零重写。
 //
 // 复权日处理（§3.8，用户拍板 2026-10-19）：不复权原始价 + 复权日清仓。持仓股在
-// 除权跳空日强制清仓（价=昨收，避开跳空损失）；watch 未持仓股不额外处理
+// 除权跳空日强制清仓（价=昨收×(1−滑点)，避开跳空损失）；watch 未持仓股不额外处理
 // （signal 自然出池，复权后重新入池、箱体重算，属可接受行为）。
+// 滑点（C4，2026-10-22）：全部模拟成交按 match.slippage（默认 0.2%）买贵卖贱，0 关闭。
 package match
 
 import (
@@ -37,6 +38,7 @@ func New(st *store.Store) *Matcher {
 func (m *Matcher) Match(ctx context.Context, date string) (int, error) {
 	fp := loadFeeParams(m.st)
 	maxEntryGap := m.st.ParamRepo.GetFloat("match.max_entry_gap", 1.05)
+	slippage := m.st.ParamRepo.GetFloat("match.slippage", 0.002)
 	n := 0
 
 	// 1. 复权跳空日：持仓股强制清仓（先于订单撮合，§3.8）
@@ -57,10 +59,11 @@ func (m *Matcher) Match(ctx context.Context, date string) (int, error) {
 		if !isDividendGap(today, prev, gapThreshold(pos.Code)) {
 			continue
 		}
+		clearPx := slip("sell", prev.Close, slippage) // C4：滑点买贵卖贱，除权清仓同样适用
 		fill := contract.Fill{
 			Code: pos.Code, Date: date, Side: "sell",
-			Price: prev.Close, Qty: pos.Qty,
-			Fee: feeOf("sell", prev.Close, pos.Qty, fp), RawText: "sim:dividend",
+			Price: clearPx, Qty: pos.Qty,
+			Fee: feeOf("sell", clearPx, pos.Qty, fp), RawText: "sim:dividend",
 		}
 		if _, err := m.l.ApplyFill(fill); err != nil {
 			return n, err
@@ -99,6 +102,9 @@ func (m *Matcher) Match(ctx context.Context, date string) (int, error) {
 		if !hit {
 			continue
 		}
+		// C4（2026-10-22，docs/21 第一段）：模拟成交加滑点（买贵卖贱），0=关闭。
+		// 先加滑点再过跳空闸门——闸门校验的是「实际要付的价」，与真实委托一致。
+		px = slip(o.Side, px, slippage)
 		// P0-2（2026-10-21）：买入单进场跳空上限。跳空高开越过触发价按开盘价成交，
 		// 但成交价/触发价 > max_entry_gap 视为「突破后追高」，弃单并记 cancelled。
 		// 达瓦斯买的是「突破点+3%」，不是突破后 +63%/+162% 追高（docs/18 两笔假利润）。
@@ -184,6 +190,18 @@ func isLimitBoard(bar contract.DailyBar, prevClose float64) (limitUp, limitDown 
 		return false, true
 	}
 	return false, false
+}
+
+// slip 按滑点调整成交价：买贵卖贱（C4，2026-10-22）。slippage≤0 或价格非法时原样返回。
+// 默认 0.002（0.2%）：docs/18 R5 估算 20-40 笔/年换手下，滑点缺失约让年化乐观 0.3-0.8%。
+func slip(side string, px, slippage float64) float64 {
+	if slippage <= 0 || px <= 0 {
+		return px
+	}
+	if side == "buy" {
+		return px * (1 + slippage)
+	}
+	return px * (1 - slippage)
 }
 
 // feeOf 计算单笔成交费用（买：佣金+过户费；卖：佣金+印花税+过户费）。

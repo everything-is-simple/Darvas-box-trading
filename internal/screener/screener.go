@@ -2,7 +2,9 @@
 //
 // 四条件（FR-301 / docs/04 ScreenParams）：
 //  1. 流动性：5 日均成交额 ≥ turnoverMin（默认 5000 万）——只买流动性好的主板股
-//  2. 相对强度：20 日 RS（个股涨幅/上证涨幅）≥ rsthreshold（默认 1.2）——强于大盘
+//  2. 相对强度：20 日超额收益（个股涨幅−上证涨幅）≥ rs_excess_min（默认 0.20）——强于大盘/熊市抗跌
+//     （A1 2026-10-22：旧「个股涨幅/上证涨幅≥1.2」比值法在市场极值处失真——深熊分母塌缩、
+//      温和熊市筛掉「抗跌但仍在跌」的股票，已退役；机制描述以 docs/00 §6 注2 为准）
 //  3. 放量比：5 日均量/20 日均量 ∈ [volRatioMin, volRatioMax]（默认 [2.0, 5.0]）——成交量放大
 //  4. 箱体形态：box 状态 confirmed 或刚 broken_up——上升箱体形成中或刚突破
 //
@@ -37,7 +39,7 @@ func (s *Screener) params() contract.ScreenParams {
 	return contract.ScreenParams{
 		TurnoverMin: s.st.ParamRepo.GetFloat("screen.turnover", 50000000),
 		RSWindow:    s.st.ParamRepo.GetInt("screen.rswindow", 20),
-		RSThreshold: s.st.ParamRepo.GetFloat("screen.rsthreshold", 1.2),
+		RSExcessMin: s.st.ParamRepo.GetFloat("screen.rs_excess_min", 0.20),
 		VolRatioMin: 2.0,
 		VolRatioMax: 5.0,
 		LateDays:    s.st.ParamRepo.GetInt("screen.latedays", 4),
@@ -55,10 +57,10 @@ func (s *Screener) Screen(ctx context.Context, date string) (contract.TaskResult
 		res.Status, res.Error = "failed", err.Error()
 		return res, err
 	}
-	// 上证指数 20 日涨幅（RS 分母，ADR-2 交易日历权威）
+	// 上证指数 20 日涨幅（RS 超额收益基准，ADR-2 交易日历权威）
 	idxRet, ok := retOver(s.st, "sh000001", date, p.RSWindow)
 	if !ok {
-		// 上证数据不足，RS 条件无法判定 → 全部股票 RS 记 0
+		// 上证数据不足 → 视大盘走平，超额收益退化为个股自身涨幅
 		idxRet = 1.0
 	}
 
@@ -115,13 +117,16 @@ func (s *Screener) evaluate(code, date string, p contract.ScreenParams, idxRet f
 		score += 25
 	}
 
-	// 条件2 RS：20 日个股涨幅 / 上证涨幅 ≥ rsthreshold
+	// 条件2 RS：20 日超额收益 = 个股涨幅 − 上证涨幅 ≥ rs_excess_min（A1，2026-10-22，docs/21 F7）。
+	// 旧算法 rs=个股涨幅/上证涨幅（比值）在市场极值处失真：深熊分母塌缩（指数 -50% 时跌 40% 的
+	// 股票也能过 1.2 阈值）、温和熊市把「抗跌但仍在跌」的股票筛掉（大盘 -20%、个股 -5% →
+	// 1.19 < 1.2）——与达瓦斯「熊市找抗跌股」（L1273「股市下跌时它们能逆市而动，风向变化时
+	// 迅速上涨的也将是这些股票」）冲突（docs/00 §6 注2）。超额收益语义：大盘跌 20%、它只跌
+	// 5% → 超额 +15pp，正是「跌得很不情愿」的量化，且阈值以百分点直接可解释。
+	// retOver 返回比值（如 1.15），差值即超额幅度（0.30=+30pp）。
 	if stockRet, ok := retOver(s.st, code, date, p.RSWindow); ok {
-		var rs float64
-		if idxRet > 0 {
-			rs = stockRet / idxRet
-		}
-		rsOK := rs >= p.RSThreshold
+		rs := stockRet - idxRet
+		rsOK := rs >= p.RSExcessMin
 		r["rs_value"] = rs
 		r["rs_pass"] = rsOK
 		if rsOK {

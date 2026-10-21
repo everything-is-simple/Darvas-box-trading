@@ -5,12 +5,13 @@
 //
 // 数量公式（M8.8 单位制，archive/13 §3）：1 单位 = 权益 × pos.unit（默认 2%），
 // 单位股数 = floor(equity × pos.unit / price / 100) × 100（A股整手）。
-// 三层预算：试探 5 单位（熊猴单票 1 / 牛单票 2）+ 主力 30 单位（仅牛市启用，
-// 单票共 10 单位、单次加码 ≥3 单位）+ 预备 15 单位永不动；永远留 30% 现金。
+// 三层预算：试探 5 单位 + 主力 30 单位 + 预备 15 单位永不动；永远留 30% 现金。
+// 方案 A（2026-10-21，第0条撤回连锁）：不择时——首腿统一 1 单位试探，任何市况
+// 都允许金字塔加码；试探满后改吃主力预算（组合风控保留），体制标签仅作观察记录。
 //   - breakout → 腿1停损买单：trigger = box.top × buy.premium，stop = box.top × sell.discount
 //     （B1修正2026-10-18：首腿紧止损=被突破箱体上轨/突破点下方，原书§4.1；旧实现误挂箱体下轨下方）
 //   - pyramid → 腿2/3停损买单：trigger = box.top × buy.premium，stop = box.bottom × sell.discount
-//     熊猴市不生成（M8.8 硬规则：试探后不放大）；牛市递进至单票 10 单位
+//     （腿2 为 poolsync 时滞防御分支，见 buyOrder；原「熊猴不生成」已随方案A废止）
 //   - stop/failed_breakout → 止损卖单：trigger = box.bottom × sell.discount，qty = 持仓全部（一次全出）
 package planner
 
@@ -366,10 +367,10 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 }
 
 // buyOrder 构造停损买单（breakout=leg1, pyramid=leg2/3）。
-// M8.8 单位制仓位（archive/13 §3.3）：
-//   - 腿1 试探单：熊猴 qty=1 单位股数，牛市 qty=2 单位股数；占用试探预算，
-//     牛市试探 5 单位用满后改占主力预算（archive/13 §3.4）；
-//   - 腿2/3 主力单：仅牛市生成，熊猴 pyramid 硬规则不生成订单；
+// M8.8 单位制仓位（archive/13 §3.3）+ 方案 A（2026-10-21，不择时）：
+//   - 腿1 试探单：统一 1 单位（per_stock_probe_bear，不分牛熊），占用试探预算，
+//     试探 5 单位用满后改占主力预算（archive/13 §3.4，组合风控不择时保留）；
+//   - 腿2/3 主力单：任何市况均可生成（原「仅牛市」已随第0条撤回废止）；
 //     腿2 起步=per_stock_main_step 单位，腿3 单次 3-5 单位并递进至单票 10 单位；
 //   - 组合预算：试探满 5 / 主力满 30 即跳过；单票上限=per_stock_main_max 单位。
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
@@ -404,7 +405,7 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		return nil
 	}
 
-	// 腿号：breakout=第1腿（试探单）；pyramid=第2/3腿（确认/加码）
+	// 腿号：breakout=第1腿（试探单）；pyramid=第2/3腿（加码）
 	leg := 1
 	var pos *contract.Position
 	if s.Type == contract.SignalPyramid {
@@ -412,7 +413,9 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 			leg = 3 // 已有持仓的加码 → 第3腿
 			pos = pp
 		} else {
-			leg = 2 // 第2腿（确认单）
+			// 腿2 = 时滞防御分支（F5 裁决，docs/21）：watch.stage=holding 但 position
+			// 已清仓的 poolsync 日更滞后场景走到这里；非旧注释的「确认单」（D2 语义错标已更正）。
+			leg = 2
 		}
 	}
 	if leg > maxLegs {
@@ -473,8 +476,8 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		}
 		desiredUnits := mainStep
 		if leg == 3 {
-			// 正常路径：腿1=2单位 + 腿2=3单位 → 腿3补到10单位=5单位（3-5单位区间内）。
-			// 若腿2缺单，最多也只补 5 单位，不一次跨档硬凑。
+			// 正常路径（方案A后）：腿1=1单位 + 腿2=3单位=4 → 腿3补 max(3, 10−4)=6，
+			// 封顶 5 单位。若腿2缺单，最多也只补 5 单位，不一次跨档硬凑。
 			currentUnits := float64(current) * trigger / unitValue
 			desiredUnits = math.Max(mainStep, mainMax-currentUnits)
 			desiredUnits = math.Min(desiredUnits, 5)

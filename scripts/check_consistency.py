@@ -122,8 +122,9 @@ def check_c3_params():
     for fn in sorted(os.listdir(MIGRATIONS_DIR)):
         if fn.endswith(".sql"):
             sql += read(os.path.join(MIGRATIONS_DIR, fn)) + "\n"
-    # 取全部 INSERT INTO param 语句块（含多行 VALUES 列表），避免 CHECK IN 值污染
-    blocks = re.findall(r"INSERT OR IGNORE INTO param\(key, value\)\s*VALUES\s*(.*?);",
+    # 取全部 INSERT INTO param 语句块（含多行 VALUES 列表），避免 CHECK IN 值污染。
+    # 容忍 `param(key,value)` 与 `param (key, value)` 两种写法（0012起带空格）。
+    blocks = re.findall(r"INSERT OR IGNORE INTO param\s*\(\s*key\s*,\s*value\s*\)\s*VALUES\s*(.*?);",
                          sql, re.I | re.S)
     if not blocks:
         return fail("C3 找不到 param 种子 INSERT")

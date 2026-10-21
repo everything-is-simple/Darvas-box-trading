@@ -209,21 +209,22 @@ type BoxParams struct {
 type ScreenParams struct {
 	TurnoverMin float64 // 日均成交额下限（元），默认5000万
 	RSWindow    int     // 相对强度窗口，默认20
-	RSThreshold float64 // RS阈值，默认1.2
+	RSExcessMin float64 // RS超额收益下限（20日个股涨幅−上证涨幅），默认0.20（+20pp）。A1（2026-10-22）：旧 RSThreshold 比值算法熊市恒0已退役
 	VolRatioMin float64 // 放量比下限，默认2.0
 	VolRatioMax float64 // 放量比上限，默认5.0
 	LateDays    int     // B2①太晚规则：突破后第N交易日（默认4，原书"四天已超箱体=太晚"）
 }
 
-// PlanParams 计划参数（M8.8 单位制；旧 risk.leg1/leg23/maxpos 体系退役禁用，保留参数作对照）
+// PlanParams 计划参数（M8.8 单位制；旧 risk.leg1/leg23/maxpos 体系退役禁用，保留参数作对照）。
+// 方案 A（2026-10-21，第0条撤回连锁）：不择时——体制标签降级为观察指标，不再作任何门槛。
 type PlanParams struct {
 	UnitPct           float64 // 1 单位 = 权益 × UnitPct，默认0.02
 	UnitsTotal        float64 // 总单位数，默认50（5试探+30主力+15预备）
 	UnitsProbe        float64 // 试探仓总顶，默认5
-	UnitsMain         float64 // 主力仓总顶，默认30（仅牛市启用）
+	UnitsMain         float64 // 主力仓总顶，默认30（方案A后不择时：试探满后改占主力，组合风控保留）
 	UnitsReserve      float64 // 预备仓永不动，默认15
-	PerStockProbeBear float64 // 熊猴单票试探单位，默认1
-	PerStockProbeBull float64 // 牛市单票试探单位，默认2
+	PerStockProbeBear float64 // 单票试探单位，默认1（方案A：不分牛熊统一 1 单位）
+	PerStockProbeBull float64 // 已废弃（方案A）：牛市单票试探单位，代码不再读取，保留作对照
 	PerStockMainMax   float64 // 单票主力上限（单位），默认10（=20%）
 	PerStockMainStep  float64 // 单次主力最小加码（单位），默认3
 	BuyPremium        float64 // 买入触发溢价，默认1.03

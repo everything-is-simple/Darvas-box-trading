@@ -108,6 +108,107 @@ func TestGapThreshold(t *testing.T) {
 	}
 }
 
+// TestSlip C4（2026-10-22）：滑点买贵卖贱；0/负值关闭；价格非法原样返回。
+func TestSlip(t *testing.T) {
+	if px := slip("buy", 10, 0.002); !near(px, 10.02) {
+		t.Errorf("买入滑点价=%.4f want 10.02", px)
+	}
+	if px := slip("sell", 10, 0.002); !near(px, 9.98) {
+		t.Errorf("卖出滑点价=%.4f want 9.98", px)
+	}
+	if px := slip("buy", 10, 0); !near(px, 10) {
+		t.Errorf("滑点关闭应原价=%.4f want 10", px)
+	}
+	if px := slip("buy", 0, 0.002); !near(px, 0) {
+		t.Errorf("非法价格应原样返回=%.4f want 0", px)
+	}
+}
+
+// TestMatchSlippage C4（2026-10-22）：模拟成交按 match.slippage（默认 0.2%）买贵卖贱，
+// 滑点先于 max_entry_gap 闸门（闸门校验实际要付的价）。含两个边界：
+//   ① 滑点后越过闸门边界（raw 1.05 恰好不拒、slipped 1.0521 > 1.05 拒）→ 弃单；
+//   ② match.slippage=0 → 关闭，按原始成交价。
+func TestMatchSlippage(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer st.Close()
+	if err := st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity("sz000001", "")}); err != nil {
+		t.Fatalf("seed secs: %v", err)
+	}
+	mkBar := func(date string, o, h, l, c float64) contract.DailyBar {
+		return contract.DailyBar{Code: "sz000001", Date: date, Open: o, High: h, Low: l, Close: c}
+	}
+	if _, err := st.BarRepo.UpsertBars([]contract.DailyBar{
+		mkBar("2014-07-29", 10, 10.2, 9.8, 10),
+		mkBar("2014-07-30", 10.4, 10.6, 10.2, 10.5), // 跳空高开，raw 比值 1.04 < 1.05 → 成交
+		mkBar("2014-07-31", 10.5, 10.7, 10.3, 10.6),  // raw 比值恰 1.05（不拒）但滑点后 1.0521 > 1.05 → 弃单
+		mkBar("2014-08-01", 10.4, 10.5, 10.2, 10.45), // slippage=0 后重测；raw 1.04 < 1.05 → 成交
+	}); err != nil {
+		t.Fatalf("seed bars: %v", err)
+	}
+
+	m := New(st)
+	ctx := context.Background()
+	addBuy := func(planDate, execDate string, trigger float64) {
+		t.Helper()
+		planID, err := st.TradeRepo.CreatePlan(contract.TradePlan{PlanDate: planDate, ExecuteDate: execDate, EquityBase: 1e6})
+		if err != nil {
+			t.Fatalf("CreatePlan: %v", err)
+		}
+		if err := st.TradeRepo.AddOrders(planID, []contract.PlanOrder{{
+			PlanDate: planDate, ExecuteDate: execDate, Code: "sz000001", Side: "buy",
+			OrderKind: "stop_buy", TriggerPrice: trigger, LimitPrice: trigger, Qty: 1000,
+		}}); err != nil {
+			t.Fatalf("AddOrders: %v", err)
+		}
+	}
+
+	// ① 默认滑点 0.2%：跳空 10.4 成交价应为 10.4×1.002=10.4208
+	addBuy("2014-07-29", "2014-07-30", 10.0)
+	if n, err := m.Match(ctx, "2014-07-30"); err != nil || n != 1 {
+		t.Fatalf("07-30 撮合 n=%d err=%v（raw 比值 1.04 应成交）", n, err)
+	}
+	var px float64
+	if err := st.DB().QueryRow(`SELECT price FROM trade_fill WHERE date='2014-07-30'`).Scan(&px); err != nil {
+		t.Fatalf("查成交价: %v", err)
+	}
+	if !near(px, 10.4*1.002) {
+		t.Fatalf("滑点成交价=%.4f want %.4f", px, 10.4*1.002)
+	}
+
+	// ② 滑点后越过闸门：raw 10.5/10=1.05 不拒（严格大于才拒），滑点后 1.0521 > 1.05 → 弃单
+	addBuy("2014-07-30", "2014-07-31", 10.0)
+	if n, err := m.Match(ctx, "2014-07-31"); err != nil || n != 0 {
+		t.Fatalf("07-31 撮合 n=%d err=%v（滑点后越闸门应弃单）", n, err)
+	}
+	var status string
+	if err := st.DB().QueryRow(`SELECT po.status FROM plan_order po
+		JOIN trade_plan tp ON po.trade_plan_id = tp.id
+		WHERE tp.execute_date='2014-07-31'`).Scan(&status); err != nil {
+		t.Fatalf("查订单状态: %v", err)
+	}
+	if status != "cancelled" {
+		t.Fatalf("滑点越闸门订单 status=%s，期望 cancelled", status)
+	}
+
+	// ③ match.slippage=0 关闭：按原始成交价 10.4
+	if err := st.ParamRepo.Set("match.slippage", "0"); err != nil {
+		t.Fatalf("关闭滑点: %v", err)
+	}
+	addBuy("2014-07-31", "2014-08-01", 10.0)
+	if n, err := m.Match(ctx, "2014-08-01"); err != nil || n != 1 {
+		t.Fatalf("08-01 撮合 n=%d err=%v（滑点关闭应成交）", n, err)
+	}
+	if err := st.DB().QueryRow(`SELECT price FROM trade_fill WHERE date='2014-08-01'`).Scan(&px); err != nil {
+		t.Fatalf("查成交价: %v", err)
+	}
+	if !near(px, 10.4) {
+		t.Fatalf("滑点关闭成交价=%.4f want 10.4", px)
+	}
+}
+
 // TestMatchDividendClearCancelsPendingOrders 回归：除权日强制清仓后，在途订单必须取消。
 // 场景复刻 2018-05-23 sz300630：05-21 持仓 + 挂 05-23 止损卖单 → 05-22 除权跳空清仓
 // → 修复前 05-23 陈旧卖单触发「卖出成交但无持仓」报错，回放中断无汇总报告。

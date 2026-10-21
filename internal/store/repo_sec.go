@@ -99,9 +99,15 @@ func DeriveSecurity(code, firstDate string) contract.Security {
 
 // ActiveStockCodes 返回全部活跃股票代码（docs/00 §7 股票池：沪深主板+创业板+科创板），
 // 排除指数/other/B股，供 boxscan/screen 遍历。按 code 升序，便于稳定迭代与进度日志。
+// A2（2026-10-22，docs/21 F3 裁决 + docs/18 R2）：按名称排除 ST/*ST——ST 涨跌停 ±5%、
+// 退市风险，交易规则与正常股不同，达瓦斯池不含 ST（match gapThreshold 同此假设）。
+// 实测 full_hist.db %ST% 匹配零误伤（201 支全部 ST 族前缀，无「含ST但非ST」名）。
+// 边界：名称未知（空）的证券无从判定，保守保留；TDX 名称是当前时点快照，
+// 历史 ST 状态不可回溯（回测诚实标注的已知瑕疵）。
 func (r *SecRepo) ActiveStockCodes() ([]string, error) {
 	rows, err := r.db.Query(`SELECT code FROM security
 		WHERE kind = 'stock' AND board IN ('main', 'gem', 'star') AND status = 'active'
+		  AND (name IS NULL OR name = '' OR name NOT LIKE '%ST%')
 		ORDER BY code`)
 	if err != nil {
 		return nil, err
