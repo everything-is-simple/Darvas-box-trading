@@ -834,6 +834,35 @@ func (r *TradeRepo) TrackRecordByCode(code string) (trades, losses int, totalPnl
 	return
 }
 
+// IsOldFriend 老朋友判定（G2，docs/00 §6 池4）：最近连续 2 笔平仓均盈利 → 投缘，
+// 下次发信号时优先纳入交易池。止损不动（放宽止损的三理由不可复制，见 docs/00 §6 G2）。
+// 只读最近 closed_date 升序的最后 2 笔 realized_pnl，全为正才返回 true。
+func (r *TradeRepo) IsOldFriend(code string) (bool, error) {
+	rows, err := r.db.Query(`SELECT realized_pnl FROM position
+		WHERE code = ? AND status = 'closed' AND closed_date IS NOT NULL
+		ORDER BY closed_date DESC, id DESC LIMIT 2`, code)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var pnl float64
+		if err := rows.Scan(&pnl); err != nil {
+			return false, err
+		}
+		if pnl <= 0 {
+			return false, nil // 最近一笔亏损即非老朋友
+		}
+		n++
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return n == 2, nil // 需最近 2 笔均盈利
+}
+
+
 // ---------------------------------------------------------------------------
 // 订单审核（C：炒股手成交导入后的执行质量对照）
 // ---------------------------------------------------------------------------

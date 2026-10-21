@@ -310,6 +310,14 @@ func buildSyntheticSource(t *testing.T, path string) {
 		}
 	}
 
+	// 本差分测试专注 as-of 一致性（progressive vs prefill 全等），不测 G1 观察期：
+	// 关闭 min_watch_days（=0），保留 sh600001「t13 入池→t15 突破」的紧凑时间线。
+	// G1 观察期已有 TestPlannerMinWatchDays / TestPlannerMinWatchDaysExpired 独立覆盖。
+	if _, err := st.DB().Exec(`INSERT INTO param(key,value) VALUES('pool.min_watch_days','0')
+		ON CONFLICT(key) DO UPDATE SET value='0'`); err != nil {
+		t.Fatalf("设 min_watch_days=0: %v", err)
+	}
+
 	var bars []contract.DailyBar
 	for i := 1; i <= 30; i++ {
 		bars = append(bars, bar("sh000001", i, 2995, 3010, 2990, 3000, 100000))

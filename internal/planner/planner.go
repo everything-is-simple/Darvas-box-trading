@@ -18,6 +18,7 @@ import (
 	"context"
 	"log"
 	"math"
+	"sort"
 	"time"
 
 	"darvas/internal/contract"
@@ -57,6 +58,8 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	probeBull := p.st.ParamRepo.GetFloat("pos.units.per_stock_probe_bull", 2)
 	mainMax := p.st.ParamRepo.GetFloat("pos.units.per_stock_main_max", 10)
 	mainStep := p.st.ParamRepo.GetFloat("pos.units.per_stock_main_step", 3)
+	// G1 观察期（2026-10-21）：入池后 N 个交易日内不产生首笔买入信号（原书 L1895/L1063）。
+	minWatchDays := p.st.ParamRepo.GetInt("pool.min_watch_days", 3)
 
 	// 权益基准
 	eq, _ := p.st.TradeRepo.LatestEquity()
@@ -85,6 +88,23 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	if err != nil {
 		res.Status, res.Error = "failed", err.Error()
 		return res, err
+	}
+	// G2 老朋友优先（2026-10-21，docs/00 §6 池4）：连续 2 笔盈利的"老朋友"再发
+	// breakout 信号时排前，竞争试探预算时优先成交（止损不动）。稳定排序，其余顺序不变。
+	oldFriends := map[string]bool{}
+	for _, s := range sigs {
+		if s.Type != contract.SignalBreakout {
+			continue
+		}
+		if ok, err := p.st.TradeRepo.IsOldFriend(s.Code); err == nil && ok {
+			oldFriends[s.Code] = true
+		}
+	}
+	if len(oldFriends) > 0 {
+		sort.SliceStable(sigs, func(i, j int) bool {
+			return oldFriends[sigs[i].Code] && !oldFriends[sigs[j].Code]
+		})
+		p.log.Printf("老朋友优先 %d 支：%v", len(oldFriends), mapKeys(oldFriends))
 	}
 	// 持仓（决定卖出数量 + 加码腿号）
 	positions, err := p.st.TradeRepo.OpenPositions()
@@ -121,6 +141,18 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		}
 		switch s.Type {
 		case contract.SignalBreakout, contract.SignalPyramid:
+			// G1 观察期（2026-10-21）：仅首腿 breakout 受观察期约束——新票入池后
+			// min_watch_days 个交易日内不产生首笔买单（原书 L1895「投资前仔细研究」+L1063「继续关注数日」）。
+			// pyramid（持仓加码）不受限。
+			if s.Type == contract.SignalBreakout && minWatchDays > 0 {
+				w, _ := p.st.PoolRepo.WatchByCode(s.Code)
+				if w != nil && w.AddedDate != "" {
+					if n, err := p.st.BarRepo.BarCount(s.Code, w.AddedDate, planDate); err == nil && n < minWatchDays {
+						p.log.Printf("观察期拦截 %s 首买：入池%d日 < min_watch_days=%d", s.Code, n, minWatchDays)
+						continue
+					}
+				}
+			}
 			// M8.8：单位制仓位 + 组合级预算检查（熊猴 pyramid 在 buyOrder 内硬拦截）
 			o := p.buyOrder(s, box, market, unitValue, probeBear, probeBull, mainMax, mainStep,
 				buyPrem, sellDisc, maxLegs, posByCode, budget, plannedQty, planDate, executeDate)
@@ -486,4 +518,13 @@ func nextWeekday(date string) string {
 			return t.Format("2006-01-02")
 		}
 	}
+}
+
+// mapKeys 返回 map 的键切片（仅日志用，顺序不定）。
+func mapKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }

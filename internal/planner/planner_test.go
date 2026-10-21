@@ -396,6 +396,94 @@ func TestPlannerExecuteDate(t *testing.T) {
 	}
 }
 
+// TestPlannerMinWatchDays G1：入池后 min_watch_days 个交易日内不产生首笔买单。
+func TestPlannerMinWatchDays(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	// 入池日期=2026-10-15（距 planDate 10-16 仅 1 个交易日 < min_watch_days=3）
+	st.PoolRepo.UpsertWatch(contract.Watch{Code: code, AddedDate: "2026-10-15", Stage: contract.StageWatching})
+	st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
+		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
+	}})
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatal(err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 0 {
+		t.Fatalf("观察期内应无买单，实际 %d 笔", len(orders))
+	}
+}
+
+// TestPlannerMinWatchDaysExpired G1：入池已满 min_watch_days 个交易日 → 正常出首买单。
+func TestPlannerMinWatchDaysExpired(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	// 入池日期=2026-10-08（距 planDate 10-16 有 10-09/10-12/10-15 ≥3 个交易日）
+	st.PoolRepo.UpsertWatch(contract.Watch{Code: code, AddedDate: "2026-10-08", Stage: contract.StageWatching})
+	st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
+		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
+	}})
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatal(err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("观察期已满应出 1 笔买单，实际 %d 笔", len(orders))
+	}
+}
+
+// TestIsOldFriend G2：IsOldFriend 判定连续 2 笔盈利。
+func TestIsOldFriend(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
+
+	// 造两笔已平仓盈利记录（直接 SQL 插入 position）
+	if _, err := st.DB().Exec(`INSERT INTO position(code, opened_date, closed_date, qty, avg_cost, stop_price, status, close_reason, realized_pnl)
+		VALUES (?, '2026-01-05','2026-02-05', 100, 10, 9.7, 'closed','stop', 500),
+		       (?, '2026-03-05','2026-04-05', 100, 12, 11.6, 'closed','stop', 800)`, code, code); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := st.TradeRepo.IsOldFriend(code)
+	if err != nil || !ok {
+		t.Fatalf("IsOldFriend=%v err=%v，连续2笔盈利应为 true", ok, err)
+	}
+
+	// 追加一笔亏损 → 最近一笔亏损，应为 false
+	if _, err := st.DB().Exec(`INSERT INTO position(code, opened_date, closed_date, qty, avg_cost, stop_price, status, close_reason, realized_pnl)
+		VALUES (?, '2026-05-05','2026-06-05', 100, 15, 14.5, 'closed','stop', -300)`, code); err != nil {
+		t.Fatal(err)
+	}
+	ok, _ = st.TradeRepo.IsOldFriend(code)
+	if ok {
+		t.Fatalf("最近一笔亏损后 IsOldFriend 应为 false")
+	}
+}
+
 // ─── 辅助 ──
 
 func newPlannerStore(t *testing.T) *store.Store {
