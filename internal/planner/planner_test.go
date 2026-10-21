@@ -135,7 +135,7 @@ func TestPlannerPyramidAllowedAnyRegime(t *testing.T) {
 	}
 }
 
-// TestPlannerBullPyramidLeg2Qty 牛市腿2=3单位；止损仍=新箱体下轨×0.97（B1不改此腿）。
+// TestPlannerBullPyramidLeg2Qty 牛市腿2=3单位；止损=被突破箱体上轨×0.97（B2 校订：原书「新箱体下轨」≈旧箱体上轨）。
 func TestPlannerBullPyramidLeg2Qty(t *testing.T) {
 	st := newPlannerStore(t)
 	code := "sh600519"
@@ -170,8 +170,8 @@ func TestPlannerBullPyramidLeg2Qty(t *testing.T) {
 	if o.Qty != 1800 || o.LegNo != 2 {
 		t.Errorf("order qty/leg=%d/%d want 1800/2", o.Qty, o.LegNo)
 	}
-	if stop, ok := o.Reason["stop"].(float64); !ok || !approx(stop, 19.40, 0.01) {
-		t.Errorf("reason.stop=%v want ≈19.40（腿2=新箱体下轨×0.97）", o.Reason["stop"])
+	if stop, ok := o.Reason["stop"].(float64); !ok || !approx(stop, 29.10, 0.01) {
+		t.Errorf("reason.stop=%v want ≈29.10（腿2=被突破箱体上轨30×0.97）", o.Reason["stop"])
 	}
 	if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "main" {
 		t.Errorf("reason.budget_bucket=%v want main", o.Reason["budget_bucket"])

@@ -179,7 +179,12 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 
 	// B2⑤ 不获利持仓约束（原书：买入后3周仍不获利→退出——资金效率纪律，
 	// 非箱体事件，直接生成卖出计划；持有交易日数=BarCount(opened_date, planDate)）。
-	staleDays := p.st.ParamRepo.GetInt("position.staledays", 15)
+	// B3 校订（2026-10-22，用户拍板）：原书 3 周(21自然日)≈15 交易日是 1960 年代
+	// T+0 无涨跌停的节奏；A 股行情发动常 10 日内见顶回落，15 日强平熬出的是「已死仓位」。
+	// 实测 M8.8 五年 53 笔平仓中，16 日强平 17 笔全亏（平均 -7363）。
+	// 改「尽快斩断亏损」：staledays 15→2（次日收盘仍 ≤ 成本即走，第3日卖出）。
+	// 依据《简简单单做股票》L755「不赚钱立刻出局」+ A股 T+1 最早次日可卖。
+	staleDays := p.st.ParamRepo.GetInt("position.staledays", 2)
 	for i := range positions {
 		pos := &positions[i]
 		if pos.Qty <= 0 {
@@ -201,13 +206,13 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 			Side: "sell", OrderKind: "stop_sell",
 			TriggerPrice: px, LimitPrice: px, Qty: pos.Qty, LegNo: 0,
 			Reason: map[string]any{
-				"signal": "time_stop_3weeks", "days_held": n,
+				"signal": "time_stop_noprofit", "days_held": n,
 				"avg_cost": pos.AvgCost, "last_close": px, "qty": pos.Qty, "position_id": pos.ID,
 			},
 		})
 		// P0-3（2026-10-21）：回写 pendingSell，防御同批次重复卖单（与信号循环同源）。
 		pendingSell[pos.Code] = true
-		p.log.Printf("3周不获利离场 %s（持有%d日 收盘%.2f≤成本%.2f）", pos.Code, n, px, pos.AvgCost)
+		p.log.Printf("不获利离场 %s（持有%d日 收盘%.2f≤成本%.2f）", pos.Code, n, px, pos.AvgCost)
 	}
 
 	// ST1（2026-10-21）：首腿初始止损单——持仓期每日挂常驻止损卖单（trigger=pos.StopPrice）。
@@ -331,7 +336,7 @@ func unitShares(unitValue, price float64) int {
 
 // raiseStops 止损上移（M4.4）：对每只持仓，若最新箱体下轨已3日确认
 // 且 新止损 = 下轨×sellDisc 高于现止损 → UpdateStop（触发器兜底拒绝下降）。
-// 入场箱体本身不参与（B1修正后：腿1初始止损=其上轨下方、腿2/3初始止损=其下轨下方，
+// 入场箱体本身不参与（B2 校订后：腿1/2/3 初始止损一律=入场箱体上轨下方，
 // 均不随入场箱体自身重算）。返回上移笔数。
 //
 // 修复 archive/07 #1：用 LatestNonFormingBox——LatestBox 取 forming(bottom=0) 致
@@ -378,14 +383,13 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	buyPrem, sellDisc float64, maxLegs int, posByCode map[string]*contract.Position,
 	budget *unitBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
-	// 初始止损（B1修正，原书§4.1）：腿1=被突破箱体上轨（突破点）下方——紧止损；
-	// 腿2/3=新箱体下轨下方（新箱体确立后止损上移至其下轨，符合原书阶梯规则）。
-	stop := box.Bottom * sellDisc
-	if s.Type == contract.SignalBreakout {
-		stop = box.Top * sellDisc
-	}
-	if trigger <= 0 || stop <= 0 || box.Bottom <= 0 {
-		return nil // 无下轨或触发/止损非法，不生成买单
+	// 初始止损（B2 校订 2026-10-22，原书 §4.1 + §3.4）：腿1/腿2/腿3 一律=被突破箱体
+	// 上轨（突破点）下方——紧止损。原书 §3.4「新箱体下轨 ≈ 前一箱体上轨（±3%容差）」，
+	// 故「新箱体下轨下方」等价于「被突破旧箱体上轨下方」；旧实现腿2/3 误用旧箱体下轨
+	// （box.Bottom），比正确位置低一个箱体高度、止损过宽。统一为 box.Top×sellDisc。
+	stop := box.Top * sellDisc
+	if trigger <= 0 || stop <= 0 || box.Top <= 0 {
+		return nil // 无上轨或触发/止损非法，不生成买单
 	}
 	// P0-2（2026-10-21）：生成买单前校验 trigger 与信号现价偏离。
 	// 正常 breakout 时 ClosePx ≈ 箱顶、trigger ≈ 箱顶×1.03（偏离约3%）；
