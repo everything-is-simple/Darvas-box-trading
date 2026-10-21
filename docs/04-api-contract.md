@@ -503,7 +503,7 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
 
 **复权日处理（不复权方案，用户拍板 2026-10-19）**：跳空检测（当日跌幅超涨跌停限制+ε）→ 判定除权日。持仓股当日撮合器最前强制清仓（价=前日收盘，reason=dividend），清仓后 CancelOpenOrders 标记该股在途订单 cancelled。watch 股不额外处理。
 
-**⚠️ 待沉淀修复（docs/18 P0-2，当前缺失）**：当前成交规则 `O >= T` 取开盘价成交**无追高上限**，导致 71 笔买腿中 63.4% 高于计划买点 >5%、中位 +7.35%、8 笔超 +50%。需加 `max_entry_gap`（建议 1.05）参数：撮合器检测 `fill/trigger - 1 > max_entry_gap` 则弃单并记 `skipped_gap` 事件；planner 生成订单前校验 `abs(trigger/现价 - 1) < 阈值`，违反直接拒绝并告警。
+**✅ 已修复（2026-10-21 P0-2，migration 0013）**：加 `match.max_entry_gap`（默认 1.05）。撮合器买入单 `成交价/触发价 > max_entry_gap` 则弃单置 cancelled；planner 生成买单前校验 `trigger 与现价 ClosePx 比值 > max_entry_gap` 则拒单。拦截了 71 笔买腿中 63.4% 高于计划买点 >5% 的跳空追高（含 sz002640 +63%、sz300168 +162% 两笔假利润来源）与 sh600825 型陈旧箱体灾难订单。
 
 ---
 

@@ -96,7 +96,7 @@
 
 | 序 | 任务 | 预期产出 |
 |----|------|---------|
-| 1 | P0-2：match 加 `max_entry_gap=1.05`（拒单记 `skipped_gap` 事件）+ planner 生成前 trigger/现价校验 + 单测 | 新单测覆盖跳空拒单；sh600825 型订单被拒告警 |
+| 1 | **P0-2 ✅ 已完成（2026-10-21）：进场跳空上限 `match.max_entry_gap=1.05`**——match 成交时 px/trigger>1.05 弃单置 cancelled + planner 生成前 trigger 与现价比值>1.05 拒单；migration 0013 + 单测 TestMatchRejectGapChase / TestPlannerRejectStaleBoxOrder | 跳空追高单被拒；sh600825 型陈旧箱体订单被拒 |
 | 2 | P0-3：pendingSell 同批次回写 + 单测 | 同日同仓位仅一张卖单 |
 | 3 | P0-4（清池）+ 一致性加 trigger 偏移上限断言（**ST5 已废弃 maxwatch 断言**） | check_consistency 新增 trigger 偏移上限；active 不再设上限 |
 | 4 | P0-6：生产版本明确（推荐：生产切 M8.8 单位制，与回测同源；或声明生产=M8.6 并冻结） | reason_json 语义与声明一致 |
