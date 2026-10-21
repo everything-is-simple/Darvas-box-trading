@@ -102,7 +102,7 @@
 | 4 | P0-6：生产版本明确（推荐：生产切 M8.8 单位制，与回测同源；或声明生产=M8.6 并冻结） | reason_json 语义与声明一致 |
 | 5 | **G1 ✅ 已完成（2026-10-21）：入池 `pool.min_watch_days`(3) 个交易日内不产生首笔买单**——planner 主循环 buyOrder 前查 watch.AddedDate；pyramid 加码不受限。migration 0012 + 单测 TestPlannerMinWatchDays/Expired | 入池 <3 交易日的新票不出首买单 |
 | 5b | **G2 ✅ 已完成（2026-10-21）：老朋友优先纳入**——`IsOldFriend`(连续2笔盈利) 判定，planner 对老朋友 breakout 稳定排序排前，竞争试探预算优先成交；止损不动。单测 TestIsOldFriend | 老朋友优先成交 |
-| 6 | **ST1（本轮新增）：首腿初始止损单**——持仓期每日生成 `trigger=pos.StopPrice` 的常驻止损卖单（reason=initial_stop），与下轨止损并存、先到先触发、成交后撤另一张 | 首腿亏损单的 close_reason 出现 `initial_stop`；单笔止损距离回到设计值 3-5.8% |
+| 6 | **ST1 ✅ 已完成（2026-10-21）：首腿初始止损单**——planner 持仓期每日挂 trigger=pos.StopPrice 的 initial_stop 卖单（reason.signal=initial_stop），与下轨止损并存先到先触发；单测 TestPlannerInitialStopOrder | 首腿亏损单 close_reason 出现 initial_stop；止损距离回到设计值 3-5.8% |
 | 7 | **ST4（本轮新增，1 行）：** `screener.go:149` `LatestBox` → `LatestNonFormingBox` + 单测 | 刚 broken_up 的股票能进候选池（10-19 验证：0 → 至少几十支） |
 | 8 | **P0-5：修好的撮合器 + G1 + G2 + ST1 + ST4 重跑 2014-2018 全量 + verify 差分** | 新五年表；新旧表并列对比 |
 | 9 | 按工程判据 E1-E5 打勾 → 通过后看策略判据 S1 | E 全绿才许看 S1 |
