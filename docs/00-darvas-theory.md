@@ -160,7 +160,7 @@ forming ──3日确认上轨──→ forming_bottom ──3日确认下轨─
 | 1 | 太晚规则 | 突破后「四天都收在突破点之上」还没买=看到太晚，放弃 | screener：broken_up 后 ≥ `screen.latedays`(4) 个交易日 → 不入候选池 |
 | 2 | 两亏拉黑 | 同一股票两次亏损交易 → 不再碰 | poolsync：`realized_pnl<0` 交易满 `pool.maxloss`(2) 次 → watch=blacklisted，永不再入池 |
 | 3 | 条件挂起 | 「停传报价」：基本面/走势存疑时暂停跟踪，突破X再传 | `darvas pool suspend <code> --resume <价>`：收盘 ≥ 激活价自动恢复跟踪（suspended 不占跟踪名额） |
-| 4 | 跟踪上限 | 「同时跟踪5-8支」 | poolsync：活跃池（watching+pending+holding）≥ `pool.maxwatch`(8) → 不再入池 |
+| 4 | 跟踪数量 | 「一次只关注 5～8 支」 | ⚠️ **2026-10-21 用户拍板修正**：原书 L1074「我自然被迫将操作目标缩小到为数不多的几支股票，**以便节省费用**」——5-8 支是 1950 年代电报费（12-15 美元/股/天）倒逼结果，**不是策略原则**。系统无此成本（CPU+SQLite），故废弃硬上限：`pool.maxwatch` 降级为软参考（仅日志告警，不拒绝入池）；**有就进、无就 0**，资金预算（M8.8 单位制 50 单位）是唯一真正约束 |
 | 5 | 不获利3周 | 开仓3周仍不获利 → 退出，资金换到别处 | planner：开仓 ≥ `position.staledays`(15) 个交易日且收盘 ≤ 成本 → time_stop 卖单 |
 
 watch 状态机对应：`watching → pending`（买单生成）`→ holding`（成交）`→ exited`（清仓）；`watching → suspended`（人工挂起）`→ watching`（激活）；任意活跃态 `→ blacklisted`（两亏）。

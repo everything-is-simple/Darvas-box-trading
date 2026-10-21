@@ -69,11 +69,15 @@ func (m *Manager) Sync(ctx context.Context, date string) (contract.TaskResult, e
 				m.log.Printf("再纳入提示 %s: %d笔交易/亏%d/累计%.0f元", c.Code, trades, losses, pnl)
 			}
 		}
-		// B2④ 跟踪5-8支上限：活跃池（watching+pending+holding）满则不再入
+		// B2④ 跟踪数量（2026-10-21 用户拍板修正）：
+		//   原书 L1074「我自然被迫将操作目标缩小到为数不多的几支股票，以便节省费用」
+		//   ——5-8 支是 1950 年代电报费（12-15 美元/股/天）倒逼的结果，不是策略原则。
+		//   系统无电报费（CPU+SQLite），故废弃硬上限：有就进、无就 0。
+		//   唯一真正约束是 M8.8 资金预算（5 试探+30 主力+15 预备=50 单位）。
+		//   pool.maxwatch 降级为软参考（仅日志告警），不再拒绝入池。
 		active, _ := m.st.PoolRepo.ActiveWatchCount()
 		if active >= maxWatch {
-			m.log.Printf("跟踪池满（%d≥pool.maxwatch=%d），跳过入池 %s", active, maxWatch, c.Code)
-			break
+			m.log.Printf("跟踪池软参考（active=%d≥pool.maxwatch=%d）——原书电报费约束已废弃，仍入池 %s；资金预算为唯一约束", active, maxWatch, c.Code)
 		}
 		// 入池为 watching
 		box, _ := m.st.BoxRepo.LatestBox(c.Code)

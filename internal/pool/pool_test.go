@@ -127,7 +127,9 @@ func TestPoolTwoLossBlacklist(t *testing.T) {
 	}
 }
 
-// TestPoolMaxWatch B2④ 跟踪上限：活跃池满（≥pool.maxwatch）不再入池。
+// TestPoolMaxWatch B2④ 跟踪数量（2026-10-21 用户拍板修正）：
+// 原书 L1074「5-8支」是电报费倒逼结果，系统无此约束 → 废弃硬上限。
+// pool.maxwatch 降级为软参考（仅日志），不再拒绝入池；有就进、无就 0。
 func TestPoolMaxWatch(t *testing.T) {
 	st := newPoolStore(t)
 	st.ParamRepo.Set("pool.maxwatch", "2")
@@ -142,18 +144,19 @@ func TestPoolMaxWatch(t *testing.T) {
 	if _, err := m.Sync(context.Background(), "2026-10-16"); err != nil {
 		t.Fatal(err)
 	}
+	// 修正后：软参考仅日志告警，不拒绝入池——sz300411 应仍能入池
 	w, _ := st.PoolRepo.WatchByCode("sz300411")
-	if w != nil && w.Stage == contract.StageWatching {
-		t.Fatal("池满（2≥maxwatch=2）不应再入池 sz300411")
+	if w == nil || w.Stage != contract.StageWatching {
+		t.Fatal("maxwatch 已降级软参考：sz300411 应能入池（资金预算为唯一约束）")
 	}
-	// 挂起股票不占额度：挂起一个后腾出名额，可再入池
+	// 挂起股票仍不占额度（语义保留）
 	m.Suspend("sh600519", 999)
 	if _, err := m.Sync(context.Background(), "2026-10-16"); err != nil {
 		t.Fatal(err)
 	}
-	w, _ = st.PoolRepo.WatchByCode("sz300411")
-	if w == nil || w.Stage != contract.StageWatching {
-		t.Fatal("挂起腾出额度后 sz300411 应可入池")
+	w, _ = st.PoolRepo.WatchByCode("sh600519")
+	if w == nil || w.Stage != contract.StageSuspended {
+		t.Fatal("挂起后应处于 suspended 状态")
 	}
 }
 

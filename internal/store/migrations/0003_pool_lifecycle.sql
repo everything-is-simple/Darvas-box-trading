@@ -36,7 +36,7 @@ ALTER TABLE position ADD COLUMN realized_pnl REAL;
 
 -- 3) 新参数（同步 docs/01 §6 参数表）
 INSERT OR IGNORE INTO param(key, value) VALUES
-    ('pool.maxwatch', '8'),        -- 跟踪池活跃上限（原书：同时跟踪5-8支，超上限不再入池）
+    ('pool.maxwatch', '8'),        -- ⚠️ 2026-10-21 降级软参考：原书 L1074「节省电报费」倒逼，系统无此成本；不再拒绝入池，仅日志告警。资金预算（单位制）是唯一约束
     ('pool.maxloss', '2'),         -- 两亏拉黑阈值（同一股票亏损交易满N次→永久拉黑）
     ('screen.latedays', '4'),      -- 太晚规则：突破后第N个交易日（原书：四天收在突破点上方=太晚，放弃）
     ('position.staledays', '15');  -- 不获利持仓约束：开仓后N个交易日仍不获利→退出（原书3周）

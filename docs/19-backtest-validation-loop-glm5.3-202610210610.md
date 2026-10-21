@@ -32,7 +32,7 @@
 | L1 执行 | **进场无跳空上限（63.4% 买腿 >5% 偏离）** | 待修（本轮） | `max_entry_gap=1.05` + 拒单记事件 | docs/18 P0-2 |
 | L1 执行 | **ST1 首腿紧止损（B1）只写字段不执行**（2026-10-21 新增，见下） | **待修（本轮）** | 持仓期常驻初始止损单（trigger=pos.StopPrice），与下轨止损并存先到先触发 | 本轮新增 |
 | L3 信号 | **ST4 screener LatestBox 漏改 → 刚突破股进不了候选池**（2026-10-21 复查新增） | **待修（本轮，1 行）** | `screener.go:149` `LatestBox` → `LatestNonFormingBox`（archive/07 #1 修复 signal 时漏改一处） | 本轮新增 |
-| L4 仓位 | **ST5 池子满员后无换血机制**（P0-3 根因） | 已发现 | 满员后不剔不入，新机会永久进不来；提案 R2 轮：按 screener score 替换最低 watching | 本轮新增 |
+| L4 仓位 | **ST5 池子满员后无换血机制**（P0-3 根因） | **✅ 已修（2026-10-21 用户拍板）** | 废弃 `pool.maxwatch` 硬上限（pool.go:74-77 去掉 break），降级软参考仅日志；资金预算是唯一约束；书证 L1074「5-8 支是电报费倒逼，不是策略」 | 本轮已修 |
 | L1 执行 | 撮合无滑点（约 0.3-0.8%/年） | 已发现 | 加滑点参数对照跑（P1） | docs/18 |
 | L2 计划 | planner 不校验 trigger 与现价（sh600825 型订单） | 待修（本轮） | 生成前校验 + 违反拒单告警 | docs/18 P0-2 |
 | L2 计划 | pendingSell 未回写 → 同仓位重复卖单（rc=1） | 待修（本轮） | 生成卖单后回写（10min） | docs/18 P0-3 |
@@ -80,11 +80,13 @@
 
 **事实**：poolsync 在 `active >= maxwatch` 时直接 `break`（pool.go:72-77），**只入不剔**。watch 池一旦满员（如 10-16 frozen 的 114 支），新机会永久进不来。
 
-**书证**：L1063「最近四天已超出箱体，那我就不再关注」（剔除）+ L1895「每次只增加一支新股票」（加新）——合起来是**换血**。系统只实现了"剔除"（signal 出 stop/failed → exited 不占名额），没实现"加新时换血"。
+**书证**：L1074「我自然被迫将操作目标缩小到为数不多的几支股票，**以便节省费用**」——5-8 支是 1950 年代电报费（12-15 美元/股/天）倒逼结果，**不是策略原则**。系统无此成本（CPU+SQLite），把历史成本约束误植成规则。
 
-**后果**：与 ST4 耦合——即使 ST4 修好让新股票进候选池，poolsync 因满员仍不入；除非同时清池（P0-3）+ 加换血机制。
+**用户拍板修正（2026-10-21）**：「有就进、无就 0」——废弃 `pool.maxwatch` 硬上限，降级软参考（仅日志告警），不再拒绝入池；资金预算（M8.8 单位制 5 试探+30 主力+15 预备=50 单位）是唯一真正约束。
 
-**修法**：提案 R2 轮——满员时按 screener score 排名替换最低 `watching`（新候选 score > 最低 watching score 才换）。属规则层，需用户拍板。
+**已修**：pool.go:72-77 去掉 `break`，改为日志告警；pool_test.go TestPoolMaxWatch 改为验证"满员仍能入池"；docs/00 §6、docs/01 §6、migrations 0003 注释同步。✅ build + pool 包测试全绿。
+
+**P0-3 收窄**：清池后 + 废弃 maxwatch 后，poolsync 全量入池，**不再冻结**；ST5 闭环。原 P0-3"加 active≤maxwatch 一致性断言"废弃（约束已不存在）。
 
 **检查结论 2（解决方向是否有）：全部有。** 见表内「修法方向」列——每项要么有明确代码修法与工作量（docs/18 第六节），要么有明确实验编号（H1-H6）。
 
@@ -96,7 +98,7 @@
 |----|------|---------|
 | 1 | P0-2：match 加 `max_entry_gap=1.05`（拒单记 `skipped_gap` 事件）+ planner 生成前 trigger/现价校验 + 单测 | 新单测覆盖跳空拒单；sh600825 型订单被拒告警 |
 | 2 | P0-3：pendingSell 同批次回写 + 单测 | 同日同仓位仅一张卖单 |
-| 3 | P0-4（清池）+ 一致性加 active≤maxwatch、trigger 偏移上限两断言 | check_consistency 新增项全绿；active≤8 |
+| 3 | P0-4（清池）+ 一致性加 trigger 偏移上限断言（**ST5 已废弃 maxwatch 断言**） | check_consistency 新增 trigger 偏移上限；active 不再设上限 |
 | 4 | P0-6：生产版本明确（推荐：生产切 M8.8 单位制，与回测同源；或声明生产=M8.6 并冻结） | reason_json 语义与声明一致 |
 | 5 | **G1（用户快速落实）：入池首日 `pool.min_watch_days`（建议 3 个交易日）内不产生首笔买入信号**——与 P0-2 同属 planner 改造，一起落地。落地点：planner.plan 主循环在 buyOrder 前，查 watch.AddedDate 距 planDate 不足 min_watch_days 即跳过首笔买入信号（pyramid 加码不受限） | 入池 <3 个交易日的新票不出首买单；10-19 单日 7 单的现象消失 |
 | 6 | **ST1（本轮新增）：首腿初始止损单**——持仓期每日生成 `trigger=pos.StopPrice` 的常驻止损卖单（reason=initial_stop），与下轨止损并存、先到先触发、成交后撤另一张 | 首腿亏损单的 close_reason 出现 `initial_stop`；单笔止损距离回到设计值 3-5.8% |
