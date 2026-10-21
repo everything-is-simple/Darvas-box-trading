@@ -372,6 +372,47 @@ func TestPlannerSellOrderQty(t *testing.T) {
 	}
 }
 
+// TestPlannerInitialStopOrder ST1（2026-10-21）：持仓且当日无卖出信号 → 挂常驻初始止损单。
+// 修复前 pos.StopPrice 只写不执行（sellOrder 只看箱体下轨），首腿紧止损形同虚设。
+// 修复后：持仓期每日生成 trigger=pos.StopPrice 的 initial_stop 卖单。
+func TestPlannerInitialStopOrder(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	// 持仓：stop_price=16.49（初始止损位），当日无任何卖出信号
+	st.DB().Exec(`INSERT INTO position(code, opened_date, qty, avg_cost, stop_price, status)
+		VALUES (?, '2026-10-10', 500, 20, 16.49, 'open')`, code)
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatal(err)
+	}
+	_, orders, _ := st.TradeRepo.PlanOn("2026-10-16")
+	// 应有一张 initial_stop 卖单
+	found := false
+	for _, o := range orders {
+		if o.Side == "sell" && o.Reason != nil {
+			if sig, _ := o.Reason["signal"].(string); sig == "initial_stop" {
+				found = true
+				if o.TriggerPrice != 16.49 {
+					t.Errorf("initial_stop trigger=%v want 16.49（=pos.StopPrice）", o.TriggerPrice)
+				}
+				if o.Qty != 500 {
+					t.Errorf("initial_stop qty=%d want 500", o.Qty)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("ST1：持仓且无卖出信号时应生成 initial_stop 卖单，实际订单 %d 笔", len(orders))
+	}
+}
+
 // TestPlannerNoDuplicateSell P0-3（2026-10-21）：同仓位同批次只产一张卖单。
 // 持仓既有 stop 信号（跌破箱下轨）又满足 time_stop（持有≥staledays 且收盘≤成本），
 // 修复前 pendingSell 未回写会生成两张卖单；修复后仅一张。

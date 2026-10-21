@@ -209,6 +209,30 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		p.log.Printf("3周不获利离场 %s（持有%d日 收盘%.2f≤成本%.2f）", pos.Code, n, px, pos.AvgCost)
 	}
 
+	// ST1（2026-10-21）：首腿初始止损单——持仓期每日挂常驻止损卖单（trigger=pos.StopPrice）。
+	// 修复前 pos.StopPrice 只写不执行：sellOrder 触发价恒为箱体下轨×sellDisc，从不看 StopPrice，
+	// 导致首腿紧止损（原书 L2526 箱顶45→止损44⅞，约-3%）形同虚设、单笔实际风险=到下轨距离(10-20%)。
+	// 本单与箱体下轨止损单并存，match 撮合时按各自 trigger 先到先触发（成交后 CancelOpenOrders 撤另一张）。
+	// 仅对"当日无卖出单的持仓"挂（避免与 stop/failed/time_stop 重复）。
+	for i := range positions {
+		pos := &positions[i]
+		if pos.Qty <= 0 || pos.StopPrice <= 0 {
+			continue
+		}
+		if pendingSell[pos.Code] {
+			continue // 当日已有卖出单（stop/failed/time_stop），不再挂初始止损
+		}
+		orders = append(orders, contract.PlanOrder{
+			PlanDate: planDate, ExecuteDate: executeDate, Code: pos.Code,
+			Side: "sell", OrderKind: "stop_sell",
+			TriggerPrice: pos.StopPrice, LimitPrice: pos.StopPrice, Qty: pos.Qty, LegNo: 0,
+			Reason: map[string]any{
+				"signal": "initial_stop", "stop_price": pos.StopPrice,
+				"avg_cost": pos.AvgCost, "qty": pos.Qty, "position_id": pos.ID,
+			},
+		})
+	}
+
 	// 创建计划
 	planID, err := p.st.TradeRepo.CreatePlan(contract.TradePlan{
 		PlanDate:          planDate,

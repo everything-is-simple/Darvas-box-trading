@@ -181,12 +181,20 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 
 	// ⑤ 计划与权益：每日一份计划；t15 breakout 信号 → 1 笔买单（leg1，exec t16），
 	//    M8.2 撮合器 t16 成交（status=filled）；权益 ≈ 本金−买入支出+市值 ≈ 999774
+	//    ST1（2026-10-21）后：持仓期每日挂 initial_stop 止损卖单（未触发逐日过期），
+	//    故 plan_order 不止 1 笔——含 1 buy + 若干 expired/pending 的 sell。
 	var nPlan, nOrder, nEq int
 	if err := one(`SELECT COUNT(*) FROM trade_plan`).Scan(&nPlan); err != nil || nPlan != len(days) {
 		t.Fatalf("trade_plan = %d err=%v, 期望 %d", nPlan, err, len(days))
 	}
-	if err := one(`SELECT COUNT(*) FROM plan_order`).Scan(&nOrder); err != nil || nOrder != 1 {
-		t.Fatalf("plan_order = %d err=%v, 期望 1（t15 breakout → leg1 买单）", nOrder, err)
+	// 买单 1 笔（t15 breakout → leg1）
+	if err := one(`SELECT COUNT(*) FROM plan_order WHERE side='buy'`).Scan(&nOrder); err != nil || nOrder != 1 {
+		t.Fatalf("buy plan_order = %d err=%v, 期望 1（t15 breakout → leg1 买单）", nOrder, err)
+	}
+	// ST1 止损卖单：持仓期每日挂 initial_stop，未触发逐日过期（sell 单 ≥1 且无 filled）
+	var nSell int
+	if err := one(`SELECT COUNT(*) FROM plan_order WHERE side='sell' AND order_kind='stop_sell'`).Scan(&nSell); err != nil || nSell < 1 {
+		t.Fatalf("ST1 止损卖单 = %d err=%v, 期望 ≥1（持仓期每日挂 initial_stop）", nSell, err)
 	}
 	// 订单明细：buy/leg1/filled，执行日 t16，数量 1700（M8.8 单位制：1单位=20000元，
 	//   触发价 11.33 → 1单位股数=floor(20000/11.33/100)*100=1700）
@@ -194,7 +202,7 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 	var oQty, oLeg int
 	var oExec string
 	if err := one(`SELECT o.side, o.order_kind, o.qty, COALESCE(o.leg_no,0), o.status, CAST(p.execute_date AS TEXT)
-		FROM plan_order o JOIN trade_plan p ON p.id=o.trade_plan_id LIMIT 1`).
+		FROM plan_order o JOIN trade_plan p ON p.id=o.trade_plan_id WHERE o.side='buy' LIMIT 1`).
 		Scan(&oSide, &oKind, &oQty, &oLeg, &oStatus, &oExec); err != nil {
 		t.Fatalf("读 plan_order: %v", err)
 	}
