@@ -40,7 +40,6 @@ func (m *Manager) Sync(ctx context.Context, date string) (contract.TaskResult, e
 	res := contract.TaskResult{Task: "poolsync", Date: date}
 	flatMax := m.st.ParamRepo.GetInt("pool.flatboxmax", 4)
 	maxWatch := m.st.ParamRepo.GetInt("pool.maxwatch", 8)
-	maxLoss := m.st.ParamRepo.GetInt("pool.maxloss", 2)
 
 	// 1) 入池：今日候选中尚未在池（或已退出）的 → watching
 	cands, err := m.st.PoolRepo.CandidatesOn(date)
@@ -50,17 +49,22 @@ func (m *Manager) Sync(ctx context.Context, date string) (contract.TaskResult, e
 	}
 	entered := 0
 	for _, c := range cands {
-		// B2③ 两亏拉黑：亏损交易次数已达阈值 → 永久不入池
-		if n, err := m.st.TradeRepo.LossCountByCode(c.Code); err == nil && n >= maxLoss {
-			m.log.Printf("两亏拉黑拦截入池 %s（历史亏损%d次≥%d）", c.Code, n, maxLoss)
-			continue
+		// 0017 战绩分级：黑名单冷却期内不入池（最近一笔亏损 → 黑名单 N 月，冷却后自动解禁）。
+		if lv, _ := m.st.SecRepo.TrackLevel(c.Code); lv == contract.TrackBlacklist {
+			if until, _ := m.st.SecRepo.BlacklistUntil(c.Code); until != "" && until >= date {
+				m.log.Printf("黑名单拦截入池 %s（冷却至 %s）", c.Code, until)
+				continue
+			}
+			// 冷却期满 → 解禁回 normal，允许入池
+			m.st.SecRepo.SetTrackLevel(c.Code, contract.TrackNormal, "")
+			m.log.Printf("黑名单解禁 %s（冷却期满）", c.Code)
 		}
 		existing, _ := m.st.PoolRepo.WatchByCode(c.Code)
 		if existing != nil && existing.Stage != contract.StageExited {
 			continue // 已在池（未退出），不重复入（blacklisted/suspended 也在此列）
 		}
 		// B3 再纳入提示（仅重新入池路径查战绩，原书：先读历史教训再纳入）：
-		// 曾交易过且未达两亏者 → watch.note 留痕（"darvas review list <code>" 查教训）
+		// 曾交易过者 → watch.note 留痕（"darvas review list <code>" 查教训）
 		note := ""
 		if existing != nil {
 			if trades, losses, pnl, e := m.st.TradeRepo.TrackRecordByCode(c.Code); e == nil && trades > 0 {
@@ -140,9 +144,9 @@ func (m *Manager) Sync(ctx context.Context, date string) (contract.TaskResult, e
 	}
 
 	// 3) B2 淘汰生命周期：
-	//   ③两亏拉黑：活跃池股票亏损次数达标 → blacklisted
+	//   ③黑名单冷却解禁：blacklisted 股票冷却期满 → normal（可重新入池）
 	//   ⑤条件挂起激活：suspended 股票收盘≥激活价 → watching
-	blacklisted, resumed := m.lifecycle(date, maxLoss)
+	blacklisted, resumed := m.lifecycle(date)
 
 	res.Status = "ok"
 	res.AffectedRows = int64(entered + exited + blacklisted + resumed)
@@ -153,28 +157,26 @@ func (m *Manager) Sync(ctx context.Context, date string) (contract.TaskResult, e
 }
 
 // lifecycle 淘汰生命周期巡检（B2）：
-//  1. 两亏拉黑——watching/pending/holding 股票若历史亏损交易次数 ≥ maxLoss → blacklisted
-//     （清仓由 ledger 完成，poolsync 次日兜底拉黑；pending/holding 一般不会有两亏仍留池，防御性处理）
+//  1. 黑名单冷却解禁（0017）——blacklisted 股票 blacklist_until ≤ date → normal（可重新入池）。
+//     （拉黑动作本身在清仓时由 ClosePosition 完成，此处只做「到期解禁」）
 //  2. 条件挂起激活——suspended 股票最新收盘 ≥ resume_trigger → 回 watching（"突破X再传"）
-func (m *Manager) lifecycle(date string, maxLoss int) (blacklisted, resumed int) {
-	for _, stage := range []contract.WatchStage{contract.StageWatching, contract.StagePending, contract.StageHolding} {
-		ws, err := m.st.PoolRepo.WatchByStage(stage)
-		if err != nil {
-			continue
+func (m *Manager) lifecycle(date string) (unblacklisted, resumed int) {
+	for _, w := range m.watchBlacklisted() {
+		until, err := m.st.SecRepo.BlacklistUntil(w.Code)
+		if err != nil || until == "" || until > date {
+			continue // 冷却未满
 		}
-		for _, w := range ws {
-			if n, err := m.st.TradeRepo.LossCountByCode(w.Code); err == nil && n >= maxLoss {
-				w.Stage = contract.StageBlacklisted
-				w.ExitReason = fmt.Sprintf("two_losses_%d", n)
-				m.st.PoolRepo.UpsertWatch(w)
-				m.log.Printf("两亏拉黑 %s（历史亏损%d次）", w.Code, n)
-				blacklisted++
-			}
+		if err := m.st.SecRepo.SetTrackLevel(w.Code, contract.TrackNormal, ""); err == nil {
+			w.Stage = contract.StageExited // watch 层面退出，等候选再入池
+			w.ExitReason = "blacklist_expired"
+			m.st.PoolRepo.UpsertWatch(w)
+			m.log.Printf("黑名单解禁 %s（冷却至 %s 已满）", w.Code, until)
+			unblacklisted++
 		}
 	}
 	sus, err := m.st.PoolRepo.WatchByStage(contract.StageSuspended)
 	if err != nil {
-		return blacklisted, 0
+		return unblacklisted, 0
 	}
 	for _, w := range sus {
 		if w.ResumeTrigger <= 0 {
@@ -194,7 +196,16 @@ func (m *Manager) lifecycle(date string, maxLoss int) (blacklisted, resumed int)
 			resumed++
 		}
 	}
-	return blacklisted, resumed
+	return unblacklisted, resumed
+}
+
+// watchBlacklisted 取 watch 表中 stage=blacklisted 的股票（黑名单冷却解禁巡检用）。
+func (m *Manager) watchBlacklisted() []contract.Watch {
+	ws, err := m.st.PoolRepo.WatchByStage(contract.StageBlacklisted)
+	if err != nil {
+		return nil
+	}
+	return ws
 }
 
 // MarkFundamental 人工复核基本面（yes/no）。

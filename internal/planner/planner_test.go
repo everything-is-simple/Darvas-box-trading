@@ -52,8 +52,8 @@ func TestPlannerBreakoutUnitQtyBear(t *testing.T) {
 	if units, ok := o.Reason["units"].(float64); !ok || units != 1 {
 		t.Errorf("reason.units=%v want 1", o.Reason["units"])
 	}
-	if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "probe" {
-		t.Errorf("reason.budget_bucket=%v want probe", o.Reason["budget_bucket"])
+	if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "normal" {
+		t.Errorf("reason.budget_bucket=%v want normal（0017：普通池首买）", o.Reason["budget_bucket"])
 	}
 }
 
@@ -97,9 +97,8 @@ func TestPlannerBreakoutUnitQtyBull(t *testing.T) {
 	}
 }
 
-// TestPlannerPyramidAllowedAnyRegime 方案A（2026-10-21）：熊猴也允许金字塔加码（不择时）。
-// 原 M8.8 硬规则「熊猴 pyramid 不生成」已撤，改为任何市况都按个股箱体加码。
-func TestPlannerPyramidAllowedAnyRegime(t *testing.T) {
+// TestPlannerNoPyramidOnHolding 0017（2026-10-22）：已持仓股再突破 → 一律不加码，无买单。
+func TestPlannerNoPyramidOnHolding(t *testing.T) {
 	st := newPlannerStore(t)
 	code := "sh600519"
 	seedBars(t, st, code)
@@ -108,6 +107,16 @@ func TestPlannerPyramidAllowedAnyRegime(t *testing.T) {
 		BottomConfirmed: "2026-10-14", Status: contract.BoxConfirmed,
 	}})
 	if err != nil {
+		t.Fatal(err)
+	}
+	// 已持仓（holding）
+	posID, err := st.TradeRepo.CreatePosition(contract.Position{
+		Code: code, OpenedDate: "2026-10-10", EntryBoxID: ids[0], Qty: 600, AvgCost: 25, StopPrice: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.TradeRepo.AddLeg(posID, 1, "2026-10-10", 600, 25, 20, 0); err != nil {
 		t.Fatal(err)
 	}
 	st.SignalRepo.AppendSignals([]contract.Signal{{
@@ -124,33 +133,29 @@ func TestPlannerPyramidAllowedAnyRegime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := false
 	for _, o := range orders {
-		if o.Side == "buy" && o.LegNo >= 2 {
-			found = true
+		if o.Side == "buy" {
+			t.Fatalf("0017 已持仓一律不加码，不应有买单: %+v", o)
 		}
-	}
-	if !found {
-		t.Fatalf("方案A：熊猴也应允许 pyramid 加码（不择时），实际订单 %d 笔", len(orders))
 	}
 }
 
-// TestPlannerBullPyramidLeg2Qty 牛市腿2=3单位；止损=被突破箱体上轨×0.97（B2 校订：原书「新箱体下轨」≈旧箱体上轨）。
-func TestPlannerBullPyramidLeg2Qty(t *testing.T) {
+// TestPlannerWinnerFirstBuy 0017：赢家池（track_level=winner）首买 5 单位。
+func TestPlannerWinnerFirstBuy(t *testing.T) {
 	st := newPlannerStore(t)
 	code := "sh600519"
 	seedBars(t, st, code)
-	seedBullRegime(t, st, "2026-10-16")
-	ids, err := st.BoxRepo.UpsertBoxes([]contract.Box{{
-		Code: code, Top: 30, Bottom: 20, TopConfirmed: "2026-10-10",
-		BottomConfirmed: "2026-10-14", Status: contract.BoxConfirmed,
-	}})
-	if err != nil {
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	// 标记为赢家池
+	if err := st.SecRepo.SetTrackLevel(code, contract.TrackWinner, ""); err != nil {
 		t.Fatal(err)
 	}
 	st.SignalRepo.AppendSignals([]contract.Signal{{
-		Date: "2026-10-16", Code: code, Type: contract.SignalPyramid,
-		BoxID: ids[0], ClosePx: 31, BoxLevel: 30,
+		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
+		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
 	}})
 	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
 
@@ -166,82 +171,23 @@ func TestPlannerBullPyramidLeg2Qty(t *testing.T) {
 		t.Fatalf("orders=%d want 1", len(orders))
 	}
 	o := orders[0]
-	// trigger=30×1.03=30.90；1单位股数=floor(20000/30.90/100)*100=600；腿2=3单位。
-	if o.Qty != 1800 || o.LegNo != 2 {
-		t.Errorf("order qty/leg=%d/%d want 1800/2", o.Qty, o.LegNo)
+	// 赢家池 5 单位：unitValue=20000，trigger=24×1.03=24.72，1单位=800股 → 5单位=4000股
+	if o.Qty != 4000 {
+		t.Errorf("qty=%d want 4000（赢家池 5 单位）", o.Qty)
 	}
-	if stop, ok := o.Reason["stop"].(float64); !ok || !approx(stop, 29.10, 0.01) {
-		t.Errorf("reason.stop=%v want ≈29.10（腿2=被突破箱体上轨30×0.97）", o.Reason["stop"])
+	if units, ok := o.Reason["units"].(float64); !ok || units != 5 {
+		t.Errorf("reason.units=%v want 5", o.Reason["units"])
 	}
-	if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "main" {
-		t.Errorf("reason.budget_bucket=%v want main", o.Reason["budget_bucket"])
-	}
-}
-
-// TestPlannerBullPyramidLeg3Qty 正常路径腿1=2单位、腿2=3单位，腿3补到单票10单位=5单位。
-func TestPlannerBullPyramidLeg3Qty(t *testing.T) {
-	st := newPlannerStore(t)
-	code := "sh600519"
-	seedBars(t, st, code)
-	seedBullRegime(t, st, "2026-10-16")
-	ids, err := st.BoxRepo.UpsertBoxes([]contract.Box{
-		{ID: 1, Code: code, Top: 24, Bottom: 17, TopConfirmed: "2026-10-09",
-			BottomConfirmed: "2026-10-13", Status: contract.BoxBrokenUp},
-		{ID: 2, Code: code, Top: 26, Bottom: 21, TopConfirmed: "2026-10-14",
-			BottomConfirmed: "2026-10-15", Status: contract.BoxConfirmed, PrevBoxID: 1},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	posID, err := st.TradeRepo.CreatePosition(contract.Position{
-		Code: code, OpenedDate: "2026-10-10", EntryBoxID: ids[0],
-		Qty: 1400, AvgCost: 24, StopPrice: 20,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.TradeRepo.AddLeg(posID, 1, "2026-10-10", 1400, 24, 20, 0); err != nil {
-		t.Fatal(err)
-	}
-	st.SignalRepo.AppendSignals([]contract.Signal{{
-		Date: "2026-10-16", Code: code, Type: contract.SignalPyramid,
-		BoxID: ids[1], ClosePx: 27, BoxLevel: 26,
-	}})
-	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
-
-	p := New(st)
-	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
-	if err != nil {
-		t.Fatal(err)
-	}
-	buys := 0
-	for _, o := range orders {
-		if o.Side != "buy" {
-			continue
-		}
-		buys++
-		// trigger=26×1.03=26.78；1单位股数=700；current=1400（2单位）→ 补5单位=3500。
-		if o.Qty != 3500 || o.LegNo != 3 {
-			t.Errorf("buy qty/leg=%d/%d want 3500/3", o.Qty, o.LegNo)
-		}
-		if units, ok := o.Reason["units"].(float64); !ok || units != 5 {
-			t.Errorf("reason.units=%v want 5", o.Reason["units"])
-		}
-	}
-	if buys != 1 {
-		t.Fatalf("buy orders=%d want 1", buys)
+	if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "winner" {
+		t.Errorf("reason.budget_bucket=%v want winner", o.Reason["budget_bucket"])
 	}
 }
 
-// TestPlannerProbeCapFallsToMain 方案A（2026-10-21）：试探 5 单位用满后，改吃主力预算（不择时）。
-// 原 M8.8 熊猴试探满即拒；方案A 后试探满即改吃主力（组合风控保留，不跟牛市绑定）。
-func TestPlannerProbeCapFallsToMain(t *testing.T) {
+// TestPlannerMaxHoldCap 0017：同时持仓达上限 pool.max_hold=7 → 不再开新仓。
+func TestPlannerMaxHoldCap(t *testing.T) {
 	st := newPlannerStore(t)
-	// 5 只已有试探仓：各 1 单位（close=25，qty=800，unitValue=20000）。
-	for i := 1; i <= 5; i++ {
+	// 已持有 7 只（达上限）
+	for i := 1; i <= 7; i++ {
 		code := fmt.Sprintf("sh60000%d", i)
 		seedPosition(t, st, code, 800, 25, 1)
 	}
@@ -265,54 +211,9 @@ func TestPlannerProbeCapFallsToMain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 方案A：试探满后改吃主力，新票应能开单（bucket=main）
-	found := false
 	for _, o := range orders {
 		if o.Side == "buy" && o.Code == code {
-			found = true
-			if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "main" {
-				t.Errorf("试探满后 bucket=%v want main（改吃主力预算）", o.Reason["budget_bucket"])
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("方案A：试探满后应改吃主力开新单，实际订单 %d 笔", len(orders))
-	}
-}
-
-// TestPlannerMainCapBlocksPyramid 主力 30 单位用满后，牛市也不再加码。
-func TestPlannerMainCapBlocksPyramid(t *testing.T) {
-	st := newPlannerStore(t)
-	seedBullRegime(t, st, "2026-10-16")
-	// 已有一只 30 单位主力仓：close=25，qty=24000，leg1+leg2。
-	seedPosition(t, st, "sh600000", 24000, 25, 2)
-
-	code := "sh600519"
-	seedBars(t, st, code)
-	ids, err := st.BoxRepo.UpsertBoxes([]contract.Box{{
-		Code: code, Top: 30, Bottom: 20, TopConfirmed: "2026-10-10",
-		BottomConfirmed: "2026-10-14", Status: contract.BoxConfirmed,
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	st.SignalRepo.AppendSignals([]contract.Signal{{
-		Date: "2026-10-16", Code: code, Type: contract.SignalPyramid,
-		BoxID: ids[0], ClosePx: 31, BoxLevel: 30,
-	}})
-	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
-
-	p := New(st)
-	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, o := range orders {
-		if o.Side == "buy" {
-			t.Fatalf("主力预算已满，不应再加码: %+v", o)
+			t.Fatalf("持仓已达上限 7 只，不应再开新仓: %+v", o)
 		}
 	}
 }

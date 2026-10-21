@@ -19,7 +19,6 @@ import (
 	"context"
 	"log"
 	"math"
-	"sort"
 	"time"
 
 	"darvas/internal/contract"
@@ -48,17 +47,12 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	start := time.Now()
 	res := contract.TaskResult{Task: "plan", Date: planDate}
 
-	// 参数（M8.8 单位制；旧 risk.leg1/leg23/maxpos/probe_* 保留禁用，不再读取）
+	// 参数（0017 战绩分级制：首买单位由池级决定，废腿号金字塔）
 	buyPrem := p.st.ParamRepo.GetFloat("buy.premium", 1.03)
 	sellDisc := p.st.ParamRepo.GetFloat("sell.discount", 0.97)
-	maxLegs := p.st.ParamRepo.GetInt("risk.maxlegs", 3)
-	unitPct := p.st.ParamRepo.GetFloat("pos.unit", 0.02)
-	probeCap := p.st.ParamRepo.GetFloat("pos.units.probe", 5)
-	mainCap := p.st.ParamRepo.GetFloat("pos.units.main", 30)
-	probeBear := p.st.ParamRepo.GetFloat("pos.units.per_stock_probe_bear", 1)
-	// 方案A（2026-10-21）：首腿统一 1 单位试探，不分牛熊——per_stock_probe_bull 已废弃不读。
-	mainMax := p.st.ParamRepo.GetFloat("pos.units.per_stock_main_max", 10)
-	mainStep := p.st.ParamRepo.GetFloat("pos.units.per_stock_main_step", 3)
+	unitPct := p.st.ParamRepo.GetFloat("pos.unit", 0.02)          // 1 单位 = 2% 权益（普通池首买）
+	winnerUnits := p.st.ParamRepo.GetFloat("pos.units.winner", 5) // 赢家池首买 5 单位
+	maxHold := p.st.ParamRepo.GetInt("pool.max_hold", 7)          // 同时最多持仓数（留 30% 现金）
 	// G1 观察期（2026-10-21）：入池后 N 个交易日内不产生首笔买入信号（原书 L1895/L1063）。
 	minWatchDays := p.st.ParamRepo.GetInt("pool.min_watch_days", 3)
 	// P0-2（2026-10-21）：进场跳空上限（成交/trigger 偏离上限，默认 +5%）。
@@ -77,13 +71,14 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	unitValue := equity * unitPct
 	market := p.regimeLabel(planDate)
 
-	// M8.8 组合级预算：试探满 5 不加新试探，主力满 30 不再加码。
-	openProbe, openMain, err := p.st.TradeRepo.OpenExposureUnits(unitValue)
+	// 0017 组合级约束：同时持仓数上限（7 只 × 赢家池 5 单位 = 70%，留 30% 现金）。
+	// 不再有「试探/主力」分桶预算——不加码，仓位只有首买一档，组合风险由「持仓数」管。
+	openCount, err := p.st.TradeRepo.OpenPositionCount()
 	if err != nil {
 		res.Status, res.Error = "failed", err.Error()
 		return res, err
 	}
-	budget := &unitBudget{probeUsed: openProbe, mainUsed: openMain, probeCap: probeCap, mainCap: mainCap}
+	budget := &holdBudget{open: openCount, max: maxHold}
 	plannedQty := map[string]int{} // 同日多信号同票时，避免重复超配
 
 	// 信号
@@ -91,23 +86,6 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	if err != nil {
 		res.Status, res.Error = "failed", err.Error()
 		return res, err
-	}
-	// G2 老朋友优先（2026-10-21，docs/00 §6 池4）：连续 2 笔盈利的"老朋友"再发
-	// breakout 信号时排前，竞争试探预算时优先成交（止损不动）。稳定排序，其余顺序不变。
-	oldFriends := map[string]bool{}
-	for _, s := range sigs {
-		if s.Type != contract.SignalBreakout {
-			continue
-		}
-		if ok, err := p.st.TradeRepo.IsOldFriend(s.Code); err == nil && ok {
-			oldFriends[s.Code] = true
-		}
-	}
-	if len(oldFriends) > 0 {
-		sort.SliceStable(sigs, func(i, j int) bool {
-			return oldFriends[sigs[i].Code] && !oldFriends[sigs[j].Code]
-		})
-		p.log.Printf("老朋友优先 %d 支：%v", len(oldFriends), mapKeys(oldFriends))
 	}
 	// 持仓（决定卖出数量 + 加码腿号）
 	positions, err := p.st.TradeRepo.OpenPositions()
@@ -156,9 +134,9 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 					}
 				}
 			}
-			// M8.8：单位制仓位 + 组合级预算检查（熊猴 pyramid 在 buyOrder 内硬拦截）
-			o := p.buyOrder(s, box, market, unitValue, probeBear, mainMax, mainStep,
-				buyPrem, sellDisc, maxLegs, posByCode, budget, plannedQty, planDate, executeDate, maxEntryGap)
+			// 0017 战绩分级制：首买单位由池级决定（普通 1 / 赢家 5），一律不加码。
+			o := p.buyOrder(s, box, market, unitValue, winnerUnits,
+				buyPrem, sellDisc, posByCode, budget, plannedQty, planDate, executeDate, maxEntryGap)
 			if o != nil {
 				orders = append(orders, *o)
 			}
@@ -280,9 +258,9 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	res.Status = "ok"
 	res.AffectedRows = int64(len(orders))
 	res.DurationMS = time.Since(start).Milliseconds()
-	p.log.Printf("plan %s→%s: %d signals → %d orders, equity=%.0f, 止损上移=%d, 体制=%s, 单位预算=试探%.2f/%.0f+主力%.2f/%.0f, %s",
+	p.log.Printf("plan %s→%s: %d signals → %d orders, equity=%.0f, 止损上移=%d, 体制=%s, 持仓数=%d/%d, %s",
 		planDate, executeDate, len(sigs), len(orders), equity, stopMoves, regimeName(market),
-		budget.probeUsed, probeCap, budget.mainUsed, mainCap, time.Since(start).Round(time.Millisecond))
+		budget.open, budget.max, time.Since(start).Round(time.Millisecond))
 	return res, nil
 }
 
@@ -304,27 +282,16 @@ func regimeName(r regime.Regime) string {
 	}
 }
 
-// unitBudget M8.8 组合级单位预算（试探 5 / 主力 30；预备 15 永不动）。
-type unitBudget struct {
-	probeUsed, mainUsed float64
-	probeCap, mainCap   float64
+// holdBudget 0017 组合级持仓数预算（不加码后，组合风险由「同时持仓数」约束）。
+// 7 只 × 赢家池 5 单位 = 70%，留 30% 现金（用户拍板）。
+type holdBudget struct {
+	open int // 当前 open 持仓数
+	max  int // 上限 pool.max_hold
 }
 
-func (b *unitBudget) takeProbe(units float64) bool {
-	if b.probeUsed+units > b.probeCap+1e-9 {
-		return false
-	}
-	b.probeUsed += units
-	return true
-}
+func (b *holdBudget) canOpen() bool { return b.open < b.max }
 
-func (b *unitBudget) takeMain(units float64) bool {
-	if b.mainUsed+units > b.mainCap+1e-9 {
-		return false
-	}
-	b.mainUsed += units
-	return true
-}
+func (b *holdBudget) take() { b.open++ }
 
 // unitShares 1 单位股数 = floor(unitValue/price/100)×100；不足 1 手返回 0。
 func unitShares(unitValue, price float64) int {
@@ -371,22 +338,21 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 	return moves
 }
 
-// buyOrder 构造停损买单（breakout=leg1, pyramid=leg2/3）。
-// M8.8 单位制仓位（archive/13 §3.3）+ 方案 A（2026-10-21，不择时）：
-//   - 腿1 试探单：统一 1 单位（per_stock_probe_bear，不分牛熊），占用试探预算，
-//     试探 5 单位用满后改占主力预算（archive/13 §3.4，组合风控不择时保留）；
-//   - 腿2/3 主力单：任何市况均可生成（原「仅牛市」已随第0条撤回废止）；
-//     腿2 起步=per_stock_main_step 单位，腿3 单次 3-5 单位并递进至单票 10 单位；
-//   - 组合预算：试探满 5 / 主力满 30 即跳过；单票上限=per_stock_main_max 单位。
+// buyOrder 构造停损买单（0017 战绩分级制：首买，一律不加码）。
+// 规则（用户拍板 2026-10-22，三方对照校订）：
+//   - 交易只发生在「第一次信号」——不论赢家池/普通池，同一只票持仓期间一律不加码。
+//   - 下注档位由该票战绩等级决定：普通池(normal) 1 单位、赢家池(winner) 5 单位。
+//   - 组合约束 = 同时持仓数上限（pool.max_hold=7，留 30% 现金），不再是试探/主力分桶。
+// 腿号金字塔（leg1=1/leg2=3/leg3补到10）、第②通道加码、单票上限10单位、主力预算30单位
+//   全部随「不加码」退役（见 docs/00 §5.6）。
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
-	probeBear, mainMax, mainStep float64,
-	buyPrem, sellDisc float64, maxLegs int, posByCode map[string]*contract.Position,
-	budget *unitBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64) *contract.PlanOrder {
+	winnerUnits float64,
+	buyPrem, sellDisc float64, posByCode map[string]*contract.Position,
+	budget *holdBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
-	// 初始止损（B2 校订 2026-10-22，原书 §4.1 + §3.4）：腿1/腿2/腿3 一律=被突破箱体
-	// 上轨（突破点）下方——紧止损。原书 §3.4「新箱体下轨 ≈ 前一箱体上轨（±3%容差）」，
-	// 故「新箱体下轨下方」等价于「被突破旧箱体上轨下方」；旧实现腿2/3 误用旧箱体下轨
-	// （box.Bottom），比正确位置低一个箱体高度、止损过宽。统一为 box.Top×sellDisc。
+	// 初始止损（B2 校订 2026-10-22，原书 §4.1 + §3.4）：=被突破箱体上轨（突破点）下方
+	// ——紧止损。原书 §3.4「新箱体下轨 ≈ 前一箱体上轨（±3%容差）」，故「新箱体下轨下方」
+	// 等价于「被突破旧箱体上轨下方」。
 	stop := box.Top * sellDisc
 	if trigger <= 0 || stop <= 0 || box.Top <= 0 {
 		return nil // 无上轨或触发/止损非法，不生成买单
@@ -409,112 +375,46 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		return nil
 	}
 
-	// 腿号：breakout=第1腿（试探单）；pyramid=第2/3腿（加码）
-	leg := 1
-	var pos *contract.Position
-	if s.Type == contract.SignalPyramid {
-		if pp, ok := posByCode[s.Code]; ok {
-			leg = 3 // 已有持仓的加码 → 第3腿
-			pos = pp
-		} else {
-			// 腿2 = 时滞防御分支（F5 裁决，docs/21）：watch.stage=holding 但 position
-			// 已清仓的 poolsync 日更滞后场景走到这里；非旧注释的「确认单」（D2 语义错标已更正）。
-			leg = 2
-		}
-	}
-	if leg > maxLegs {
+	// 0017：只首买，不加码。已有持仓（pos != nil）→ 不再买入。
+	if _, hasPos := posByCode[s.Code]; hasPos {
+		p.log.Printf("跳过 %s：已持仓，一律不加码（首买后持仓期间不再追加）", s.Code)
 		return nil
 	}
-	if pos == nil {
-		if pp, ok := posByCode[s.Code]; ok {
-			pos = pp // 防御：breakout 信号若已有持仓，也纳入单票上限
-		}
+
+	// 下注档位：由战绩等级决定（普通 1 / 赢家 5）。
+	lv, _ := p.st.SecRepo.TrackLevel(s.Code)
+	units := 1.0
+	bucket := "normal"
+	if lv == contract.TrackWinner {
+		units = winnerUnits
+		bucket = "winner"
 	}
 
-	units := 0.0
-	bucket := ""
-	qty := 0
-	switch {
-	case s.Type == contract.SignalBreakout:
-		// 方案 A（2026-10-21，第0条撤回连锁）：首腿统一 1 单位试探，不分牛熊。
-		// 达瓦斯「不预测市场」（L1206），仓位只跟个股箱体走，不跟大盘牛熊走。
-		units = probeBear // =1 单位（熊猴牛统一）
-		qty = int(math.Floor(units)) * shares
-		if qty <= 0 {
-			return nil
-		}
-		// 单票上限（主力上限=10单位；试探腿1也计入该票总敞口）
-		maxQty := int(math.Floor(mainMax*unitValue/trigger/100)) * 100
-		current := plannedQty[s.Code]
-		if pos != nil {
-			current += pos.Qty
-		}
-		if current+qty > maxQty {
-			p.log.Printf("跳过 %s 腿1：单票上限 %d 股", s.Code, maxQty)
-			return nil
-		}
-		// 预算：先吃试探；试探满后改吃主力（组合风控，不择时——方案A保留）。
-		if budget.probeUsed+units > budget.probeCap+1e-9 {
-			if !budget.takeMain(units) {
-				p.log.Printf("跳过 %s 腿1：主力预算不足（已用%.2f/%.0f）", s.Code, budget.mainUsed, budget.mainCap)
-				return nil
-			}
-			bucket = "main"
-		} else {
-			if !budget.takeProbe(units) {
-				p.log.Printf("跳过 %s 腿1：试探预算不足（已用%.2f/%.0f）", s.Code, budget.probeUsed, budget.probeCap)
-				return nil
-			}
-			bucket = "probe"
-		}
-
-	default: // pyramid 主力仓腿2/3（方案A：任何市况都允许金字塔加码，不择时）
-		current := plannedQty[s.Code]
-		if pos != nil {
-			current += pos.Qty
-		}
-		maxQty := int(math.Floor(mainMax*unitValue/trigger/100)) * 100
-		if current >= maxQty {
-			p.log.Printf("跳过 %s 腿%d：单票已达主力上限 %d 股", s.Code, leg, maxQty)
-			return nil
-		}
-		desiredUnits := mainStep
-		if leg == 3 {
-			// 正常路径（方案A后）：腿1=1单位 + 腿2=3单位=4 → 腿3补 max(3, 10−4)=6，
-			// 封顶 5 单位。若腿2缺单，最多也只补 5 单位，不一次跨档硬凑。
-			currentUnits := float64(current) * trigger / unitValue
-			desiredUnits = math.Max(mainStep, mainMax-currentUnits)
-			desiredUnits = math.Min(desiredUnits, 5)
-		}
-		qty = int(math.Floor(desiredUnits)) * shares
-		if minStepQty := int(math.Floor(mainStep)) * shares; qty < minStepQty {
-			p.log.Printf("跳过 %s 腿%d：剩余空间不足单次最小加码 %d 股", s.Code, leg, minStepQty)
-			return nil
-		}
-		if current+qty > maxQty {
-			qty = maxQty - current
-		}
-		if qty < int(math.Floor(mainStep))*shares || qty <= 0 {
-			p.log.Printf("跳过 %s 腿%d：单票上限裁剪后不足最小加码", s.Code, leg)
-			return nil
-		}
-		units = float64(qty) / float64(shares)
-		if !budget.takeMain(units) {
-			p.log.Printf("跳过 %s 腿%d：主力预算不足（已用%.2f/%.0f）", s.Code, leg, budget.mainUsed, budget.mainCap)
-			return nil
-		}
-		bucket = "main"
+	// 组合约束：同时持仓数上限。
+	if !budget.canOpen() {
+		p.log.Printf("跳过 %s：同时持仓已达上限 %d 只（留 30%% 现金）", s.Code, budget.max)
+		return nil
 	}
+	qty := int(math.Floor(units)) * shares
+	if qty <= 0 {
+		return nil
+	}
+	// 同日同票多信号防重复超配（defense）
+	if plannedQty[s.Code] > 0 {
+		p.log.Printf("跳过 %s：同日已生成买单，不重复", s.Code)
+		return nil
+	}
+	budget.take()
+	plannedQty[s.Code] = qty
 
-	plannedQty[s.Code] += qty
 	return &contract.PlanOrder{
 		PlanDate: planDate, ExecuteDate: execDate, Code: s.Code,
 		Side: "buy", OrderKind: "stop_buy",
-		TriggerPrice: trigger, LimitPrice: trigger, Qty: qty, LegNo: leg,
+		TriggerPrice: trigger, LimitPrice: trigger, Qty: qty, LegNo: 1,
 		Reason: map[string]any{
 			"signal": string(s.Type), "box_top": box.Top, "box_bottom": box.Bottom,
-			"trigger": trigger, "stop": stop, "leg": leg,
-			"regime": string(market), "budget_bucket": bucket,
+			"trigger": trigger, "stop": stop, "leg": 1,
+			"regime": string(market), "budget_bucket": bucket, "track_level": string(lv),
 			"unit_value": unitValue, "unit_shares": shares, "units": units,
 		},
 	}
@@ -563,13 +463,4 @@ func nextWeekday(date string) string {
 			return t.Format("2006-01-02")
 		}
 	}
-}
-
-// mapKeys 返回 map 的键切片（仅日志用，顺序不定）。
-func mapKeys(m map[string]bool) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
 }

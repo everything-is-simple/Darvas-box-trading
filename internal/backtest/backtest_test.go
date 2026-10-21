@@ -156,10 +156,10 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 	}
 
 	// ④ 跟踪池：t13/t20 入池；sh600001 经历 watching→pending(t15 买单)→holding(t16 撮合成交)；
-	//    B3 校订（2026-10-22，staledays=2）后：突破买入成本 11.33，t16 起收盘 11.2 < 成本，
-	//    t18 触发 time_stop 清仓 → exited，t22 第二箱再确认重新入池 watching。
+	//    staledays=2（B3）+ 0017 战绩分级：突破买入成本 11.33，t16 起收盘 11.2 < 成本，
+	//    t18 触发 time_stop 清仓 → 亏损 → 战绩分级流转为 blacklisted（冷却12月，不再重入池）。
 	//    sh600003 保持 watching（无人退出——本合成无跌破/flat_too_long 触发）。
-	//    故 watch 3 行：sh600001(exited)+sh600001(watching 重入)+sh600003(watching)。
+	//    故 watch 2 行：sh600001(blacklisted)+sh600003(watching)。
 	type wrow struct {
 		code, stage, added string
 	}
@@ -176,24 +176,22 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 		ws = append(ws, w)
 	}
 	rows.Close()
-	if len(ws) != 3 {
-		t.Fatalf("watch 行数 = %d, 期望 3（sh600001 exited+重入 watching + sh600003）", len(ws))
+	if len(ws) != 2 {
+		t.Fatalf("watch 行数 = %d, 期望 2（sh600001 blacklisted + sh600003 watching）; 实际=%+v", len(ws), ws)
 	}
 	// 按 (code, stage) 归类校验
-	var exited600001, rewatching600001, watching600003 bool
+	var blacklisted600001, watching600003 bool
 	for _, w := range ws {
 		switch {
-		case w.code == "sh600001" && w.stage == "exited":
-			exited600001 = true
-		case w.code == "sh600001" && w.stage == "watching":
-			rewatching600001 = true
+		case w.code == "sh600001" && w.stage == "blacklisted":
+			blacklisted600001 = true
 		case w.code == "sh600003" && w.stage == "watching":
 			watching600003 = true
 		}
 	}
-	if !exited600001 || !rewatching600001 || !watching600003 {
-		t.Fatalf("watch 状态集不对: exited600001=%v rewatching600001=%v watching600003=%v（B3 staledays=2 语义）",
-			exited600001, rewatching600001, watching600003)
+	if !blacklisted600001 || !watching600003 {
+		t.Fatalf("watch 状态集不对: blacklisted600001=%v watching600003=%v（0017 战绩分级语义）",
+			blacklisted600001, watching600003)
 	}
 
 	// ⑤ 计划与权益：每日一份计划；t15 breakout 信号 → 1 笔买单（leg1，exec t16），

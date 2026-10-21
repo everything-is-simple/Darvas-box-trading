@@ -35,6 +35,8 @@ erDiagram
         TEXT industry
         DATE list_date
         TEXT status "active/delisted"
+        TEXT track_level "normal/winner/blacklist（0017 战绩分级）"
+        DATE blacklist_until "黑名单冷却截止日（0017）"
     }
     daily_bar {
         TEXT code FK

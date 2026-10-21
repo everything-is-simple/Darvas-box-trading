@@ -471,8 +471,9 @@ func (l *Ledger) applySell(f contract.Fill, order *store.PendingOrder) (int64, e
 	return pos.ID, l.st.TradeRepo.UpdatePositionQtyCost(pos.ID, newQty, pos.AvgCost)
 }
 
-// onPositionClosed 清仓后的 watch 状态迁移（B2）：holding/pending → exited；
-// 计划内止损离场（reason=stop）且该股历史亏损交易满 pool.maxloss → blacklisted（poolsync 次日兜底双保险）。
+// onPositionClosed 清仓后的 watch 状态迁移（B2/0017）：holding/pending → exited。
+// 战绩分级（track_level 流转）已在 TradeRepo.ClosePosition 内完成（盈利→winner、
+// 亏损→普通池黑名单/赢家池降级），此处只同步 watch.stage 出池。
 func (l *Ledger) onPositionClosed(code, reason string) {
 	w, err := l.st.PoolRepo.WatchByCode(code)
 	if err != nil || w == nil {
@@ -481,14 +482,12 @@ func (l *Ledger) onPositionClosed(code, reason string) {
 	if w.Stage == contract.StageExited || w.Stage == contract.StageBlacklisted {
 		return
 	}
-	if reason == "stop" {
-		maxLoss := l.st.ParamRepo.GetInt("pool.maxloss", 2)
-		if n, err := l.st.TradeRepo.LossCountByCode(code); err == nil && n >= maxLoss {
-			w.Stage = contract.StageBlacklisted
-			w.ExitReason = fmt.Sprintf("two_losses_%d", n)
-			l.st.PoolRepo.UpsertWatch(*w)
-			return
-		}
+	// 0017：黑名单状态的 watch 同步（track_level 已由 ClosePosition 置 blacklist）。
+	if lv, _ := l.st.SecRepo.TrackLevel(code); lv == contract.TrackBlacklist {
+		w.Stage = contract.StageBlacklisted
+		w.ExitReason = "track_blacklisted"
+		l.st.PoolRepo.UpsertWatch(*w)
+		return
 	}
 	w.Stage = contract.StageExited
 	w.ExitReason = "position_closed_" + reason

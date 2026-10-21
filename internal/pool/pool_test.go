@@ -94,36 +94,47 @@ func TestPoolSuspendNotResumed(t *testing.T) {
 	}
 }
 
-// TestPoolTwoLossBlacklist B2③ 两亏拉黑：历史亏损交易≥pool.maxloss → blacklisted，且不再入池。
-func TestPoolTwoLossBlacklist(t *testing.T) {
+// TestPoolBlacklistBlocksEntry 0017 战绩分级：track_level=blacklist 且冷却期内 → 不入池。
+func TestPoolBlacklistBlocksEntry(t *testing.T) {
 	st := newPoolStore(t)
 	code := "sh600519"
 	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
-	st.PoolRepo.UpsertWatch(contract.Watch{Code: code, AddedDate: "2026-08-01", Stage: contract.StageWatching})
-	// 两次亏损交易（closed, realized_pnl<0）
-	for _, d := range []string{"2026-08-15", "2026-09-10"} {
-		if _, err := st.DB().Exec(`INSERT INTO position(code, opened_date, qty, avg_cost, stop_price, status,
-			closed_date, close_reason, realized_pnl) VALUES (?, ?, 100, 24, 23, 'closed', ?, 'stop', -500)`,
-			code, d, d); err != nil {
-			t.Fatal(err)
-		}
+	// 置为黑名单，冷却至 2026-12-01（未满）
+	if err := st.SecRepo.SetTrackLevel(code, contract.TrackBlacklist, "2026-12-01"); err != nil {
+		t.Fatal(err)
 	}
+	seedCandidate(t, st, "2026-10-16", code, 100)
 	m := New(st)
 	if _, err := m.Sync(context.Background(), "2026-10-16"); err != nil {
 		t.Fatal(err)
 	}
 	w, _ := st.PoolRepo.WatchByCode(code)
-	if w.Stage != contract.StageBlacklisted {
-		t.Fatalf("两亏后 stage=%s want blacklisted（exit_reason=%s）", w.Stage, w.ExitReason)
+	if w != nil && w.Stage != contract.StageExited {
+		t.Fatalf("黑名单冷却期内不应入池, got stage=%s", w.Stage)
 	}
-	// 黑名单不入池：再次成为候选也不进
+}
+
+// TestPoolBlacklistExpiredResume 0017：黑名单冷却期满 → 解禁回 normal，可重新入池。
+func TestPoolBlacklistExpiredResume(t *testing.T) {
+	st := newPoolStore(t)
+	code := "sh600519"
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
+	// 置为黑名单，冷却至 2026-10-01（已满）
+	if err := st.SecRepo.SetTrackLevel(code, contract.TrackBlacklist, "2026-10-01"); err != nil {
+		t.Fatal(err)
+	}
 	seedCandidate(t, st, "2026-10-16", code, 100)
+	m := New(st)
 	if _, err := m.Sync(context.Background(), "2026-10-16"); err != nil {
 		t.Fatal(err)
 	}
-	w, _ = st.PoolRepo.WatchByCode(code)
-	if w.Stage != contract.StageBlacklisted {
-		t.Fatalf("黑名单股票不得重新入池, got %s", w.Stage)
+	lv, _ := st.SecRepo.TrackLevel(code)
+	if lv != contract.TrackNormal {
+		t.Fatalf("冷却期满应解禁回 normal, got %s", lv)
+	}
+	w, _ := st.PoolRepo.WatchByCode(code)
+	if w == nil || w.Stage != contract.StageWatching {
+		t.Fatalf("解禁后应重新入池 watching, got %+v", w)
 	}
 }
 

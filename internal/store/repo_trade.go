@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"darvas/internal/contract"
 )
@@ -132,6 +134,13 @@ func (r *TradeRepo) OpenPositions() ([]contract.Position, error) {
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// OpenPositionCount 当前 open 持仓数（0017 组合约束：同时持仓数上限）。
+func (r *TradeRepo) OpenPositionCount() (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM position WHERE status = 'open' AND qty > 0`).Scan(&n)
+	return n, err
 }
 
 // OpenExposureUnits 当前未平仓敞口折算成 M8.8 单位制仓位预算占用。
@@ -448,18 +457,72 @@ func (r *TradeRepo) UpdatePositionQtyCost(id int64, qty int, avgCost float64) er
 	return err
 }
 
-// ClosePosition 清仓（qty 归零）。
+// ClosePosition 清仓（qty 归零）+ 战绩分级状态机流转（0017）。
+// 先写 realized_pnl（本持仓生命周期净现金流），再按盈亏流转该证券的 track_level：
+//   盈利 → winner（普通池升赢家池 / 赢家池保持）
+//   亏损 → 原等级为 winner 则降 normal（赢家输一次降级，不直接黑名单）；
+//          否则（normal / blacklist）→ blacklist（冷却 N 月）。
+// 单次马尔可夫：只看最近这一笔盈亏，不看历史累计（用户拍板 2026-10-22）。
 func (r *TradeRepo) ClosePosition(id int64, date, reason string) error {
-	// B2（0003）：清仓时落库本次交易已实现盈亏（两亏拉黑的统计基础）。
+	// B2（0003）：清仓时落库本次交易已实现盈亏（战绩分级流转依据）。
 	// = 该持仓生命周期内（opened_date~date）该股全部成交的净现金流：卖出所得−买入支出（含费）。
-	_, err := r.db.Exec(`UPDATE position SET status='closed', closed_date=?, close_reason=?, qty=0,
+	res, err := r.db.Exec(`UPDATE position SET status='closed', closed_date=?, close_reason=?, qty=0,
 		realized_pnl = (
 			SELECT COALESCE(SUM(CASE WHEN f.side='sell' THEN f.price*f.qty - f.fee
 			                         ELSE -(f.price*f.qty + f.fee) END), 0)
 			FROM trade_fill f
 			WHERE f.code = position.code AND f.date >= position.opened_date AND f.date <= ?
 		) WHERE id=?`, date, reason, date, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil // 无此持仓（已清仓等），不流转等级
+	}
+	return r.applyTrackTransition(id, date)
+}
+
+// applyTrackTransition 战绩分级状态机流转（0017，ClosePosition 内部调用）。
+func (r *TradeRepo) applyTrackTransition(posID int64, date string) error {
+	var code string
+	var pnl float64
+	if err := r.db.QueryRow(`SELECT code, COALESCE(realized_pnl,0) FROM position WHERE id = ?`, posID).
+		Scan(&code, &pnl); err != nil {
+		return err
+	}
+	if code == "" {
+		return nil
+	}
+	var lv string
+	if err := r.db.QueryRow(`SELECT COALESCE(track_level,'normal') FROM security WHERE code = ?`, code).
+		Scan(&lv); err != nil {
+		return err
+	}
+	months := 12
+	var pv string
+	if err := r.db.QueryRow(`SELECT value FROM param WHERE key = 'pool.blacklist_months'`).Scan(&pv); err == nil && pv != "" {
+		if m, err := strconv.Atoi(pv); err == nil && m > 0 {
+			months = m
+		}
+	}
+	switch {
+	case pnl > 0:
+		// 盈利 → winner
+		_, err := r.db.Exec(`UPDATE security SET track_level='winner', blacklist_until=NULL,
+			updated_at=datetime('now','localtime') WHERE code=?`, code)
+		return err
+	case lv == "winner":
+		// 赢家输一次 → 降级 normal（不直接黑名单）
+		_, err := r.db.Exec(`UPDATE security SET track_level='normal', blacklist_until=NULL,
+			updated_at=datetime('now','localtime') WHERE code=?`, code)
+		return err
+	default:
+		// 普通/黑名单 亏损 → blacklist（冷却 N 月）
+		until := time.Now().AddDate(0, months, 0).Format("2006-01-02")
+		_, err := r.db.Exec(`UPDATE security SET track_level='blacklist', blacklist_until=?,
+			updated_at=datetime('now','localtime') WHERE code=?`, until, code)
+		return err
+	}
 }
 
 // LossCountByCode 某证券历史亏损交易次数（closed 且 realized_pnl<0；两亏拉黑判定，B2）。

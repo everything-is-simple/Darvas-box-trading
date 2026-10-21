@@ -43,7 +43,7 @@ type Box struct {
 }
 
 // 信号
-type SignalType string // breakout / pyramid / stop / failed_breakout
+type SignalType string // breakout / stop / failed_breakout（pyramid 于 0017 退役：一律不加码）
 
 type Signal struct {
     Date, Code string
@@ -77,7 +77,7 @@ type TaskResult struct {
 type WatchStage string
 // watching / pending / holding / exited / suspended / blacklisted
 //   watching→pending→holding→exited 主链；suspended=条件挂起（收盘≥ResumeTrigger恢复）；
-//   blacklisted=两亏拉黑终态（永不再入池）
+//   blacklisted=战绩分级黑名单终态（最近一笔亏损，冷却12月；0017 替换旧两亏拉黑）
 
 type Watch struct {
     ID int64; Code string; CandidateID int64
@@ -94,8 +94,11 @@ type Position struct {
     Qty int; AvgCost, StopPrice float64
     Status string   // open / closed
     ClosedDate, CloseReason string
-    RealizedPnl float64  // 清仓时由 ClosePosition 计算写入（两亏拉黑统计基础，0003）
+    RealizedPnl float64  // 清仓时由 ClosePosition 计算写入（战绩分级状态机流转依据，0017）
 }
+
+// 战绩等级（0017）
+type TrackLevel string // normal / winner / blacklist
 ```
 
 ---
@@ -175,7 +178,7 @@ type PoolRepo interface {
 
 // SecRepo 不在 contract 接口面（证券识别=数据层内部职责，见 repo 注释），
 // 但属 store 包公共 API：UpsertSecurities / UpdateNames(tnf回填) / Names /
-// ActiveStockCodes / ActiveWatchCodes。
+// ActiveStockCodes / ActiveWatchCodes / TrackLevel / SetTrackLevel / BlacklistUntil（0017 战绩分级）。
 
 type SignalRepo interface {
     AppendSignals(sigs []Signal) error
@@ -206,13 +209,14 @@ type TradeRepo interface {
     PositionByCode(code string) (*Position, error)
     CreatePosition(p Position) (int64, error)
     UpdatePositionQtyCost(id int64, qty int, avgCost float64) error
-    ClosePosition(id int64, date, reason string) error    // 清仓：status=closed + realized_pnl落库（持仓周期fills净现金流，B2）
-    LossCountByCode(code string) (int, error)              // 亏损交易（closed且realized_pnl<0）计数（两亏拉黑，B2）
+    ClosePosition(id int64, date, reason string) error    // 清仓：status=closed + realized_pnl落库 + 战绩分级流转（0017）
+    LossCountByCode(code string) (int, error)              // 亏损交易计数（历史审计用，0017 起黑名单改走 track_level）
     PositionPnlHistory(code string) ([]map[string]any, error) // 个股历史持仓盈亏视图（B3战绩复用）
     AddLeg(positionID int64, legNo int, date string, qty int, price, stopAfter float64, planOrderID int64) error
     LegsByPosition(positionID int64) ([]map[string]any, error)
-    LegCountByCode(code string) (int, error)             // 当前未平仓持仓腿数（signal 金字塔钳制，archive/07 #2）
-    OpenExposureUnits(unitValue float64) (probeUnits, mainUnits float64, err error) // M8.8 组合级单位预算占用（leg1=试探，leg2+=主力）
+    LegCountByCode(code string) (int, error)             // 当前未平仓持仓腿数（历史审计；0017 起无 pyramid 钳制）
+    OpenPositionCount() (int, error)                       // 当前 open 持仓数（0017 组合约束：同时持仓数上限）
+    OpenExposureUnits(unitValue float64) (probeUnits, mainUnits float64, err error) // 历史审计用（0017 起不再读）
     AllPositions() ([]Position, error)                     // 含closed（交易记录视图）
     EquityAll() ([]EquitySnapshot, error)
     LatestEquity() (*EquitySnapshot, error)
@@ -317,9 +321,9 @@ type ScreenParams struct {
 type PoolManager interface {
     Sync(ctx context.Context, date string) (TaskResult, error)
     // candidate→watching 入池；状态迁移见 ERD §2.2
-    // B2 淘汰生命周期（0003）：
-    //   入池拦截：LossCountByCode ≥ pool.maxloss（两亏拉黑终态）/ ActiveWatchCount ≥ pool.maxwatch（5-8上限）
-    //   巡检：活跃股两亏→blacklisted；suspended 收盘≥ResumeTrigger→watching（激活价清零）
+    // B2 淘汰生命周期（0003）+ 0017 战绩分级：
+    //   入池拦截：track_level=blacklist 且 blacklist_until > date（黑名单冷却期内）/ ActiveWatchCount ≥ pool.maxwatch（软参考）
+    //   巡检：黑名单冷却期满→解禁 normal；suspended 收盘≥ResumeTrigger→watching（激活价清零）
     MarkFundamental(code, date string, flag string) error  // 人工复核 yes/no
     Remove(code string, reason string) error               // 人工移除
     Suspend(code string, resumeTrigger float64) error      // 条件挂起（"停传报价"：exited/blacklisted拒绝）
@@ -331,12 +335,12 @@ type PoolManager interface {
 ```go
 type SignalEngine interface {
     Evaluate(ctx context.Context, date string) (TaskResult, error)
-    // 对 watching/pending/holding 池逐股判定四类信号——首次事件语义：
+    // 对 watching/pending/holding 池逐股判定信号——首次事件语义：
     // 信号是"状态迁移事件"，只在迁移发生当日发一次，条件持续满足不重复发。
     // breakout:  箱体当日迁移为 broken_up（BrokenDate==当日；放量/非一字板由boxscan引擎判定）
-    // pyramid:   持仓股新箱体当日再突破（leg_no<maxlegs）
     // stop:      收盘首次跌破最新箱体下轨（昨收≥下轨 且 今收<下轨）
     // failed_breakout: 突破后3日内收盘首次跌回箱体上轨之下（昨收≥上轨 且 今收<上轨）
+    // 0017：无 pyramid（一律不加码，持仓股再突破不发信号）
     // 另：AppendSignals 同日幂等（同 date+code+type+box 已存在则跳过），重跑/调度重试不重复
 }
 ```
@@ -346,17 +350,17 @@ type SignalEngine interface {
 ```go
 type Planner interface {
     Build(ctx context.Context, planDate string) (TaskResult, error)
-    // 输入：当日signal + 持仓 + param + equity_snapshot + M8.8 市场体制（内生宽度法）
+    // 输入：当日signal + 持仓 + param + equity_snapshot + 战绩分级（track_level）
     // 输出：trade_plan + plan_order（停损买/卖单，含触发价、委托价、数量、腿号）
-    // 数量公式（M8.8 单位制）：1单位=权益×pos.unit；单位股数=floor(单位值/价/100)×100。
-    // 腿1：熊猴1单位/牛2单位（试探预算；牛市试探满5后改占主力预算）；腿2/3仅牛市，递进至单票10单位。
+    // 0017 战绩分级制：只首买、一律不加码。首买档位由 track_level 决定：
+    //   普通池(normal)=1单位、赢家池(winner)=5单位；组合约束=同时持仓数上限 pool.max_hold=7。
+    // 数量公式：1单位=权益×pos.unit(2%)；单位股数=floor(单位值/价/100)×100。
 }
 
 type PlanParams struct {
-    UnitPct, UnitsTotal float64  // 0.02 / 50（5试探+30主力+15预备）
-    UnitsProbe, UnitsMain, UnitsReserve float64 // 5 / 30 / 15（预备永不动）
-    PerStockProbeBear, PerStockProbeBull float64 // 1 / 2
-    PerStockMainMax, PerStockMainStep float64    // 10 / 3（单票主力上限与单次最小加码）
+    UnitPct float64            // 0.02（1 单位 = 2% 权益，普通池首买）
+    WinnerUnits float64        // 5（赢家池首买 5 单位）
+    MaxHold int                // 7（同时持仓上限，留 30% 现金）
     BuyPremium, SellDiscount float64 // 1.03 / 0.97
     MaxLegs int // 3
 }

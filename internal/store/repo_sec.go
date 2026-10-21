@@ -173,6 +173,38 @@ func (r *SecRepo) UpdateNames(names map[string]string) (int64, error) {
 	return total, tx.Commit()
 }
 
+// TrackLevel 取某证券战绩等级（normal/winner/blacklist；无行/空默认 normal）。
+// 0017 战绩分级制：下注档位只看最近一笔持仓周期盈亏（单次马尔可夫）。
+func (r *SecRepo) TrackLevel(code string) (contract.TrackLevel, error) {
+	var lv string
+	err := r.db.QueryRow(`SELECT track_level FROM security WHERE code = ?`, code).Scan(&lv)
+	if err == sql.ErrNoRows {
+		return contract.TrackNormal, nil
+	}
+	if err != nil {
+		return contract.TrackNormal, err
+	}
+	return contract.TrackLevel(lv), nil
+}
+
+// BlacklistUntil 取某证券黑名单冷却截止日（非黑名单返回空）。
+func (r *SecRepo) BlacklistUntil(code string) (string, error) {
+	var d sql.NullString
+	err := r.db.QueryRow(`SELECT blacklist_until FROM security WHERE code = ?`, code).Scan(&d)
+	if err == sql.ErrNoRows || !d.Valid {
+		return "", nil
+	}
+	return d.String, err
+}
+
+// SetTrackLevel 更新某证券战绩等级；进黑名单时同步写冷却截止日（until 传空则清空）。
+func (r *SecRepo) SetTrackLevel(code string, lv contract.TrackLevel, until string) error {
+	_, err := r.db.Exec(`UPDATE security SET track_level = ?, blacklist_until = ?,
+		updated_at = datetime('now','localtime') WHERE code = ?`,
+		string(lv), nullEmpty(until), code)
+	return err
+}
+
 // Names 取全部非空 code→名称映射（GUI 各视图展示用）。
 func (r *SecRepo) Names() (map[string]string, error) {
 	rows, err := r.db.Query(`SELECT code, name FROM security WHERE name <> ''`)

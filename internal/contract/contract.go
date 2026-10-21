@@ -98,7 +98,20 @@ const (
 	StageHolding     WatchStage = "holding"
 	StageExited      WatchStage = "exited"
 	StageSuspended   WatchStage = "suspended"   // 条件挂起（"停传报价"：跌破/远离后暂停，收盘≥resume_trigger再激活）
-	StageBlacklisted WatchStage = "blacklisted" // 两亏拉黑（同一股票亏损交易满 pool.maxloss 次，永久）
+	StageBlacklisted WatchStage = "blacklisted" // 黑名单（战绩分级：最近一笔持仓周期亏损，冷却 N 月解禁）
+)
+
+// TrackLevel 战绩等级（0017 迁移，2026-10-22 校订：按战绩分级定首买单位）。
+// 单次马尔可夫：只看最近一笔持仓周期盈亏流转，不看历史累计。
+//   normal     普通池（未交易 / 亏损降级 / 黑名单解禁）
+//   winner     赢家池（最近一笔盈利）——首买 5 单位
+//   blacklist  黑名单（最近一笔亏损）——冷却 N 月，冷却期内不入池
+type TrackLevel string
+
+const (
+	TrackNormal    TrackLevel = "normal"
+	TrackWinner    TrackLevel = "winner"
+	TrackBlacklist TrackLevel = "blacklist"
 )
 
 // Watch 跟踪池条目
@@ -161,7 +174,7 @@ type Position struct {
 	Status      string  // open / closed
 	ClosedDate  string
 	CloseReason string
-	RealizedPnl float64 // 清仓时由 ClosePosition 计算写入（两亏拉黑统计基础，0003）
+	RealizedPnl float64 // 清仓时由 ClosePosition 计算写入（战绩分级状态机流转依据，0017）
 }
 
 // EquitySnapshot 权益快照

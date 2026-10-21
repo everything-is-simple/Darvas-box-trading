@@ -4,10 +4,11 @@
 // 信号是"状态迁移事件"，只在迁移发生当日发一次；条件持续满足不重复发。
 //
 //	breakout        箱体当日迁移为 broken_up（BrokenDate==当日）→ 买（watching 突破）
-//	pyramid         持仓股新箱体当日再突破（leg_no<maxlegs）；或未触及止损且价在买点
-//	                上方 risk.addon_max_premium 内（M8.6 第②通道，布鲁斯案例）→ 加码
 //	stop            收盘首次跌破最新箱体下轨（昨收≥下轨 且 今收<下轨）→ 卖
 //	failed_breakout 突破后3日内收盘首次跌回箱体上轨之下（昨收≥上轨 且 今收<上轨）→ 卖
+//
+// 0017（2026-10-22）：废除 pyramid 加码（一律不加码）——持仓股再突破不再发加码信号，
+// 交易只发生在「第一次信号」；下注档位由 planner 按战绩等级（普通1单位/赢家5单位）决定。
 //
 // 另：AppendSignals 同日幂等（同 date+code+type+box 已存在则跳过），重跑/调度重试不重复。
 package signal
@@ -37,7 +38,6 @@ func (e *Engine) Evaluate(ctx context.Context, date string) (contract.TaskResult
 	start := time.Now()
 	res := contract.TaskResult{Task: "signal", Date: date}
 	premium := e.st.ParamRepo.GetFloat("buy.premium", 1.03)
-	maxLegs := e.st.ParamRepo.GetInt("risk.maxlegs", 3)
 
 	var sigs []contract.Signal
 	countByType := map[contract.SignalType]int{}
@@ -49,7 +49,7 @@ func (e *Engine) Evaluate(ctx context.Context, date string) (contract.TaskResult
 			return res, err
 		}
 		for _, w := range watches {
-			s := e.evalOne(w, date, premium, maxLegs)
+			s := e.evalOne(w, date, premium)
 			if s != nil {
 				sigs = append(sigs, *s)
 				countByType[s.Type]++
@@ -63,15 +63,16 @@ func (e *Engine) Evaluate(ctx context.Context, date string) (contract.TaskResult
 	res.Status = "ok"
 	res.AffectedRows = int64(len(sigs))
 	res.DurationMS = time.Since(start).Milliseconds()
-	e.log.Printf("signal %s: %d signals (breakout=%d pyramid=%d stop=%d failed=%d), %s",
-		date, len(sigs), countByType[contract.SignalBreakout], countByType[contract.SignalPyramid],
+	e.log.Printf("signal %s: %d signals (breakout=%d stop=%d failed=%d), %s",
+		date, len(sigs), countByType[contract.SignalBreakout],
 		countByType[contract.SignalStop], countByType[contract.SignalFailed],
 		time.Since(start).Round(time.Millisecond))
 	return res, nil
 }
 
-// evalOne 对单只在池股票判定信号（首次事件语义）。优先级：stop > failed_breakout > breakout/pyramid。
-func (e *Engine) evalOne(w contract.Watch, date string, premium float64, maxLegs int) *contract.Signal {
+// evalOne 对单只在池股票判定信号（首次事件语义）。优先级：stop > failed_breakout > breakout。
+// 0017：无 pyramid（一律不加码）。
+func (e *Engine) evalOne(w contract.Watch, date string, premium float64) *contract.Signal {
 	// 修复 archive/07 #1：用 LatestNonFormingBox 而非 LatestBox——突破日引擎输出
 	// [broken_up箱体, forming(0,0)箱体]，LatestBox(id DESC) 必取 forming 致四类信号全死。
 	box, err := e.st.BoxRepo.LatestNonFormingBox(w.Code)
@@ -104,25 +105,16 @@ func (e *Engine) evalOne(w contract.Watch, date string, premium float64, maxLegs
 		return s
 	}
 
-	// breakout / pyramid：箱体今日刚迁移为 broken_up（BrokenDate==今日）→ 突破事件当日一次。
+	// breakout：箱体今日刚迁移为 broken_up（BrokenDate==今日）→ 突破事件当日一次。
 	// （boxscan 引擎已用当日窗口完成放量/非一字板等形态判定，此处只消费状态迁移。）
+	// 0017（2026-10-22）：一律不加码——持仓股再突破不再发 pyramid 加码信号，
+	// 只有「无持仓」的票才发 breakout 首买。下注档位由 planner 按战绩等级决定。
 	if box.Status == contract.BoxBrokenUp && box.BrokenDate == date {
-		// 持仓且未达最大腿数 → 加码；否则 → 突破买入
-		// archive/07 #2：金字塔钳制改用 position_leg 真实腿数，
-		// 不再用 watch.BoxCount（watch.BoxCount 现严格语义为"已走完箱体数"，见 pool.go）。
-		var sigType contract.SignalType
 		if w.Stage == contract.StageHolding {
-			legN, _ := e.st.TradeRepo.LegCountByCode(w.Code)
-			if legN < maxLegs {
-				sigType = contract.SignalPyramid
-			} else {
-				return nil // 已达最大腿数，不加码
-			}
-		} else {
-			sigType = contract.SignalBreakout
+			return nil // 已持仓：一律不加码
 		}
 		return &contract.Signal{
-			Date: date, Code: w.Code, Type: sigType,
+			Date: date, Code: w.Code, Type: contract.SignalBreakout,
 			BoxID: box.ID, ClosePx: close, BoxLevel: box.Top,
 			Payload: map[string]any{
 				"stage": string(w.Stage), "box_top": box.Top,
@@ -131,70 +123,7 @@ func (e *Engine) evalOne(w contract.Watch, date string, premium float64, maxLegs
 		}
 	}
 
-	// 第②通道（M8.6）：未触及止损 + 买点上方N%内 → 加码（不等新箱体）。
-	// 达瓦斯原书布鲁斯案例 line 1504；规则见 archive/10-m8.6 §2.2。当日已发第①条则不重复。
-	if s := e.checkAddon(w, date, today); s != nil {
-		return s
-	}
 	return nil
-}
-
-// checkAddon 达瓦斯金字塔第②通道（M8.6，原书布鲁斯案例）：
-// 「当我看到公司股价没有触及止损位后，我开始继续补仓」——同一箱体内连续加码，
-// 5 笔 50.75→53.625（+5.7%）。欧奈尔量化边界「加仓要在买点上涨5%以内」，
-// 参数 risk.addon_max_premium（用户拍板 0.07，留余量）。
-//
-// 五条件（archive/10-m8.6-pyramid-addon-proposal.md §2.2）：
-//
-//	C1 today.Low > 止损位（盘中未触及止损——原书"没有触及止损位"的最严格对应）
-//	C2 today.Close ≥ 上次成交价（顺势加码，绝不摊低成本——原书"绝不要摊低亏损的头寸"）
-//	C3 today.Close ≤ 首腿成交价×(1+addon_max_premium)（不追高，欧奈尔边界）
-//	C4 第一版：仅首腿（legN==1）允许加一次——避开 position_leg.leg_no CHECK(1,2,3)
-//	   （若已在 legN≥2 状态下再发，planner 会给 leg=3 撞号，ledger 顺延到 leg4 被 CHECK 拒）
-//	C5 高优先级信号（stop / failed_breakout / 第①条）已在前序返回
-func (e *Engine) checkAddon(w contract.Watch, date string, today contract.DailyBar) *contract.Signal {
-	if w.Stage != contract.StageHolding {
-		return nil
-	}
-	pos, err := e.st.TradeRepo.PositionByCode(w.Code)
-	if err != nil || pos == nil || pos.Status != "open" || pos.Qty <= 0 {
-		return nil
-	}
-	if pos.StopPrice <= 0 || today.Low <= pos.StopPrice {
-		return nil // C1 盘中触及/跌破止损 → 不加码
-	}
-	legs, err := e.st.TradeRepo.LegsByPosition(pos.ID)
-	if err != nil {
-		return nil
-	}
-	if len(legs) != 1 {
-		return nil // C4 第一版仅首腿可加一次
-	}
-	leg1Price, _ := legs[0]["price"].(float64)
-	if leg1Price <= 0 {
-		return nil
-	}
-	premium := e.st.ParamRepo.GetFloat("risk.addon_max_premium", 0.07)
-	if today.Close < leg1Price {
-		return nil // C2 不摊低成本
-	}
-	if today.Close > leg1Price*(1+premium) {
-		return nil // C3 不追高
-	}
-	var boxID int64
-	var boxLevel float64
-	if box, _ := e.st.BoxRepo.LatestNonFormingBox(w.Code); box != nil {
-		boxID = box.ID
-		boxLevel = box.Bottom
-	}
-	return &contract.Signal{
-		Date: date, Code: w.Code, Type: contract.SignalPyramid,
-		BoxID: boxID, ClosePx: today.Close, BoxLevel: boxLevel,
-		Payload: map[string]any{
-			"trigger": "addon", "leg1_price": leg1Price, "stop_price": pos.StopPrice,
-			"addon_max_premium": premium, "leg_no": 3,
-		},
-	}
 }
 
 // checkFailedBreakout 突破失败：最近一个 broken_up 箱体在3个日历日内、
