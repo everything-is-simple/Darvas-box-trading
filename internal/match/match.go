@@ -11,6 +11,7 @@ package match
 
 import (
 	"context"
+	"log"
 	"math"
 	"strings"
 
@@ -21,19 +22,21 @@ import (
 
 // Matcher 模拟撮合器。
 type Matcher struct {
-	st *store.Store
-	l  *ledger.Ledger
+	st  *store.Store
+	l   *ledger.Ledger
+	log *log.Logger
 }
 
 // New 构造。
 func New(st *store.Store) *Matcher {
-	return &Matcher{st: st, l: ledger.New(st)}
+	return &Matcher{st: st, l: ledger.New(st), log: log.New(log.Writer(), "[match] ", log.LstdFlags)}
 }
 
 // Match 撮合 execute_date==date 的待成交订单 + 复权日强制清仓，返回当日成交笔数。
 // 调用方须在当日六任务链 plan 之后、report 之前调用（archive/08 §5 时序）。
 func (m *Matcher) Match(ctx context.Context, date string) (int, error) {
 	fp := loadFeeParams(m.st)
+	maxEntryGap := m.st.ParamRepo.GetFloat("match.max_entry_gap", 1.05)
 	n := 0
 
 	// 1. 复权跳空日：持仓股强制清仓（先于订单撮合，§3.8）
@@ -95,6 +98,22 @@ func (m *Matcher) Match(ctx context.Context, date string) (int, error) {
 		px, hit := matchOrder(o.Side, o.TriggerPrice, o.LimitPrice, today)
 		if !hit {
 			continue
+		}
+		// P0-2（2026-10-21）：买入单进场跳空上限。跳空高开越过触发价按开盘价成交，
+		// 但成交价/触发价 > max_entry_gap 视为「突破后追高」，弃单并记 cancelled。
+		// 达瓦斯买的是「突破点+3%」，不是突破后 +63%/+162% 追高（docs/18 两笔假利润）。
+		// 注意：max_entry_gap 存的是「成交价允许的触发价倍数上限」，默认 1.05（=+5%）。
+		if o.Side == "buy" && o.TriggerPrice > 0 {
+			if ratio := px / o.TriggerPrice; ratio > maxEntryGap {
+				m.log.Printf("弃单 %s：成交价 %.2f / 触发价 %.2f = %.3f > max_entry_gap=%.3f（跳空追高，记 cancelled）",
+					o.Code, px, o.TriggerPrice, ratio, maxEntryGap)
+				// 弃单：置 cancelled（status CHECK 无 skipped_gap 值，用 cancelled 语义；
+				// ratio 已在日志留痕，供 H1 统计被拒单事后表现）
+				if err := m.st.TradeRepo.UpdateOrderStatus(o.ID, "cancelled"); err != nil {
+					m.log.Printf("⚠ 弃单标记失败 %s: %v", o.Code, err)
+				}
+				continue
+			}
 		}
 		fill := contract.Fill{
 			PlanOrderID: o.ID, Code: o.Code, Date: date, Side: o.Side,

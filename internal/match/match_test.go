@@ -178,3 +178,58 @@ func TestMatchDividendClearCancelsPendingOrders(t *testing.T) {
 		t.Fatalf("在途卖出单残留 %d 笔，应已取消", len(remaining))
 	}
 }
+
+// TestMatchRejectGapChase P0-2（2026-10-21）：买入单跳空高开成交价超触发价 > max_entry_gap → 弃单。
+// 场景（sz002640 2014-07-30）：trigger=17.10，当日跳空高开 27.80（+62.6%），
+// 修复前按开盘价成交（追高假利润）；修复后弃单置 cancelled。
+func TestMatchRejectGapChase(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer st.Close()
+	if err := st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity("sz002640", "")}); err != nil {
+		t.Fatalf("seed secs: %v", err)
+	}
+	mkBar := func(date string, o, h, l, c float64) contract.DailyBar {
+		return contract.DailyBar{Code: "sz002640", Date: date, Open: o, High: h, Low: l, Close: c}
+	}
+	if _, err := st.BarRepo.UpsertBars([]contract.DailyBar{
+		mkBar("2014-07-29", 17.0, 17.2, 16.8, 17.1),
+		mkBar("2014-07-30", 27.8, 28.0, 27.5, 27.8), // 跳空高开 +62.6%
+	}); err != nil {
+		t.Fatalf("seed bars: %v", err)
+	}
+
+	m := New(st)
+	ctx := context.Background()
+
+	// 07-29 计划：07-30 执行的买入单（trigger=17.10）
+	planID, err := st.TradeRepo.CreatePlan(contract.TradePlan{PlanDate: "2014-07-29", ExecuteDate: "2014-07-30", EquityBase: 1e6})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	if err := st.TradeRepo.AddOrders(planID, []contract.PlanOrder{{
+		PlanDate: "2014-07-29", ExecuteDate: "2014-07-30", Code: "sz002640", Side: "buy",
+		OrderKind: "stop_buy", TriggerPrice: 17.10, LimitPrice: 17.10, Qty: 1000,
+	}}); err != nil {
+		t.Fatalf("AddOrders: %v", err)
+	}
+
+	// 07-30 撮合：跳空高开 +62.6% > max_entry_gap=5% → 弃单
+	n, err := m.Match(ctx, "2014-07-30")
+	if err != nil {
+		t.Fatalf("撮合报错: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("跳空追高应弃单（成交 0 笔），实际 %d 笔", n)
+	}
+	// 订单应置 cancelled（直接查 plan_order.status）
+	var status string
+	if err := st.DB().QueryRow(`SELECT status FROM plan_order WHERE code='sz002640'`).Scan(&status); err != nil {
+		t.Fatalf("查订单状态: %v", err)
+	}
+	if status != "cancelled" {
+		t.Fatalf("跳空追高订单 status=%s，期望 cancelled", status)
+	}
+}

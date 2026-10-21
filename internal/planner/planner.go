@@ -60,6 +60,8 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	mainStep := p.st.ParamRepo.GetFloat("pos.units.per_stock_main_step", 3)
 	// G1 观察期（2026-10-21）：入池后 N 个交易日内不产生首笔买入信号（原书 L1895/L1063）。
 	minWatchDays := p.st.ParamRepo.GetInt("pool.min_watch_days", 3)
+	// P0-2（2026-10-21）：进场跳空上限（成交/trigger 偏离上限，默认 +5%）。
+	maxEntryGap := p.st.ParamRepo.GetFloat("match.max_entry_gap", 1.05)
 
 	// 权益基准
 	eq, _ := p.st.TradeRepo.LatestEquity()
@@ -155,7 +157,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 			}
 			// M8.8：单位制仓位 + 组合级预算检查（熊猴 pyramid 在 buyOrder 内硬拦截）
 			o := p.buyOrder(s, box, market, unitValue, probeBear, probeBull, mainMax, mainStep,
-				buyPrem, sellDisc, maxLegs, posByCode, budget, plannedQty, planDate, executeDate)
+				buyPrem, sellDisc, maxLegs, posByCode, budget, plannedQty, planDate, executeDate, maxEntryGap)
 			if o != nil {
 				orders = append(orders, *o)
 			}
@@ -349,7 +351,7 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
 	probeBear, probeBull, mainMax, mainStep float64,
 	buyPrem, sellDisc float64, maxLegs int, posByCode map[string]*contract.Position,
-	budget *unitBudget, plannedQty map[string]int, planDate, execDate string) *contract.PlanOrder {
+	budget *unitBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
 	// 初始止损（B1修正，原书§4.1）：腿1=被突破箱体上轨（突破点）下方——紧止损；
 	// 腿2/3=新箱体下轨下方（新箱体确立后止损上移至其下轨，符合原书阶梯规则）。
@@ -359,6 +361,18 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	}
 	if trigger <= 0 || stop <= 0 || box.Bottom <= 0 {
 		return nil // 无下轨或触发/止损非法，不生成买单
+	}
+	// P0-2（2026-10-21）：生成买单前校验 trigger 与信号现价偏离。
+	// 正常 breakout 时 ClosePx ≈ 箱顶、trigger ≈ 箱顶×1.03（偏离约3%）；
+	// 陈旧箱体（连板盲区 R7 致箱体未及时更新，如 sh600825 箱顶5.10 vs 现价15.58）
+	// 会产出 trigger 严重偏离现价的灾难订单，必须拦截。
+	// 注意：max_entry_gap 存的是「现价允许的 trigger 倍数上限」，默认 1.05（=+5%）。
+	if s.ClosePx > 0 && trigger > 0 {
+		if ratio := s.ClosePx / trigger; ratio > maxEntryGap {
+			p.log.Printf("拒单 %s：trigger %.2f 与现价 %.2f 比值 %.3f > max_entry_gap=%.3f（陈旧箱体，跳过）",
+				s.Code, trigger, s.ClosePx, ratio, maxEntryGap)
+			return nil
+		}
 	}
 	shares := unitShares(unitValue, trigger)
 	if shares <= 0 {

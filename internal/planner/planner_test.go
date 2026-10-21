@@ -420,6 +420,35 @@ func TestPlannerNoDuplicateSell(t *testing.T) {
 	}
 }
 
+// TestPlannerRejectStaleBoxOrder P0-2（2026-10-21）：陈旧箱体致 trigger 严重偏离现价 → 拒单。
+// 场景（sh600825 型）：箱顶 5.10（久远确认），现价已 15.58，trigger=5.253 偏离 +196%，
+// 远超 max_entry_gap=1.05，必须拦截（否则以 5.253 挂单追高买入）。
+func TestPlannerRejectStaleBoxOrder(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	// 陈旧箱体：箱顶 5.10，但信号现价 15.58（远高于箱顶）
+	boxes := []contract.Box{{Code: code, Top: 5.10, Bottom: 4.58, Status: contract.BoxBrokenUp, BrokenDate: "2026-10-16"}}
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	st.PoolRepo.UpsertWatch(contract.Watch{Code: code, AddedDate: "2026-10-08", Stage: contract.StageWatching})
+	st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
+		BoxID: boxes[0].ID, ClosePx: 15.58, BoxLevel: 5.10,
+	}})
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatal(err)
+	}
+	_, orders, _ := st.TradeRepo.PlanOn("2026-10-16")
+	if len(orders) != 0 {
+		t.Fatalf("陈旧箱体 trigger 偏离现价 +196%% 应拒单，实际生成 %d 笔订单", len(orders))
+	}
+}
+
 // TestPlannerExecuteDate P1修复验收（2026-10-17）：执行日=下一交易日（ADR-2），非日历+1。
 func TestPlannerExecuteDate(t *testing.T) {
 	st := newPlannerStore(t)
