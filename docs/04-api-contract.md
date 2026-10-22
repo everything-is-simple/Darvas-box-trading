@@ -350,21 +350,30 @@ type SignalEngine interface {
 ```go
 type Planner interface {
     Build(ctx context.Context, planDate string) (TaskResult, error)
-    // 输入：当日signal + 持仓 + param + equity_snapshot + 战绩分级（track_level）
+    // 输入：当日signal + 持仓 + param + equity_snapshot + 市场趋势（A 判据）
     // 输出：trade_plan + plan_order（停损买/卖单，含触发价、委托价、数量、腿号）
-    // 0017 战绩分级制：只首买、一律不加码。首买档位由 track_level 决定：
-    //   普通池(normal)=1单位、赢家池(winner)=5单位；组合约束=同时持仓数上限 pool.max_hold=7。
-    // 数量公式：1单位=权益×pos.unit(2%)；单位股数=floor(单位值/价/100)×100。
+    // A M1（2026-10-23，docs/23 §9 D0）：只首买、一律不加码。首买档位由 **A 判据升势**决定：
+    //   regime.ClassifyDateA(planDate) == Bull（60 日低点逐级抬升）→ 2 单位；其余 → 1 单位。
+    //   winner 5x 退役（D1 意图由 D0 实现）；track_level 保留作审计字段不驱动 units。
+    //   不择时、不做熊市闸门（2026-10-23 六轮回测证伪，见 docs/00 第 0 条）。
+    //   组合约束=同时持仓数上限 pool.max_hold。
+    // 数量公式：1单位=权益×pos.unit(2%)；单位股数=floor(单位值/价/100)×100；qty=units×单位股数。
+    // reason_json：sizing_basis="A_regime_up"/"default"、units=2/1、regime=A判据标签、budget_bucket="normal"、track_level=审计。
 }
 
 type PlanParams struct {
-    UnitPct float64            // 0.02（1 单位 = 2% 权益，普通池首买）
-    WinnerUnits float64        // 5（赢家池首买 5 单位）
-    MaxHold int                // 7（同时持仓上限，留 30% 现金）
+    UnitPct float64            // 0.02（1 单位 = 2% 权益）
+    MaxHold int                // 7（同时持仓上限，A M1 升势 2 单位 × 7 只 ≈ 28%，留 30%+ 现金）
     BuyPremium, SellDiscount float64 // 1.03 / 0.97
-    MaxLegs int // 3
+    MaxLegs int                // 3（0017 后恒 1 腿，保留字段向后兼容）
+    // 注：WinnerUnits / pos.units.winner 随 D0 退役（planner 不再读取，参数保留作审计）。
 }
 ```
+
+> **A 判据查询路径**（planner → regime）：`regimeLabel(planDate)` → `regime.ClassifyDateA(st, date)`
+> 读 sh000001 最近 61 根 low（`BarRepo.BarsWindow(DefaultIndex, date, 61)`），算
+> `cur=min(末60根) / prev=min(前60根)`，`cur>prev×1.002`→升势(Bull)。零未来信息。
+> M8.8 宽度法 `ClassifyDate` 不再被 planner 调用，仅分体制报告 `regime.Run` 保留。
 
 ### 4.6 账本（ledger）
 

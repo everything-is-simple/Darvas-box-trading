@@ -11,7 +11,8 @@ import (
 	"darvas/internal/store"
 )
 
-// TestPlannerBreakoutUnitQtyBear 熊猴市腿1 = 1 单位股数（默认权益100万、pos.unit=2%）。
+// TestPlannerBreakoutUnitQtyBear A M1：非升势（震荡/无历史）日首买 1 单位股数
+// （默认权益100万、pos.unit=2%）。
 func TestPlannerBreakoutUnitQtyBear(t *testing.T) {
 	st := newPlannerStore(t)
 	code := "sh600519"
@@ -52,12 +53,15 @@ func TestPlannerBreakoutUnitQtyBear(t *testing.T) {
 	if units, ok := o.Reason["units"].(float64); !ok || units != 1 {
 		t.Errorf("reason.units=%v want 1", o.Reason["units"])
 	}
+	if basis, ok := o.Reason["sizing_basis"].(string); !ok || basis != "default" {
+		t.Errorf("reason.sizing_basis=%v want default（非升势→1单位）", o.Reason["sizing_basis"])
+	}
 	if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "normal" {
-		t.Errorf("reason.budget_bucket=%v want normal（0017：普通池首买）", o.Reason["budget_bucket"])
+		t.Errorf("reason.budget_bucket=%v want normal", o.Reason["budget_bucket"])
 	}
 }
 
-// TestPlannerBreakoutUnitQtyBull 牛市腿1 = 2 单位股数，占用试探预算。
+// TestPlannerBreakoutUnitQtyBull A M1（2026-10-23）：A 判据升势日首买 2 单位股数。
 func TestPlannerBreakoutUnitQtyBull(t *testing.T) {
 	st := newPlannerStore(t)
 	code := "sh600519"
@@ -66,7 +70,7 @@ func TestPlannerBreakoutUnitQtyBull(t *testing.T) {
 	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
 		t.Fatal(err)
 	}
-	seedBullRegime(t, st, "2026-10-16")
+	seedARegimeUp(t, st, "2026-10-16") // 60 日低点逐级抬升 → A 判据升势
 	st.SignalRepo.AppendSignals([]contract.Signal{{
 		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
 		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
@@ -85,15 +89,18 @@ func TestPlannerBreakoutUnitQtyBull(t *testing.T) {
 		t.Fatalf("orders=%d want 1", len(orders))
 	}
 	o := orders[0]
-	// 方案A（2026-10-21）：首腿统一 1 单位，不分牛熊。牛市腿1 也是 1 单位=800 股。
-	if o.Qty != 800 {
-		t.Errorf("qty=%d want 800（方案A：首腿统一1单位，不分牛熊）", o.Qty)
+	// A M1：升势日首买 2 单位。trigger=24×1.03=24.72；1单位=800股 → 2单位=1600股。
+	if o.Qty != 1600 {
+		t.Errorf("qty=%d want 1600（A M1：升势日首买2单位）", o.Qty)
 	}
-	if units, ok := o.Reason["units"].(float64); !ok || units != 1 {
-		t.Errorf("reason.units=%v want 1", o.Reason["units"])
+	if units, ok := o.Reason["units"].(float64); !ok || units != 2 {
+		t.Errorf("reason.units=%v want 2（升势日2单位）", o.Reason["units"])
+	}
+	if basis, ok := o.Reason["sizing_basis"].(string); !ok || basis != "A_regime_up" {
+		t.Errorf("reason.sizing_basis=%v want A_regime_up", o.Reason["sizing_basis"])
 	}
 	if r, ok := o.Reason["regime"].(string); !ok || r != "bull" {
-		t.Errorf("reason.regime=%v want bull（体制仍记录为观察指标，不再作交易门槛）", o.Reason["regime"])
+		t.Errorf("reason.regime=%v want bull（A 判据升势）", o.Reason["regime"])
 	}
 }
 
@@ -140,8 +147,10 @@ func TestPlannerNoPyramidOnHolding(t *testing.T) {
 	}
 }
 
-// TestPlannerWinnerFirstBuy 0017：赢家池（track_level=winner）首买 5 单位。
-func TestPlannerWinnerFirstBuy(t *testing.T) {
+// TestPlannerNoWinnerBoost D1+A M1（2026-10-23）：winner 池不再 5x 加仓——
+// 即使 A 判据升势日，winner 也只首买 2 单位（与普通池同档），budget_bucket 退为 normal。
+// track_level 仍记录为 winner（审计字段保留），但不驱动 units。
+func TestPlannerNoWinnerBoost(t *testing.T) {
 	st := newPlannerStore(t)
 	code := "sh600519"
 	seedBars(t, st, code)
@@ -149,10 +158,11 @@ func TestPlannerWinnerFirstBuy(t *testing.T) {
 	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
 		t.Fatal(err)
 	}
-	// 标记为赢家池
+	// 标记为赢家池（D1 前 winner 首买 5 单位；A M1 后 winner 不再放大）
 	if err := st.SecRepo.SetTrackLevel(code, contract.TrackWinner, ""); err != nil {
 		t.Fatal(err)
 	}
+	seedARegimeUp(t, st, "2026-10-16")
 	st.SignalRepo.AppendSignals([]contract.Signal{{
 		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
 		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
@@ -171,15 +181,21 @@ func TestPlannerWinnerFirstBuy(t *testing.T) {
 		t.Fatalf("orders=%d want 1", len(orders))
 	}
 	o := orders[0]
-	// 赢家池 5 单位：unitValue=20000，trigger=24×1.03=24.72，1单位=800股 → 5单位=4000股
-	if o.Qty != 4000 {
-		t.Errorf("qty=%d want 4000（赢家池 5 单位）", o.Qty)
+	// winner 池 A M1 升势日：首买 2 单位（不是 5）= 1600 股。
+	if o.Qty != 1600 {
+		t.Errorf("qty=%d want 1600（D1：winner 不再 5x，A M1 升势 2 单位）", o.Qty)
 	}
-	if units, ok := o.Reason["units"].(float64); !ok || units != 5 {
-		t.Errorf("reason.units=%v want 5", o.Reason["units"])
+	if units, ok := o.Reason["units"].(float64); !ok || units != 2 {
+		t.Errorf("reason.units=%v want 2（winner 不再 5x）", o.Reason["units"])
 	}
-	if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "winner" {
-		t.Errorf("reason.budget_bucket=%v want winner", o.Reason["budget_bucket"])
+	if basis, ok := o.Reason["sizing_basis"].(string); !ok || basis != "A_regime_up" {
+		t.Errorf("reason.sizing_basis=%v want A_regime_up", o.Reason["sizing_basis"])
+	}
+	if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "normal" {
+		t.Errorf("reason.budget_bucket=%v want normal（winner 档退役）", o.Reason["budget_bucket"])
+	}
+	if lv, ok := o.Reason["track_level"].(string); !ok || lv != "winner" {
+		t.Errorf("reason.track_level=%v want winner（审计字段保留）", o.Reason["track_level"])
 	}
 }
 
@@ -551,43 +567,34 @@ func seedIndexBars(t *testing.T, st *store.Store, dates ...string) {
 	}
 }
 
-// seedBullRegime 造 M8.8 牛市：最近 3 个交易日全为 broken_up 事件，ratio=1 连续3日。
-func seedBullRegime(t *testing.T, st *store.Store, planDate string) []string {
+// seedARegimeUp 造 A 判据升势：播 61 根 sh000001 日线，low 逐日抬升 0.3%（>0.2% 升势阈值），
+// 使 cur=min(末60根) > prev=min(前60根) × 1.002 → 升势(Bull)。末根日期 = planDate。
+// 对应 regime.ClassifyDateA（60 日低点相邻日比），移植自 scripts/regime_sizing_backtest.py。
+func seedARegimeUp(t *testing.T, st *store.Store, planDate string) {
 	t.Helper()
 	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity("sh000001", "")})
 	d, err := time.Parse("2006-01-02", planDate)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dates := make([]string, 0, 25)
-	for d = d.AddDate(0, 0, 1); len(dates) < 25; d = d.AddDate(0, 0, -1) {
-		if d.Weekday() != time.Saturday && d.Weekday() != time.Sunday {
-			dates = append([]string{d.Format("2006-01-02")}, dates...)
+	dates := make([]string, 0, 61)
+	for cur := d; len(dates) < 61; cur = cur.AddDate(0, 0, -1) {
+		if cur.Weekday() != time.Saturday && cur.Weekday() != time.Sunday {
+			dates = append([]string{cur.Format("2006-01-02")}, dates...)
 		}
 	}
-	bars := make([]contract.DailyBar, 0, len(dates))
+	bars := make([]contract.DailyBar, 0, 61)
+	lo := 1000.0
 	for _, ds := range dates {
-		bars = append(bars, contract.DailyBar{Code: "sh000001", Date: ds, Open: 3000, High: 3010, Low: 2990, Close: 3000, Volume: 1000, Amount: 1e8})
+		bars = append(bars, contract.DailyBar{
+			Code: "sh000001", Date: ds, Open: lo + 10, High: lo + 15, Low: lo, Close: lo + 10,
+			Volume: 1000, Amount: 1e8,
+		})
+		lo *= 1.003 // 严格递增 0.3%/日 > 0.2% 升势阈值
 	}
 	if _, err := st.BarRepo.UpsertBars(bars); err != nil {
 		t.Fatal(err)
 	}
-	for i, ds := range dates[len(dates)-3:] {
-		for j := 0; j < 2; j++ {
-			code := fmt.Sprintf("sh60%04d", i*10+j)
-			if err := st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")}); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := st.BarRepo.UpsertBars([]contract.DailyBar{{Code: code, Date: "2026-01-01", Open: 10, High: 10, Low: 10, Close: 10, Volume: 100, Amount: 1e5}}); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := st.DB().Exec(`INSERT INTO box(code, top, bottom, status, broken_date)
-				VALUES (?, 12, 10, 'broken_up', ?)`, code, ds); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	return dates
 }
 
 // seedPosition 造一个带最新收盘与 nLegs 条腿的持仓，供预算测试。

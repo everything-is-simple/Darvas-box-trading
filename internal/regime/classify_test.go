@@ -2,6 +2,7 @@ package regime
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -150,5 +151,80 @@ func TestClassifyDateNoData(t *testing.T) {
 	got := ClassifyDate(st, "2026-03-06", defaultParams(), nil)
 	if got != Range {
 		t.Fatalf("无数据应判 range, got %s", got)
+	}
+}
+
+// ─── A 判据（60 日低点相邻日比，ClassifyDateA）── A M1 仓位规则依据 ───
+
+// seedIndexLowsA 播种 sh000001 日线，按 gen(i) 生成 low（i=0..n-1，升序日期）。
+// 用于 ClassifyDateA 测试：控制 60 日低点序列的走向。返回末根日期。
+func seedIndexLowsA(t *testing.T, st *store.Store, end string, n int, gen func(i int) float64) string {
+	t.Helper()
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(DefaultIndex, "")})
+	d, err := time.Parse("2006-01-02", end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dates := make([]string, 0, n)
+	for cur := d; len(dates) < n; cur = cur.AddDate(0, 0, -1) {
+		if cur.Weekday() != time.Saturday && cur.Weekday() != time.Sunday {
+			dates = append([]string{cur.Format("2006-01-02")}, dates...)
+		}
+	}
+	bars := make([]contract.DailyBar, 0, n)
+	for i, ds := range dates {
+		lo := gen(i)
+		bars = append(bars, contract.DailyBar{
+			Code: DefaultIndex, Date: ds, Open: lo + 10, High: lo + 15, Low: lo, Close: lo + 10,
+			Volume: 1000, Amount: 1e8,
+		})
+	}
+	if _, err := st.BarRepo.UpsertBars(bars); err != nil {
+		t.Fatal(err)
+	}
+	return dates[len(dates)-1]
+}
+
+// TestClassifyDateAUp A 判据升势：61 根 low 逐日抬升 0.3%（>0.2% 阈值）→ Bull。
+// cur=min(末60)=bars[1].Low，prev=min(前60)=bars[0].Low；cur>prev×1.002。
+func TestClassifyDateAUp(t *testing.T) {
+	st := newTestStore(t)
+	end := seedIndexLowsA(t, st, "2026-03-06", 61, func(i int) float64 {
+		return 1000.0 * math.Pow(1.003, float64(i))
+	})
+	if got := ClassifyDateA(st, end); got != Bull {
+		t.Fatalf("low 逐级抬升应判升势(bull), got %s", got)
+	}
+}
+
+// TestClassifyDateADown A 判据降势：61 根 low 逐日下移 0.3%（>0.2% 阈值）→ Bear。
+// cur=min(末60)=bars[60].Low（最小），prev=min(前60)=bars[59].Low；cur<prev×0.998。
+func TestClassifyDateADown(t *testing.T) {
+	st := newTestStore(t)
+	end := seedIndexLowsA(t, st, "2026-03-06", 61, func(i int) float64 {
+		return 1000.0 * math.Pow(0.997, float64(i))
+	})
+	if got := ClassifyDateA(st, end); got != Bear {
+		t.Fatalf("low 逐级下移应判降势(bear), got %s", got)
+	}
+}
+
+// TestClassifyDateAFlat A 判据震荡：61 根 low 持平 → cur==prev → Range。
+func TestClassifyDateAFlat(t *testing.T) {
+	st := newTestStore(t)
+	end := seedIndexLowsA(t, st, "2026-03-06", 61, func(i int) float64 { return 1000.0 })
+	if got := ClassifyDateA(st, end); got != Range {
+		t.Fatalf("low 持平应判震荡(range), got %s", got)
+	}
+}
+
+// TestClassifyDateAInsufficientHistory 历史不足 61 根 → Range（保守不放大仓位）。
+func TestClassifyDateAInsufficientHistory(t *testing.T) {
+	st := newTestStore(t)
+	end := seedIndexLowsA(t, st, "2026-03-06", 60, func(i int) float64 {
+		return 1000.0 * math.Pow(1.003, float64(i)) // 即使逐级抬升，历史不足也判震荡
+	})
+	if got := ClassifyDateA(st, end); got != Range {
+		t.Fatalf("历史不足 61 根应判 range（保守不放大），got %s", got)
 	}
 }

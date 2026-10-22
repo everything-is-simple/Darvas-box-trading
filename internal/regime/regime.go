@@ -178,6 +178,63 @@ func ClassifyDate(st *store.Store, date string, params contract.BoxParams, indic
 	return Range
 }
 
+// ClassifyDateA 标注某日的市场趋势（A 判据：60 日低点相邻日比，2026-10-23）。
+//
+// 算法（移植自 scripts/regime_sizing_backtest.py load_index_labels，达瓦斯箱体语言：
+// 指数 N 日低点逐级抬升=升势，逐级下移=降势，否则震荡）：
+//
+//	cur  = min(截至当日含的最近 lookback 个 low)
+//	prev = min(截至前一交易日的最近 lookback 个 low)
+//	升势(Bull)  = cur > prev × up_bias
+//	降势(Bear)  = cur < prev × down_bias
+//	震荡(Range) = 其余
+//
+// 零未来信息：只读 date ≤ 当日的 K 线（ADR-2，sh000001 为交易日历权威）。
+// 历史不足 lookback+1 个交易日返回 Range（保守中性，不放大仓位，与 Python i<lookback 同口径）。
+//
+// 用途：planner A M1 仓位规则——升势日首买 2 单位、其余 1 单位（不择时、不做熊市闸门）。
+// 与 M8.8 宽度法 ClassifyDate 互不替代：本函数是「速度计」（量下轨移动速度），
+// 专用于仓位缩放；宽度法仍供分体制报告使用，但 planner 不再据此择时。
+//
+// 参数（默认与 Python 一致，未在 migration 种子化时取默认值，保证回测可复现）：
+//
+//	regime.a.lookback   默认 60    回看窗口长度（含当日）
+//	regime.a.up_bias    默认 1.002 升势阈值：cur > prev × 此值
+//	regime.a.down_bias  默认 0.998 降势阈值：cur < prev × 此值
+func ClassifyDateA(st *store.Store, date string) Regime {
+	lookback := st.ParamRepo.GetInt("regime.a.lookback", 60)
+	upBias := st.ParamRepo.GetFloat("regime.a.up_bias", 1.002)
+	downBias := st.ParamRepo.GetFloat("regime.a.down_bias", 0.998)
+	if lookback <= 0 {
+		return Range
+	}
+	// 取 lookback+1 根 K 线（末根=当日）；BarsWindow 升序返回。
+	bars, err := st.BarRepo.BarsWindow(DefaultIndex, date, lookback+1)
+	if err != nil || len(bars) < lookback+1 {
+		return Range
+	}
+	// bars[0..lookback]（共 lookback+1 根）：
+	//   cur  = min(bars[1..lookback].Low)  ← 含当日，lookback 个
+	//   prev = min(bars[0..lookback-1].Low) ← 不含当日，lookback 个
+	cur, prev := math.MaxFloat64, math.MaxFloat64
+	for i := 0; i < len(bars); i++ {
+		lo := bars[i].Low
+		if i >= 1 && lo < cur {
+			cur = lo
+		}
+		if i <= lookback-1 && lo < prev {
+			prev = lo
+		}
+	}
+	if cur > prev*upBias {
+		return Bull
+	}
+	if cur < prev*downBias {
+		return Bear
+	}
+	return Range
+}
+
 // Segment 连续同体制的一段。
 type Segment struct {
 	Regime     Regime

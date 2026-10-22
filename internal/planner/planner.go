@@ -3,15 +3,18 @@
 // 输入：当日 signal + 持仓 + param + equity_snapshot
 // 输出：trade_plan + plan_order（停损买/卖单，含触发价、委托价、数量、腿号）
 //
-// 数量公式（M8.8 单位制，archive/13 §3）：1 单位 = 权益 × pos.unit（默认 2%），
+// 数量公式（单位制）：1 单位 = 权益 × pos.unit（默认 2%），
 // 单位股数 = floor(equity × pos.unit / price / 100) × 100（A股整手）。
-// 三层预算：试探 5 单位 + 主力 30 单位 + 预备 15 单位永不动；永远留 30% 现金。
-// 方案 A（2026-10-21，第0条撤回连锁）：不择时——首腿统一 1 单位试探，任何市况
-// 都允许金字塔加码；试探满后改吃主力预算（组合风控保留），体制标签仅作观察记录。
+// A M1（2026-10-23，docs/23 §9 D0 + var/bt/regime_final_summary_and_prompt.md）：
+// 不择时——首买单位由 A 判据（60 日低点相邻日比，regime.ClassifyDateA）决定：
+//   升势日（指数 N 日低点逐级抬升）→ 首买 2 单位；其余 → 1 单位。
+// 取消 winner 5x（D1：docs/23 §9 实证 3 年仅 2 笔全亏 -3,201，有害无益）。
+// 不做熊市闸门、不引入 C 判据（2026-10-23 六轮回测硬结论：C 开仓滞后、A 在熊市不触发，
+// 大盘择时实证不通，见 docs/00 第 0 条回滚标注）。track_level 保留作审计字段，不驱动 units。
+// 一律不加码（0017）：已持仓股再突破不生成买单。组合约束 = 同时持仓数上限（pool.max_hold）。
 //   - breakout → 腿1停损买单：trigger = box.top × buy.premium，stop = box.top × sell.discount
 //     （B1修正2026-10-18：首腿紧止损=被突破箱体上轨/突破点下方，原书§4.1；旧实现误挂箱体下轨下方）
-//   - pyramid → 腿2/3停损买单：trigger = box.top × buy.premium，stop = box.bottom × sell.discount
-//     （腿2 为 poolsync 时滞防御分支，见 buyOrder；原「熊猴不生成」已随方案A废止）
+//   - pyramid → 一律不加码（0017）：已持仓不生成买单（防御性时滞分支随 0017 退役）
 //   - stop/failed_breakout → 止损卖单：trigger = box.bottom × sell.discount，qty = 持仓全部（一次全出）
 package planner
 
@@ -47,12 +50,11 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	start := time.Now()
 	res := contract.TaskResult{Task: "plan", Date: planDate}
 
-	// 参数（0017 战绩分级制：首买单位由池级决定，废腿号金字塔）
+	// 参数（A M1：首买单位由 A 判据升势决定，winner 5x 退役）。
 	buyPrem := p.st.ParamRepo.GetFloat("buy.premium", 1.03)
 	sellDisc := p.st.ParamRepo.GetFloat("sell.discount", 0.97)
-	unitPct := p.st.ParamRepo.GetFloat("pos.unit", 0.02)          // 1 单位 = 2% 权益（普通池首买）
-	winnerUnits := p.st.ParamRepo.GetFloat("pos.units.winner", 5) // 赢家池首买 5 单位
-	maxHold := p.st.ParamRepo.GetInt("pool.max_hold", 7)          // 同时最多持仓数（留 30% 现金）
+	unitPct := p.st.ParamRepo.GetFloat("pos.unit", 0.02) // 1 单位 = 2% 权益
+	maxHold := p.st.ParamRepo.GetInt("pool.max_hold", 7) // 同时最多持仓数（留 30% 现金）
 	// G1 观察期（2026-10-21）：入池后 N 个交易日内不产生首笔买入信号（原书 L1895/L1063）。
 	minWatchDays := p.st.ParamRepo.GetInt("pool.min_watch_days", 3)
 	// P0-2（2026-10-21）：进场跳空上限（成交/trigger 偏离上限，默认 +5%）。
@@ -71,7 +73,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	unitValue := equity * unitPct
 	market := p.regimeLabel(planDate)
 
-	// 0017 组合级约束：同时持仓数上限（7 只 × 赢家池 5 单位 = 70%，留 30% 现金）。
+	// 组合级约束：同时持仓数上限（A M1 升势 2 单位 × maxHold 只 ≈ 权益 28%，远低于 70%）。
 	// 不再有「试探/主力」分桶预算——不加码，仓位只有首买一档，组合风险由「持仓数」管。
 	openCount, err := p.st.TradeRepo.OpenPositionCount()
 	if err != nil {
@@ -134,12 +136,12 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 					}
 				}
 			}
-			// 0017 战绩分级制：首买单位由池级决定（普通 1 / 赢家 5），一律不加码。
-			o := p.buyOrder(s, box, market, unitValue, winnerUnits,
-				buyPrem, sellDisc, posByCode, budget, plannedQty, planDate, executeDate, maxEntryGap)
-			if o != nil {
-				orders = append(orders, *o)
-			}
+		// A M1（2026-10-23）：首买单位由 A 判据升势决定（升势 2 / 其余 1），winner 5x 退役。
+		o := p.buyOrder(s, box, market, unitValue,
+			buyPrem, sellDisc, posByCode, budget, plannedQty, planDate, executeDate, maxEntryGap)
+		if o != nil {
+			orders = append(orders, *o)
+		}
 		case contract.SignalStop, contract.SignalFailed:
 			if pendingSell[s.Code] {
 				continue // 已有在途卖出单，不重复生成（M8.3）
@@ -264,10 +266,12 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	return res, nil
 }
 
-// regimeLabel 标注当日市场体制（M8.8 内生宽度法，零未来信息）。
-// params/indices 传空即可：ClassifyDate 保留签名仅为向后兼容，内部忽略。
+// regimeLabel 标注当日市场趋势（A 判据：60 日低点相邻日比，零未来信息）。
+// A M1 仓位规则用：升势日首买 2 单位、其余 1 单位。M8.8 宽度法（ClassifyDate）
+// 已不再被 planner 调用（大盘择时 2026-10-23 实验证伪回滚，见 docs/00 第 0 条），
+// 仅分体制报告（regime.Run）保留宽度法，与仓位决策解耦。
 func (p *Planner) regimeLabel(date string) regime.Regime {
-	return regime.ClassifyDate(p.st, date, contract.BoxParams{}, nil)
+	return regime.ClassifyDateA(p.st, date)
 }
 
 // regimeName 日志中文名。
@@ -338,15 +342,17 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 	return moves
 }
 
-// buyOrder 构造停损买单（0017 战绩分级制：首买，一律不加码）。
-// 规则（用户拍板 2026-10-22，三方对照校订）：
-//   - 交易只发生在「第一次信号」——不论赢家池/普通池，同一只票持仓期间一律不加码。
-//   - 下注档位由该票战绩等级决定：普通池(normal) 1 单位、赢家池(winner) 5 单位。
-//   - 组合约束 = 同时持仓数上限（pool.max_hold=7，留 30% 现金），不再是试探/主力分桶。
+// buyOrder 构造停损买单（A M1：首买，一律不加码）。
+// 规则（2026-10-23，var/bt/regime_final_summary_and_prompt.md + docs/23 §9 D0/D1）：
+//   - 交易只发生在「第一次信号」——同一只票持仓期间一律不加码（0017）。
+//   - 首买单位由 A 判据（60 日低点相邻日比，regime.ClassifyDateA）决定：
+//     升势日 2 单位、其余 1 单位。取消 winner 5x（D1：实证有害无益）。
+//   - 组合约束 = 同时持仓数上限（pool.max_hold，留 30% 现金），不是试探/主力分桶。
+//   - 不引入 C 判据、不做熊市闸门（2026-10-23 六轮回测硬结论：大盘择时不通）。
+//   - track_level 保留作审计字段（记录该票战绩等级），不再驱动 units。
 // 腿号金字塔（leg1=1/leg2=3/leg3补到10）、第②通道加码、单票上限10单位、主力预算30单位
 //   全部随「不加码」退役（见 docs/00 §5.6）。
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
-	winnerUnits float64,
 	buyPrem, sellDisc float64, posByCode map[string]*contract.Position,
 	budget *holdBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
@@ -381,13 +387,14 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		return nil
 	}
 
-	// 下注档位：由战绩等级决定（普通 1 / 赢家 5）。
+	// A M1 仓位规则：首买单位由 A 判据升势决定（升势 2 / 其余 1），winner 5x 退役。
+	// track_level 仍记录（审计），但不进入下注档位。
 	lv, _ := p.st.SecRepo.TrackLevel(s.Code)
 	units := 1.0
-	bucket := "normal"
-	if lv == contract.TrackWinner {
-		units = winnerUnits
-		bucket = "winner"
+	basis := "default"
+	if market == regime.Bull { // A 判据升势（60 日低点逐级抬升）
+		units = 2.0
+		basis = "A_regime_up"
 	}
 
 	// 组合约束：同时持仓数上限。
@@ -414,7 +421,8 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		Reason: map[string]any{
 			"signal": string(s.Type), "box_top": box.Top, "box_bottom": box.Bottom,
 			"trigger": trigger, "stop": stop, "leg": 1,
-			"regime": string(market), "budget_bucket": bucket, "track_level": string(lv),
+			"regime": string(market), "sizing_basis": basis,
+			"track_level": string(lv), "budget_bucket": "normal",
 			"unit_value": unitValue, "unit_shares": shares, "units": units,
 		},
 	}
