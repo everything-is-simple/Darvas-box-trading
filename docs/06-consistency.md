@@ -10,7 +10,7 @@
 |------|-------------|---------|
 | 数据库Schema | `internal/store/migrations/*.sql` | docs/03-erd.md |
 | 模块接口/类型 | `internal/contract/contract.go` | docs/04-api-contract.md |
-| 每日时间表/任务ID | `internal/scheduler/schedule.go`（常量表） | docs/01-requirements.md §4 |
+| 每日时间表/任务ID | `internal/scheduler/scheduler.go`（`Schedule` 常量表 + `WeeklyClock`） | docs/01-requirements.md §4 |
 | 领域参数默认值 | `migrations/0001_init.sql` 的param种子 | docs/01-requirements.md §6 |
 | 理论规则 | docs/00-darvas-theory.md（理论宪法） | 代码必须能指回条目 |
 

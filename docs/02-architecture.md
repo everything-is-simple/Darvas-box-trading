@@ -92,8 +92,8 @@ Darvas-box-trading/
 │   ├── screener/                 # 四条件初选
 │   ├── pool/                     # 跟踪池状态机
 │   ├── signal/                   # 四类信号判定
-│   ├── planner/                  # 六问→订单计划
-│   ├── position/                 # 腿管理/止损上移/仓位计算
+│   ├── planner/                  # 六问→订单计划（含止损上移 raiseStops + 仓位 unitShares）
+│   ├── position/                 # 占位空包（腿管理在 store/repo_trade.AddLeg；止损上移/仓位在 planner）
 │   ├── ledger/                   # 权益快照/恒等式审计
 │   ├── scheduler/                # 时间表调度+补跑+周六weekly触发
 │   ├── reporter/                 # HTML/Excel日报周报

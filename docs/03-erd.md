@@ -198,7 +198,7 @@ erDiagram
 
 | 迁移 | 触发 |
 |------|------|
-| → watching | candidate当日入池（blacklisted 拦截；活跃池 ≥ `pool.maxwatch` 拦截） |
+| → watching | candidate当日入池（blacklisted 冷却期内拦截；`pool.maxwatch` 降级软参考仅日志告警不拒绝入池——资金预算为唯一约束） |
 | watching → pending | 箱体confirmed且挂停损买单计划生成 |
 | pending → watching | 买单过期未成交（RelaxPendingWatches，B2接线） |
 | pending → holding | 买单成交（trade_fill回录） |
@@ -206,9 +206,9 @@ erDiagram
 | watching → exited | 箱体broken_down / 连续4箱不涨 / 人工移除 |
 | watching/holding → suspended | 人工挂起（`pool suspend --resume <价>`，B2） |
 | suspended → watching | 收盘价 ≥ resume_trigger 激活价（poolsync 巡检） |
-| watching/pending/holding → blacklisted | 两亏拉黑：该股亏损交易（`realized_pnl<0`）≥ `pool.maxloss` 次（B2） |
+| watching/pending/holding → blacklisted | 战绩分级（0017）：最近一笔持仓周期亏损 `realized_pnl<0` → blacklist 冷却 `pool.blacklist_months` 月。A M1（2026-10-23）后 winner 档退役，流转简化为盈利→normal、亏损→blacklist 两态（docs/00 §5.6.5、docs/23 §9 D1） |
 
-注：suspended 不占跟踪名额（`pool.maxwatch` 只计 watching+pending+holding）；blacklisted 为终态，永不再入池（0003 起 CHECK 六值）。
+注：suspended 不占跟踪名额（`pool.maxwatch` 只计 watching+pending+holding，但已降级软参考）；blacklisted 冷却 `pool.blacklist_months` 月后解禁回 normal（0017 战绩分级，非终态；0003 起 CHECK 六值）。
 
 ### 2.3 `position.stop_price`
 
