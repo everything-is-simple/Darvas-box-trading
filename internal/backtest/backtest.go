@@ -58,10 +58,11 @@ const (
 
 // Options 回放入口参数。
 type Options struct {
-	From, To  string // 窗口 [From, To]（含）；空则取源库最近 20 个交易日
-	SrcDB     string // 源库（只读；灌历史K线/证券表/日历）
-	ScratchDB string // 单模式目标库；空则默认 var/bt/bt_<mode>.db；verify 模式忽略
-	Mode      Mode
+	From, To       string // 窗口 [From, To]（含）；空则取源库最近 20 个交易日
+	SrcDB          string // 源库（只读；灌历史K线/证券表/日历）
+	ScratchDB      string // 单模式目标库；空则默认 var/bt/bt_<mode>.db；verify 模式忽略
+	Mode           Mode
+	ParamOverrides map[string]string // 仅写入 scratch，源库与生产参数不变
 }
 
 // sixTasks 回放的六任务链（PROMPT.md「as-of 六任务链」；ingest 由引导替代——
@@ -203,6 +204,9 @@ func runRegime(o Options) error {
 	if err = Bootstrap(o.SrcDB, scratch, from, false); err != nil {
 		return err
 	}
+	if err = applyParamOverrides(scratch, o.ParamOverrides); err != nil {
+		return err
+	}
 	if _, fails, err := Replay(scratch, days, nil); err != nil {
 		return err
 	} else if len(fails) > 0 {
@@ -220,6 +224,32 @@ func runRegime(o Options) error {
 		return err
 	}
 	fmt.Printf("[bt] regime 报告已生成: %s\n", path)
+	return nil
+}
+
+func applyParamOverrides(scratch string, overrides map[string]string) error {
+	if len(overrides) == 0 {
+		return nil
+	}
+	st, err := store.Open(scratch)
+	if err != nil {
+		return fmt.Errorf("打开 scratch 应用参数覆盖: %w", err)
+	}
+	defer st.Close()
+	keys := make([]string, 0, len(overrides))
+	for key := range overrides {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := overrides[key]
+		if _, err := st.DB().Exec(`INSERT INTO param(key,value) VALUES(?,?)
+			ON CONFLICT(key) DO UPDATE SET old_value=param.value, value=excluded.value,
+			changed_at=datetime('now','localtime')`, key, value); err != nil {
+			return fmt.Errorf("覆盖参数 %s: %w", key, err)
+		}
+		fmt.Printf("[bt] 参数覆盖 %s=%s\n", key, value)
+	}
 	return nil
 }
 

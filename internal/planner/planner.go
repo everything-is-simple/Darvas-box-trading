@@ -20,6 +20,7 @@ package planner
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"time"
@@ -55,6 +56,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	sellDisc := p.st.ParamRepo.GetFloat("sell.discount", 0.97)
 	unitPct := p.st.ParamRepo.GetFloat("pos.unit", 0.02) // 1 单位 = 2% 权益
 	maxHold := p.st.ParamRepo.GetInt("pool.max_hold", 7) // 同时最多持仓数（留 30% 现金）
+	ladder := p.newHighLadder()
 	// G1 观察期（2026-10-21）：入池后 N 个交易日内不产生首笔买入信号（原书 L1895/L1063）。
 	minWatchDays := p.st.ParamRepo.GetInt("pool.min_watch_days", 3)
 	// P0-2（2026-10-21）：进场跳空上限（成交/trigger 偏离上限，默认 +5%）。
@@ -136,12 +138,12 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 					}
 				}
 			}
-		// A M1（2026-10-23）：首买单位由 A 判据升势决定（升势 2 / 其余 1），winner 5x 退役。
-		o := p.buyOrder(s, box, market, unitValue,
-			buyPrem, sellDisc, posByCode, budget, plannedQty, planDate, executeDate, maxEntryGap)
-		if o != nil {
-			orders = append(orders, *o)
-		}
+			// A M1（2026-10-23）：首买单位由 A 判据升势决定（升势 2 / 其余 1），winner 5x 退役。
+			o := p.buyOrder(s, box, market, unitValue,
+				buyPrem, sellDisc, posByCode, budget, plannedQty, planDate, executeDate, maxEntryGap, ladder)
+			if o != nil {
+				orders = append(orders, *o)
+			}
 		case contract.SignalStop, contract.SignalFailed:
 			if pendingSell[s.Code] {
 				continue // 已有在途卖出单，不重复生成（M8.3）
@@ -297,12 +299,74 @@ func (b *holdBudget) canOpen() bool { return b.open < b.max }
 
 func (b *holdBudget) take() { b.open++ }
 
+// newHighLadder E17：按信号日收盘价距52周新高的距离分档首买单位。
+// 仅当 pos.newhigh_ladder=on 时启用；默认 off 保持 A M1。
+type newHighLadder struct {
+	enabled  bool
+	lookback int
+	cutoff   float64
+	units    [4]float64
+}
+
+func (p *Planner) newHighLadder() newHighLadder {
+	return newHighLadder{
+		enabled:  p.st.ParamRepo.GetString("pos.newhigh_ladder", "off") == "on",
+		lookback: p.st.ParamRepo.GetInt("pos.newhigh.lookback", 252),
+		cutoff:   p.st.ParamRepo.GetFloat("pos.newhigh.cutoff", 40),
+		units: [4]float64{
+			p.st.ParamRepo.GetFloat("pos.newhigh.units.t1", 3),
+			p.st.ParamRepo.GetFloat("pos.newhigh.units.t2", 2),
+			p.st.ParamRepo.GetFloat("pos.newhigh.units.t3", 1),
+			p.st.ParamRepo.GetFloat("pos.newhigh.units.t4", 0.5),
+		},
+	}
+}
+
+// tierFor 返回距离所属档位（1-4）和首买单位；超过 cutoff 拒绝。
+func (l newHighLadder) tierFor(distance float64) (int, float64, bool) {
+	switch {
+	case distance > l.cutoff:
+		return 0, 0, false
+	case distance < 5:
+		return 1, l.units[0], true
+	case distance < 10:
+		return 2, l.units[1], true
+	case distance < 20:
+		return 3, l.units[2], true
+	default:
+		return 4, l.units[3], true
+	}
+}
+
+// high52w 返回截至 through（含）最近 lookback 根K线的最高价。
+func (p *Planner) high52w(code, through string, lookback int) float64 {
+	bars, err := p.st.BarRepo.BarsWindow(code, through, lookback)
+	if err != nil {
+		return 0
+	}
+	high := 0.0
+	for _, bar := range bars {
+		if bar.High > high {
+			high = bar.High
+		}
+	}
+	return high
+}
+
 // unitShares 1 单位股数 = floor(unitValue/price/100)×100；不足 1 手返回 0。
 func unitShares(unitValue, price float64) int {
 	if unitValue <= 0 || price <= 0 {
 		return 0
 	}
 	return int(math.Floor(unitValue/price/100)) * 100
+}
+
+// lotQty 按单位数缩放整手股数；整数单位与 unitShares×units 完全一致。
+func lotQty(shares int, units float64) int {
+	if shares <= 0 || units <= 0 {
+		return 0
+	}
+	return int(math.Floor(float64(shares)*units/100)) * 100
 }
 
 // raiseStops 止损上移（M4.4）：对每只持仓，若最新箱体下轨已3日确认
@@ -345,8 +409,10 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 // buyOrder 构造停损买单（A M1：首买，一律不加码）。
 // 规则（2026-10-23，var/bt/regime_final_summary_and_prompt.md + docs/23 §9 D0/D1）：
 //   - 交易只发生在「第一次信号」——同一只票持仓期间一律不加码（0017）。
-//   - 首买单位由 A 判据（60 日低点相邻日比，regime.ClassifyDateA）决定：
+//   - 默认首买单位由 A 判据（60 日低点相邻日比，regime.ClassifyDateA）决定：
 //     升势日 2 单位、其余 1 单位。取消 winner 5x（D1：实证有害无益）。
+//   - E17 实验开关 pos.newhigh_ladder=on 时改为按信号收盘距52周新高分档：
+//     0-5/5-10/10-20/20-40% 分别取参数单位，>cutoff 拒买；默认 off。
 //   - 组合约束 = 同时持仓数上限（pool.max_hold，留 30% 现金），不是试探/主力分桶。
 //   - 不引入 C 判据、不做熊市闸门（2026-10-23 六轮回测硬结论：大盘择时不通）。
 //   - track_level 保留作审计字段（记录该票战绩等级），不再驱动 units。
@@ -354,7 +420,8 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 //   全部随「不加码」退役（见 docs/00 §5.6）。
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
 	buyPrem, sellDisc float64, posByCode map[string]*contract.Position,
-	budget *holdBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64) *contract.PlanOrder {
+	budget *holdBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64,
+	ladder newHighLadder) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
 	// 初始止损（B2 校订 2026-10-22，原书 §4.1 + §3.4）：=被突破箱体上轨（突破点）下方
 	// ——紧止损。原书 §3.4「新箱体下轨 ≈ 前一箱体上轨（±3%容差）」，故「新箱体下轨下方」
@@ -392,7 +459,23 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	lv, _ := p.st.SecRepo.TrackLevel(s.Code)
 	units := 1.0
 	basis := "default"
-	if market == regime.Bull { // A 判据升势（60 日低点逐级抬升）
+	high52w := 0.0
+	distance := 0.0
+	if ladder.enabled && s.ClosePx > 0 {
+		high52w = p.high52w(s.Code, planDate, ladder.lookback)
+		if high52w > 0 {
+			distance = (high52w - s.ClosePx) / high52w * 100
+			tier, tierUnits, ok := ladder.tierFor(distance)
+			if !ok {
+				p.log.Printf("跳过 %s：距52周新高 %.1f%% > cutoff %.1f%%", s.Code, distance, ladder.cutoff)
+				return nil
+			}
+			units = tierUnits
+			basis = fmt.Sprintf("newhigh_t%d", tier)
+		} else {
+			basis = "newhigh_unavailable"
+		}
+	} else if market == regime.Bull { // A 判据升势（60 日低点逐级抬升）
 		units = 2.0
 		basis = "A_regime_up"
 	}
@@ -402,7 +485,7 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		p.log.Printf("跳过 %s：同时持仓已达上限 %d 只（留 30%% 现金）", s.Code, budget.max)
 		return nil
 	}
-	qty := int(math.Floor(units)) * shares
+	qty := lotQty(shares, units)
 	if qty <= 0 {
 		return nil
 	}
@@ -424,6 +507,7 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 			"regime": string(market), "sizing_basis": basis,
 			"track_level": string(lv), "budget_bucket": "normal",
 			"unit_value": unitValue, "unit_shares": shares, "units": units,
+			"high_52w": high52w, "newhigh_distance_pct": distance,
 		},
 	}
 }

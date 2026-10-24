@@ -20,3 +20,7 @@ dist/
 
 # 编辑器分享/临时产物
 .trae-html-share-packages/
+
+# Python 缓存（实验脚本运行时产物）
+__pycache__/
+*.pyc

@@ -462,6 +462,8 @@ func (r *TradeRepo) UpdatePositionQtyCost(id int64, qty int, avgCost float64) er
 //   盈利 → winner（普通池升赢家池 / 赢家池保持）
 //   亏损 → 原等级为 winner 则降 normal（赢家输一次降级，不直接黑名单）；
 //          否则（normal / blacklist）→ blacklist（冷却 N 月）。
+// 冷却期参数 pool.blacklist_months：>0 冷却 N 月（从清仓日算起，回放用模拟日，
+// 非 time.Now）；=0 关闭拉黑（亏损不改变等级）；<0 永久拉黑（截止日 9999-12-31）。
 // 单次马尔可夫：只看最近这一笔盈亏，不看历史累计（用户拍板 2026-10-22）。
 func (r *TradeRepo) ClosePosition(id int64, date, reason string) error {
 	// B2（0003）：清仓时落库本次交易已实现盈亏（战绩分级流转依据）。
@@ -501,7 +503,7 @@ func (r *TradeRepo) applyTrackTransition(posID int64, date string) error {
 	months := 12
 	var pv string
 	if err := r.db.QueryRow(`SELECT value FROM param WHERE key = 'pool.blacklist_months'`).Scan(&pv); err == nil && pv != "" {
-		if m, err := strconv.Atoi(pv); err == nil && m > 0 {
+		if m, err := strconv.Atoi(pv); err == nil {
 			months = m
 		}
 	}
@@ -516,9 +518,19 @@ func (r *TradeRepo) applyTrackTransition(posID int64, date string) error {
 		_, err := r.db.Exec(`UPDATE security SET track_level='normal', blacklist_until=NULL,
 			updated_at=datetime('now','localtime') WHERE code=?`, code)
 		return err
+	case months == 0:
+		// E16 对照臂「无冷却」：亏损不拉黑，保持当前等级
+		return nil
 	default:
-		// 普通/黑名单 亏损 → blacklist（冷却 N 月）
-		until := time.Now().AddDate(0, months, 0).Format("2006-01-02")
+		// 普通/黑名单 亏损 → blacklist（冷却 N 月；N<0 永久）
+		until := "9999-12-31"
+		if months > 0 {
+			t, err := time.Parse("2006-01-02", date)
+			if err != nil {
+				t = time.Now() // date 由成交回录保证合法；回退仅防御
+			}
+			until = t.AddDate(0, months, 0).Format("2006-01-02")
+		}
 		_, err := r.db.Exec(`UPDATE security SET track_level='blacklist', blacklist_until=?,
 			updated_at=datetime('now','localtime') WHERE code=?`, until, code)
 		return err
@@ -924,7 +936,6 @@ func (r *TradeRepo) IsOldFriend(code string) (bool, error) {
 	}
 	return n == 2, nil // 需最近 2 笔均盈利
 }
-
 
 // ---------------------------------------------------------------------------
 // 订单审核（C：炒股手成交导入后的执行质量对照）

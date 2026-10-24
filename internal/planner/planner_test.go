@@ -534,7 +534,136 @@ func TestIsOldFriend(t *testing.T) {
 	}
 }
 
+// TestNewHighLadderTierFor E17 分档边界：0-5/5-10/10-20/20-40，>40 拒绝。
+func TestNewHighLadderTierFor(t *testing.T) {
+	ladder := newHighLadder{cutoff: 40, units: [4]float64{3, 2, 1, 0.5}}
+	cases := []struct {
+		distance float64
+		tier     int
+		units    float64
+		ok       bool
+	}{
+		{0, 1, 3, true},
+		{4.99, 1, 3, true},
+		{5, 2, 2, true},
+		{9.99, 2, 2, true},
+		{10, 3, 1, true},
+		{19.99, 3, 1, true},
+		{20, 4, 0.5, true},
+		{40, 4, 0.5, true},
+		{40.01, 0, 0, false},
+	}
+	for _, tc := range cases {
+		tier, units, ok := ladder.tierFor(tc.distance)
+		if tier != tc.tier || units != tc.units || ok != tc.ok {
+			t.Errorf("distance=%.2f: tier=%d units=%v ok=%v, want %d/%v/%v",
+				tc.distance, tier, units, ok, tc.tier, tc.units, tc.ok)
+		}
+	}
+}
+
+// TestLotQty E17 半单位仍按整手向下取整；整数单位保持原行为。
+func TestLotQty(t *testing.T) {
+	cases := []struct {
+		shares int
+		units  float64
+		want   int
+	}{
+		{800, 1, 800},
+		{800, 2, 1600},
+		{800, 0.5, 400},
+		{100, 0.5, 0},
+	}
+	for _, tc := range cases {
+		if got := lotQty(tc.shares, tc.units); got != tc.want {
+			t.Errorf("lotQty(%d, %v)=%d want %d", tc.shares, tc.units, got, tc.want)
+		}
+	}
+}
+
+// TestPlannerNewHighLadderNearTier E17：距新高 <5% → 默认参数 3 单位。
+func TestPlannerNewHighLadderNearTier(t *testing.T) {
+	st := newPlannerStore(t)
+	enableNewHighLadder(t, st)
+	code := "sh600519"
+	seedBars(t, st, code)
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
+		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
+	}})
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatal(err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("orders=%d want 1", len(orders))
+	}
+	o := orders[0]
+	if o.Qty != 2400 {
+		t.Errorf("qty=%d want 2400（3 单位 × 800 股）", o.Qty)
+	}
+	if units, ok := o.Reason["units"].(float64); !ok || units != 3 {
+		t.Errorf("reason.units=%v want 3", o.Reason["units"])
+	}
+	if basis, ok := o.Reason["sizing_basis"].(string); !ok || basis != "newhigh_t1" {
+		t.Errorf("reason.sizing_basis=%v want newhigh_t1", o.Reason["sizing_basis"])
+	}
+}
+
+// TestPlannerNewHighLadderRejectFar E17：距52周新高 >40% → 不生成买单。
+func TestPlannerNewHighLadderRejectFar(t *testing.T) {
+	st := newPlannerStore(t)
+	enableNewHighLadder(t, st)
+	code := "sh600519"
+	seedBars(t, st, code)
+	if _, err := st.BarRepo.UpsertBars([]contract.DailyBar{{
+		Code: code, Date: "2026-10-01", Open: 50, High: 50, Low: 50, Close: 50,
+		Volume: 1000, Amount: 6e7,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
+		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
+	}})
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatal(err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 0 {
+		t.Fatalf("距52周新高50%% > 40%% 应拒买，实际订单 %d 笔", len(orders))
+	}
+}
+
 // ─── 辅助 ──
+
+func enableNewHighLadder(t *testing.T, st *store.Store) {
+	t.Helper()
+	if _, err := st.DB().Exec(`INSERT INTO param(key,value) VALUES('pos.newhigh_ladder','on')
+		ON CONFLICT(key) DO UPDATE SET value='on'`); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func newPlannerStore(t *testing.T) *store.Store {
 	t.Helper()
