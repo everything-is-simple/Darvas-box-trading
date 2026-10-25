@@ -24,13 +24,18 @@ import sys
 
 def main():
     if len(sys.argv) < 3:
-        raise SystemExit("usage: p05_yearly_report.py <db_path> <year> [--csv-file <path>]")
+        raise SystemExit("usage: p05_yearly_report.py <db_path> <year> [--csv-file <path>] [--out <path>]")
     db_path, year = sys.argv[1], sys.argv[2]
     csv_file = None
     if "--csv-file" in sys.argv:
         idx = sys.argv.index("--csv-file")
         if idx + 1 < len(sys.argv):
             csv_file = sys.argv[idx + 1]
+    out_file = None
+    if "--out" in sys.argv:
+        idx = sys.argv.index("--out")
+        if idx + 1 < len(sys.argv):
+            out_file = sys.argv[idx + 1]
 
     con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
@@ -176,7 +181,11 @@ def main():
                  "（赢家池=曾盈利、黑名单=曾亏损、普通池=新票）。平仓价为出池日收盘近似。")
 
     report = "\n".join(lines)
-    print(report)
+    if out_file:
+        with open(out_file, "w", encoding="utf-8") as f:
+            f.write(report)
+    else:
+        print(report)
 
     # ---- CSV 追加一行（--csv-file 指定路径，Python 直接写，避免 bat 转义问题） ----
     if csv_file:

@@ -531,3 +531,63 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
 2. 契约变更必须：改`internal/contract/contract.go` → 改本文档 → 跑`go build ./...`与全部测试 → 一个commit内完成
 3. 状态枚举（box.status/watch.stage/signal.type/order.status）新增值需在ERD状态机表中同步登记迁移规则
 4. 破坏性变更（删字段/改语义）：主版本号+1，提供数据迁移SQL
+
+---
+
+## 9. 研究字段产出契约（2026-10-25 立项）
+
+> box 六维迭代实验（理论框架见 docs/00 §3.6，字段清单见 docs/03 §6）在契约侧的产出规则。本节定义 `planner` 生成买入订单时写入 `plan_order.reason_json` 的契约义务——离线分析脚本依赖这些字段做梯度分布统计。
+
+### 9.1 reason_json 产出契约（planner → plan_order）
+
+`planner.GenerateBuyOrder` 生成买入订单时，**必须**把以下字段写入 `plan_order.reason_json`（JSON 文本）：
+
+| 字段 | 来源 | 必填 | 说明 |
+|------|------|------|------|
+| `box_bottom` | signal 上下文 | ✅ | 被突破箱体下轨 |
+| `box_top` | signal 上下文 | ✅ | 被突破箱体上轨 |
+| `trigger` | signal 上下文 | ✅ | 触发价 = box_top × buy.premium |
+| `high_52w` | signal 上下文 | ✅ | 截至突破日的 52 周最高 |
+| `newhigh_distance_pct` | signal 上下文 | ✅ | (high_52w - close) / high_52w × 100 |
+| `sizing_basis` | planner 计算 | ✅ | newhigh_t1/t2/t3/t4 之一（按 newhigh_distance_pct 分档） |
+| `units` | planner 计算 | ✅ | 该笔订单仓位单位数 |
+
+- **sizing_basis 分档规则**（E17 阶梯，与 docs/01 §10.3 一致）：
+  - `newhigh_t1`：0% ≤ distance < 5%，units=3
+  - `newhigh_t2`：5% ≤ distance < 10%，units=2
+  - `newhigh_t3`：10% ≤ distance < 20%，units=1
+  - `newhigh_t4`：20% ≤ distance ≤ 40%，units=0.5
+  - distance > 40%：**不生成订单**（拒买，不进 plan_order 表）
+
+### 9.2 待加字段的契约扩展（解锁第 4/5/6 维，未实现）
+
+以下字段目前**未产出**，待 docs/05 M9 立项后按本契约扩展：
+
+| 字段 | 来源 | 解锁维度 | 契约改动 |
+|------|------|---------|---------|
+| `volume_ratio` | signal 上下文（突破日量 / N 日均量） | 第 5 维 | `contract.SignalContext` 加字段 + `planner` 写入 reason_json |
+| `is_top_box` | box 引擎（box 序列历史查询） | 第 6 维 | `box.Scanner` 加序列状态查询 + signal 上下文携带 + planner 写入 |
+| `break_strength_pct` | `(trigger - box_top) / box_top × 100` | 第 4 维 | 需配合 `buy.premium` 参数化（多轮跑不同值）才有梯度 |
+
+### 9.3 参数化契约（解锁第 1/4 维）
+
+第 1 维（box 周期长度）与第 4 维（突破强度）的梯度实验需要把当前固定值参数化：
+
+| 参数 | 当前值 | 参数化键 | 解锁维度 | 改动位置 |
+|------|--------|---------|---------|---------|
+| box 周期长度 | 3 日（固定） | `box.period`（待加） | 第 1 维 | `internal/box` 三日法则→N 日法则 + migration 加参数 |
+| 突破溢价 | ×1.03（固定） | `buy.premium`（已存在但单一） | 第 4 维 | 多轮跑不同值（1.01/1.02/1.03/1.05），每轮独立回测库 |
+
+- **参数化铁律**：参数化后，**每一轮回测必须用单一参数值跑完全部年份**，不得在同一年内混用不同参数——跨年可比性依赖于此。
+- **参数轮次隔离**：每轮参数用独立回测库（如 `bt_e17_<year>_p3.db` 表示 box.period=3），不覆盖默认库。
+
+### 9.4 离线分析脚本的只读契约
+
+`scripts/e17_watch.py`、`scripts/e17_annual_tier_report.py` 等离线分析脚本：
+
+- ✅ 只读查询 `bt_e17_<year>.db`（`mode=ro`，URI 连接）。
+- ✅ 用 `json.loads(reason_json)` 解析字段，缺失字段返回 None。
+- ❌ 不得反向修改回测库的任何表或字段。
+- ❌ 不得在分析脚本里重算 box 几何或信号——一切以回测器写入的 reason_json 为准。
+- ❌ 不得编造未产出的字段（如当前无 `volume_ratio`，报告必须诚实标注"该维度需扩展回测器"，不留空也不填 0）。
+

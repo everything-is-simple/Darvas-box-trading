@@ -192,3 +192,70 @@ report      ──汇总──▶ daily_YYYYMMDD.html + db备份
 - db每日备份30份滚动（ADR-5）
 - 参数修改写入`param`并留`changed_at`（审计）
 - 所有时间使用本地时区（Asia/Shanghai，单机单用户无歧义）
+
+---
+
+## 9. 研究数据流与回测产物（2026-10-25 立项）
+
+> 本节定义 box 六维迭代实验（理论框架见 docs/00 §3.6，需求口径见 docs/01 §10）在架构侧的数据流与产物。生产侧架构（§1-§8）不变，研究是叠加在回放器之上的离线分析层。
+
+### 9.1 研究数据流
+
+```
+TDX 日线 (H:\new_tdx64)
+   │  ingest (复用生产代码路径)
+   ▼
+源库 full_hist_10pct.db (只读，禁止改动)
+   │  darvas_e17.exe backtest --from <year> --to <year> --set scratch
+   ▼
+年度独立回测库 bt_e17_<year>.db (var/bt/, 每年一个, 串行不并发)
+   │  position_leg.leg_no=1 JOIN plan_order.reason_json  (含 box_bottom/box_top/trigger/
+   │      high_52w/newhigh_distance_pct/sizing_basis/units)
+   ▼
+e17_watch.py + e17_annual_tier_report.py  (Python 离线分析, 只读查 db)
+   │  按 t1/t2/t3/t4 + box 高度梯度分带统计四项口径
+   ▼
+var/bt/e17_metrics.csv             (年度汇总, append)
+var/bt/e17_watch_report.md         (摘要, 每次重建)
+var/bt/e17_annual_tier_report.html (逐年分层详细报告, 每年跑完自动补章节)
+```
+
+### 9.2 回测产物清单
+
+| 产物 | 路径 | 写入时机 | 说明 |
+|------|------|---------|------|
+| 年度回测库 | `var/bt/bt_e17_<year>.db` | darvas_e17.exe 跑完该年 | 独立 SQLite，含 position/position_leg/plan_order/equity_snapshot 等完整表 |
+| 年度报告 | `var/bt/bt_e17_<year>_report.md` | `p05_yearly_report.py` 后处理 | 单年 Markdown 报告 |
+| metrics 汇总 | `var/bt/e17_metrics.csv` | 每年完成后 append 一行 | 跨年汇总，是"已完成年份"的事实源 |
+| 监控摘要 | `var/bt/e17_watch_report.md` | `e17_watch.py` 每次运行重建 | 含已完成年份四项口径 + 进行中年份进度 + 2008 队列状态 |
+| 逐年分层报告 | `var/bt/e17_annual_tier_report.html` | `e17_annual_tier_report.py` 每年完成后重建 | 每年一章，含 t1-t4 四项口径 + box 高度梯度分布 + 诚实标注 |
+| 已汇报年份 | `var/bt/e17_reported_years.txt` | 自动汇报成功后 append | 避免重复汇报同一年份 |
+| 队列状态 | `var/bt/e17_years_status.json` | 队列脚本每次状态变化时写 | state=waiting/running/done/failed + 当前 year + detail |
+
+### 9.3 串行执行与并发防护
+
+- **唯一执行器**：`scripts/e17_run_years.py`（2005-2013 补跑）+ `scripts/e17_run_2008.py`（2008 样本外）。
+- **文件锁**：`e17_years.lock` 防止队列并发启动；`MultipleInstances=IgnoreNew` 计划任务设置防止重复触发。
+- **跳过已完成**：每年启动前查 `e17_metrics.csv`，已有该年则跳过；重复启动不会重跑。
+- **失败即停**：任一年失败（rc≠0 或后处理异常）即停止队列，不带着错误往后跑；失败 traceback 写入 `e17_years_status.json` 的 detail 字段。
+- **不并发铁律**：2014 年曾因环境 I/O 争抢出现单日 boxscan 4 小时异常（详见 docs/28），所有回测必须串行。
+
+### 9.4 自动监控与汇报
+
+- **监控计划任务**：`DarvasE17Watch`（每 20 分钟刷新 `e17_watch_report.md`）。
+- **自动汇报 automation**：`c931a120-06fd-406f-bcd3-7ced77a6c6e6`（每小时检查 metrics 新增年份，发现即汇报，成功后 append `e17_reported_years.txt`）。
+- **汇报内容**：年度净利/收益率/最大回撤/胜率/利润因子 + t1-t4 四项口径（胜率、每单位净利、保本胜率、利润集中度）+ 重点 t4 深度回调区风险收益；2008 注明"样本外验证"；2005-2013 无 p05 基线，不编造对照。
+
+### 9.5 研究字段的后验可行性（2026-10-25 诊断结论）
+
+| 维度 | reason_json 字段 | 后验可行性 |
+|------|-----------------|-----------|
+| 第 2 维 box 高度 | `box_bottom` + `box_top` | ✅ 可直接后验 `(box_top-box_bottom)/box_bottom` |
+| 第 3 维 box 位置 | `newhigh_distance_pct` + `sizing_basis` | ✅ 已在做（E17 阶梯） |
+| 第 4 维 突破强度 | `trigger`（但全部=box_top×1.03） | ❌ 当前回测器写死 3%，需参数化 `buy.premium` 多轮跑 |
+| 第 5 维 量比 | 无 | ❌ 需改回测器加 `volume_ratio` 字段 |
+| 第 6 维 最高 box | `box_top` + `high_52w`（但代理口径 0 命中） | ❌ 需用 box 序列历史重定义，非单点比 52 周高 |
+| 第 1 维 box 宽度 | 无（3 日固定） | ❌ 需参数化 box 周期长度多轮跑 |
+
+> 解锁第 1/4/5/6 维的代码改动清单见 docs/05 M9。
+

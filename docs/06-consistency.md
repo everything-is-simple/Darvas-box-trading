@@ -108,3 +108,53 @@ scripts/
 ```
 
 三个脚本全部纳入：①pre-commit（本地）②`darvas doctor`（运行时）③发版前检查清单。
+
+---
+
+## 6. 研究数据一致性规则（2026-10-25 立项）
+
+> box 六维迭代实验（理论框架见 docs/00 §3.6）在一致性侧的额外规则。研究层叠加在生产层之上，不得破坏生产层的一致性防线（§1-§5）。
+
+### 6.1 研究事实源（SSoT）补充
+
+| 事实 | 事实源 | 派生禁止 |
+|------|--------|---------|
+| 已完成年份清单 | `var/bt/e17_metrics.csv` | 不要从 db 文件存在性推断（db 可能存在但未跑完） |
+| 已汇报年份清单 | `var/bt/e17_reported_years.txt` | 自动汇报成功后才 append，避免重复汇报 |
+| 队列状态 | `var/bt/e17_years_status.json` | state=waiting/running/done/failed + year + detail |
+| 单年回测结果 | `var/bt/bt_e17_<year>.db` 的 position/plan_order 表 | 离线分析只读，不反向修改 |
+| reason_json 字段语义 | docs/03 §6 + docs/04 §9 | 字段键名与语义冻结，不得改名或改义 |
+
+### 6.2 研究铁律（与 docs/01 §10.5 一致，此处为一致性侧执行规则）
+
+- **参数冻结**：回测期间不得修改 `box.*`、`risk.*`、`buy.*`、`sell.*`、`match.*` 任何参数——所有年度必须用同一组参数跑，跨年可比性依赖于此。参数改动 = 新轮回，必须用独立回测库（如 `bt_e17_<year>_p3.db`）。
+- **串行不并发**：每年串行，文件锁 `e17_years.lock` 防并发；任一年失败即停队列。
+- **库隔离**：只写 `var/bt/bt_e17_<year>.db`；源库 `full_hist_10pct.db` 与生产库 `darvas.db` mode=ro 打开，不得写入。
+- **只读分析**：离线脚本（`e17_watch.py`、`e17_annual_tier_report.py`）用 `mode=ro` URI 连接回测库，不得反向修改任何表或字段。
+- **不编造字段**：分析脚本对未产出的字段（如当前无 `volume_ratio`）必须返回 None 并在报告诚实标注"该维度需扩展回测器"，不留空也不填 0。
+
+### 6.3 跨年可比性检查
+
+每年回测完成后，`e17_watch.py` 必须校验：
+
+- 该年 `plan_order` 表的 `reason_json` 字段键名集合与往年一致（已落地字段不得缺）。
+- 该年 `sizing_basis` 取值集合 ⊆ {newhigh_t1, newhigh_t2, newhigh_t3, newhigh_t4}（不得出现新档位）。
+- 该年 `units` 取值集合 ⊆ {3, 2, 1, 0.5}（与 E17 阶梯定义一致）。
+- 任一不一致即在该年报告顶部红色告警，并停止队列。
+
+### 6.4 研究文档对账（追加到月末对账清单）
+
+月末「文档对账」追加以下检查：
+
+- docs/00 §3.6 六维总表的"当前实现状态"列与实际代码一致（`internal/box` 是否加了 box.period 参数化、`reason_json` 是否加了 volume_ratio 等）。
+- docs/01 §10.3 档位定义与 `internal/planner` 的 sizing_basis 分档逻辑一致。
+- docs/03 §6.1 已落地字段清单与 `internal/contract` 的 SignalContext 字段一致。
+- docs/05 M9 各子里程碑状态与 `var/bt/e17_years_status.json` + `e17_metrics.csv` 一致。
+
+### 6.5 研究产物的版本纪律
+
+- `var/bt/e17_annual_tier_report.html` 每年跑完自动重建（覆盖旧版），不保留历史版本——研究结论是迭代的，最新版即权威版。
+- `var/bt/e17_metrics.csv` append-only，不得删除或修改已有行（已汇报年份的事实源）。
+- `var/bt/e17_reported_years.txt` append-only，已汇报年份不得移除（避免重复汇报）。
+- 跨年结论定型后，写入 `docs/27-iterative-experiment-prompt.md` 或新 docs 文档（如 docs/29+），不直接改 docs/00-06 的研究框架结构（框架是宪法，结论是案例）。
+
