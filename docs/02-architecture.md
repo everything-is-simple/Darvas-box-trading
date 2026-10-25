@@ -218,6 +218,14 @@ e17_watch.py + e17_annual_tier_report.py  (Python 离线分析, 只读查 db)
 var/bt/e17_metrics.csv             (年度汇总, append)
 var/bt/e17_watch_report.md         (摘要, 每次重建)
 var/bt/e17_annual_tier_report.html (逐年分层详细报告, 每年跑完自动补章节)
+
+专项实验报告（独立链路，产物一律进 docs/experiments/，不落 var/bt/）
+   │  只读 var/bt/bt_e17_<year>.db × 14 + e17_metrics.csv（mode=ro）
+   ▼
+e17_box_height_report.py / e17_newhigh_distance_report.py / e17_regime_attribution_report.py
+   │  先 --check-only 跑 HARD/WARN/INFO 校准（失败即 exit 2，不写文件），再正式生成三件套
+   ▼
+docs/experiments/<实验>_framework.md (零结果纯规则) + _report.{html,md} + _data.json
 ```
 
 ### 9.2 回测产物清单
@@ -256,6 +264,7 @@ var/bt/e17_annual_tier_report.html (逐年分层详细报告, 每年跑完自动
 | 第 7 维 量比 | 无 | ❌ 需改回测器加 `volume_ratio` 字段 |
 | 第 4 维 最高 box | `box_top` + `high_52w`（但代理口径 0 命中） | ❌ 需用 box 序列历史重定义，非单点比 52 周高 |
 | 第 1 维 box 宽度 | 无（3 日固定） | ❌ 需参数化 box 周期长度多轮跑 |
+| 第 10 维 头寸 regime | `reason_json.regime`（= C3@plan_date）+ 上证 MA20/MA60 + 指数 52 周高点回撤 | ✅ **A 类已完成（P0-3，M10.0）**。⚠️ `regime` 是 plan_date 标签，与建仓日错 1 日（2014 年一致 86/100），归因须按建仓日重算；账户回撤逐年重置且 `>10%` 档 0 天，登记「不可检验」。详见 `docs/experiments/e17_regime_attribution_framework.md` |
 
 > 解锁第 1/4/6/7 维的代码改动清单见 docs/05 M9/M10。
 

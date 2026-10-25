@@ -265,7 +265,7 @@ erDiagram
 
 ## 6. 研究字段：plan_order.reason_json（2026-10-25 立项）
 
-> box 十维迭代实验（理论框架见 docs/00 §3.6）的核心数据载体是 `plan_order.reason_json`（JSON 文本字段）。回测器在生成每笔买入订单时，把信号触发时的 box 几何与 52 周新高上下文写入该字段；离线分析脚本（`e17_watch.py` / `e17_annual_tier_report.py`）只读查询该字段做梯度分布统计，不回溯重算。
+> box 十维迭代实验（理论框架见 docs/00 §3.6）的核心数据载体是 `plan_order.reason_json`（JSON 文本字段）。回测器在生成每笔买入订单时，把信号触发时的 box 几何与 52 周新高上下文写入该字段；离线分析脚本（`e17_watch.py` / `e17_annual_tier_report.py` / `e17_*_report.py`）只读查询该字段做梯度分布统计。**允许**用 `daily_bar` 重算指数侧特征（MA / 回撤 / regime 标签），但**不得重算 box 几何与信号**——那是回测器的职责，重算会造成口径漂移。
 
 ### 6.1 已落地字段清单（当前 darvas_e17.exe 产出）
 
@@ -278,6 +278,13 @@ erDiagram
 | `newhigh_distance_pct` | number | `(high_52w - close) / high_52w × 100` | 第 5 维（box 位置）—— E17 阶梯分档依据 |
 | `sizing_basis` | string | `newhigh_t1`/`t2`/`t3`/`t4` 之一 | 第 5 维档位标记 |
 | `units` | number | 该笔订单的仓位单位数（1 单位=2% 权益） | 每单位净利计算分母 |
+| `regime` | string | A 判据标签 `bull`/`bear`/`range`，**按 `plan_date` 当日计算**（`regime.ClassifyDateA`） | 第 10 维（头寸 regime）归因原料 |
+| `signal` | string | 信号类型（`breakout` 等） | 审计（非研究字段） |
+| `budget_bucket` | string | 预算桶（当前恒 `normal`） | 审计（非研究字段） |
+| `track_level` | string | 跟踪级别（`normal`/`winner`/`blacklist`） | 审计（E17 后不再驱动 units） |
+
+> 另有执行冗余键 `leg` / `stop` / `unit_shares` / `unit_value`，由 planner 写入用于下单与审计，**不入研究字段清单**。
+> 本节 2026-10-26 补齐 `regime` 缺项——此前 §6.1 只列 7 个字段，而实际库中每笔订单产出 15 个键，属契约漂移。
 
 ### 6.2 待加字段（解锁其余维度，需改回测器 + 重编译）
 
@@ -294,6 +301,7 @@ erDiagram
 - **只读查询**：离线分析脚本用 `json_extract(reason_json, '$.field')` 或 Python `json.loads` 读取，**不得反向修改**回测库。
 - **字段缺失处理**：早期年份（2005-2013）的回测库若用旧版 darvas_e17.exe 跑，可能缺字段；分析脚本必须对缺失字段返回 None 并在报告里诚实标注"该年份无此字段"，不编造。
 - **字段稳定性**：已落地字段（§6.1）的键名与语义冻结，不得改名或改义——跨年可比依赖于此；新增字段（§6.2）只能追加，不破坏旧库的可读性。
+- **时点冻结（`regime` 专属）**：`regime` 记录的是 **`plan_date`（T 日）** 的 A 判据标签，**不是** `execute_date`（T+1）的。不得改义，也不得把 T 日标签当作 T+1 开盘的市场状态使用。实测差异：2014 年 plan 日与 opened 日标签一致率 86/100；14 年全样本升势笔数 107（plan 日）vs 91（建仓日）。归因报告若按 `opened_date` 重算，必须显式声明口径并与本字段对账。
 
 ### 6.4 position_leg 与 reason_json 的关联
 

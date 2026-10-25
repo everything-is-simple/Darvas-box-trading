@@ -140,6 +140,7 @@ scripts/
 - 该年 `plan_order` 表的 `reason_json` 字段键名集合与往年一致（已落地字段不得缺）。
 - 该年 `sizing_basis` 取值集合 ⊆ {newhigh_t1, newhigh_t2, newhigh_t3, newhigh_t4}（不得出现新档位）。
 - 该年 `units` 取值集合 ⊆ {3, 2, 1, 0.5}（与 E17 阶梯定义一致）。
+- 该年 `reason_json.regime` 取值集合 ⊆ {bull, bear, range}，且**缺失率 0**（第 10 维归因原料，缺一年即不可归因）。
 - 任一不一致即在该年报告顶部红色告警，并停止队列。
 
 ### 6.4 研究文档对账（追加到月末对账清单）
@@ -148,7 +149,7 @@ scripts/
 
 - docs/00 §3.6 十维总表的"当前实现状态"列与实际代码一致（`internal/box` 是否加了 box.period 参数化、`reason_json` 是否加了 volume_ratio 等）。
 - docs/01 §10.3 档位定义与 `internal/planner` 的 sizing_basis 分档逻辑一致。
-- docs/03 §6.1 已落地字段清单与 `internal/contract` 的 SignalContext 字段一致。
+- docs/03 §6.1 已落地字段清单与**实际 `reason_json` 键集合**一致（2026-10-26 已补入 `regime` 缺项；对账方法：任取一年库 `SELECT reason_json FROM plan_order WHERE leg_no=1 LIMIT 100`，求键的并集与清单比对）。
 - docs/05 M9/M10 各子里程碑状态与 `var/bt/e17_years_status.json` + `e17_metrics.csv` 一致。
 
 ### 6.5 研究产物的版本纪律
@@ -157,4 +158,5 @@ scripts/
 - `var/bt/e17_metrics.csv` append-only，不得删除或修改已有行（已汇报年份的事实源）。
 - `var/bt/e17_reported_years.txt` append-only，已汇报年份不得移除（避免重复汇报）。
 - 跨年结论定型后，写入 `docs/27-iterative-experiment-prompt.md` 或新 docs 文档（如 docs/29+），不直接改 docs/00-06 的研究框架结构（框架是宪法，结论是案例）。
+- **专项实验报告一律沉淀到 `docs/experiments/`**（`_framework.md` 零结果纯规则 + `_report.{html,md}` + `_data.json`），**不落 `var/bt/`**——`var/bt/` 只放回测过程产物（库 / `e17_metrics.csv` / 监控报告）。命名与两层分置规则见 `docs/experiments/README.md`。
 

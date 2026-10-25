@@ -359,6 +359,7 @@ type Planner interface {
     //   组合约束=同时持仓数上限 pool.max_hold。
     // 数量公式：1单位=权益×pos.unit(2%)；单位股数=floor(单位值/价/100)×100；qty=units×单位股数。
     // reason_json：sizing_basis="A_regime_up"/"default"、units=2/1、regime=A判据标签、budget_bucket="normal"、track_level=审计。
+    //   （regime 字段完整契约见 §9.1，时点为 planDate——不是 execute_date）
 }
 
 type PlanParams struct {
@@ -551,6 +552,7 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
 | `newhigh_distance_pct` | signal 上下文 | ✅ | (high_52w - close) / high_52w × 100 |
 | `sizing_basis` | planner 计算 | ✅ | newhigh_t1/t2/t3/t4 之一（按 newhigh_distance_pct 分档） |
 | `units` | planner 计算 | ✅ | 该笔订单仓位单位数 |
+| `regime` | planner（`regime.ClassifyDateA(planDate)`） | ✅ | A 判据标签 `bull`/`bear`/`range`，**按 plan_date 当日计算**；仅作第 10 维归因原料，**不作择时依据** |
 
 - **sizing_basis 分档规则**（E17 阶梯，与 docs/01 §10.3 一致）：
   - `newhigh_t1`：0% ≤ distance < 5%，units=3
@@ -558,6 +560,11 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
   - `newhigh_t3`：10% ≤ distance < 20%，units=1
   - `newhigh_t4`：20% ≤ distance ≤ 40%，units=0.5
   - distance > 40%：**不生成订单**（拒买，不进 plan_order 表）
+
+- **`regime` 时点语义（2026-10-26 补）**：写入的是 **T 日（`plan_date`）** 的 A 判据标签，订单在 **T+1** 执行。
+  因此 `regime` 与「成交日的大盘状态」存在 1 日错位——离线归因若按 `opened_date` 重算会得到不同分布
+  （实测：2014 年 plan 日与 opened 日一致率 86/100；14 年全样本升势笔数 107 vs 91）。
+  报告必须显式声明用的是哪个时点，并与本字段逐笔对账，**不得混用**。
 
 ### 9.2 待加字段的契约扩展（解锁第 4/6/7 维，未实现）
 
