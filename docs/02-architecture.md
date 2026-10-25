@@ -250,7 +250,7 @@ var/bt/e17_annual_tier_report.html (逐年分层详细报告, 每年跑完自动
 
 | 维度 | reason_json 字段 | 后验可行性 |
 |------|-----------------|-----------|
-| 第 2 维 box 高度 | `box_bottom` + `box_top` | ✅ 可直接后验 `(box_top-box_bottom)/box_bottom` |
+| 第 2 维 box 高度 | `box_bottom` + `box_top` | ✅ **已完成（P0-1，M10.0）**。⚠️ 两套分母：闸门用 `/top`（`engine.go:127`），历史统计多用 `/bottom`，换算 `b=t/(1−t)`——报告须双口径并列，详见 `docs/experiments/e17_box_height_framework.md` §4 |
 | 第 5 维 box 位置 | `newhigh_distance_pct` + `sizing_basis` | ✅ 已完成（E17 阶梯，M9.0） |
 | 第 6 维 突破强度 | `trigger`（但全部=box_top×1.03） | ❌ 当前回测器写死 3%，需参数化 `buy.premium` 多轮跑 |
 | 第 7 维 量比 | 无 | ❌ 需改回测器加 `volume_ratio` 字段 |

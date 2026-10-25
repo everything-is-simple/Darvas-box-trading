@@ -438,7 +438,7 @@ ul.tight{margin:8px 0 0 18px;padding:0}ul.tight li{margin:5px 0}
         out.append('<h3>概率分布统计（box 六维后验）</h3>')
         bh = [("0–5%",0,5),("5–10%",5,10),("10–20%",10,20),("20–40%",20,40),("40%+",40,1e9)]
         bs = [("0–1%",0,1),("1–2%",1,2),("2–3%",2,3),("3–5%",3,5),("5%+",5,1e9)]
-        out.append(band_table("① box 高度梯度", "箱高=(箱顶−箱底)/箱底；当前规则仅 ≥5% 入选，此处按全分布观察哪一带真正有 edge", band_stats(d["raw_rows"], "box_height", bh)))
+        out.append(band_table("① box 高度梯度", "箱高=(箱顶−箱底)/箱底（/bottom 口径，历史轨）；当前规则仅 ≥5% 入选，此处按全分布观察哪一带真正有 edge。与闸门同尺的 /top 主表见 docs/experiments/e17_box_height_report.html", band_stats(d["raw_rows"], "box_height", bh)))
         out.append(band_table("② 突破强度梯度", "突破强度=(触发价−箱顶)/箱顶；当前回测器固定 3% 突破触发，本维无梯度可分，需参数化实验", band_stats(d["raw_rows"], "break_strength", bs)))
         tb_yes = aggregate([r for r in d["raw_rows"] if r.get("is_topbox") is True])
         tb_no = aggregate([r for r in d["raw_rows"] if r.get("is_topbox") is False])
