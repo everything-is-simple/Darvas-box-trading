@@ -265,28 +265,28 @@ erDiagram
 
 ## 6. 研究字段：plan_order.reason_json（2026-10-25 立项）
 
-> box 六维迭代实验（理论框架见 docs/00 §3.6）的核心数据载体是 `plan_order.reason_json`（JSON 文本字段）。回测器在生成每笔买入订单时，把信号触发时的 box 几何与 52 周新高上下文写入该字段；离线分析脚本（`e17_watch.py` / `e17_annual_tier_report.py`）只读查询该字段做梯度分布统计，不回溯重算。
+> box 十维迭代实验（理论框架见 docs/00 §3.6）的核心数据载体是 `plan_order.reason_json`（JSON 文本字段）。回测器在生成每笔买入订单时，把信号触发时的 box 几何与 52 周新高上下文写入该字段；离线分析脚本（`e17_watch.py` / `e17_annual_tier_report.py`）只读查询该字段做梯度分布统计，不回溯重算。
 
 ### 6.1 已落地字段清单（当前 darvas_e17.exe 产出）
 
 | 字段 | 类型 | 含义 | 对应实验维度 |
 |------|------|------|-------------|
 | `box_bottom` | number | 被突破箱体下轨价 | 第 2 维（box 高度）后验原料 |
-| `box_top` | number | 被突破箱体上轨价 | 第 2 维 + 第 4 维后验原料 |
-| `trigger` | number | 触发价 = `box_top × buy.premium` | 第 4 维（突破强度）—— ⚠️ 当前全部=box_top×1.03，无梯度 |
-| `high_52w` | number | 截至突破日的 52 周最高价 | 第 3 维 + 第 6 维后验原料 |
-| `newhigh_distance_pct` | number | `(high_52w - close) / high_52w × 100` | 第 3 维（box 位置）—— E17 阶梯分档依据 |
-| `sizing_basis` | string | `newhigh_t1`/`t2`/`t3`/`t4` 之一 | 第 3 维档位标记 |
+| `box_top` | number | 被突破箱体上轨价 | 第 2 维 + 第 6 维后验原料 |
+| `trigger` | number | 触发价 = `box_top × buy.premium` | 第 6 维（突破强度）—— ⚠️ 当前全部=box_top×1.03，无梯度 |
+| `high_52w` | number | 截至突破日的 52 周最高价 | 第 5 维 + 第 4 维后验原料 |
+| `newhigh_distance_pct` | number | `(high_52w - close) / high_52w × 100` | 第 5 维（box 位置）—— E17 阶梯分档依据 |
+| `sizing_basis` | string | `newhigh_t1`/`t2`/`t3`/`t4` 之一 | 第 5 维档位标记 |
 | `units` | number | 该笔订单的仓位单位数（1 单位=2% 权益） | 每单位净利计算分母 |
 
 ### 6.2 待加字段（解锁其余维度，需改回测器 + 重编译）
 
 | 待加字段 | 含义 | 解锁维度 | 改动位置 |
 |---------|------|---------|---------|
-| `volume_ratio` | 突破日量 / 过去 N 日均量 | 第 5 维（量比梯度） | `internal/signal` 信号生成处加计算 + 写入 reason_json |
+| `volume_ratio` | 突破日量 / 过去 N 日均量 | 第 7 维（量比梯度） | `internal/signal` 信号生成处加计算 + 写入 reason_json |
 | `box_height_pct` | `(box_top-box_bottom)/box_bottom × 100`（冗余存方便统计） | 第 2 维（已可后验，冗余字段只是省计算） | 可选 |
-| `is_top_box` | bool：当前 box 是否为此前 N 个 box 序列的最高 | 第 6 维（最高 box，需 box 序列历史） | `internal/box` 加序列状态 + 信号生成处查询 |
-| `break_strength_pct` | `(trigger - box_top) / box_top × 100`（参数化后才有梯度） | 第 4 维（需配合 `buy.premium` 参数化多轮跑） | `internal/contract` 加参数 + 信号生成处读参数 |
+| `is_top_box` | bool：当前 box 是否为此前 N 个 box 序列的最高 | 第 4 维（最高 box，需 box 序列历史） | `internal/box` 加序列状态 + 信号生成处查询 |
+| `break_strength_pct` | `(trigger - box_top) / box_top × 100`（参数化后才有梯度） | 第 6 维（需配合 `buy.premium` 参数化多轮跑） | `internal/contract` 加参数 + 信号生成处读参数 |
 
 ### 6.3 字段写入契约
 

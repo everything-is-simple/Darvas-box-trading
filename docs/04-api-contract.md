@@ -536,7 +536,7 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
 
 ## 9. 研究字段产出契约（2026-10-25 立项）
 
-> box 六维迭代实验（理论框架见 docs/00 §3.6，字段清单见 docs/03 §6）在契约侧的产出规则。本节定义 `planner` 生成买入订单时写入 `plan_order.reason_json` 的契约义务——离线分析脚本依赖这些字段做梯度分布统计。
+> box 十维迭代实验（理论框架见 docs/00 §3.6，字段清单见 docs/03 §6）在契约侧的产出规则。本节定义 `planner` 生成买入订单时写入 `plan_order.reason_json` 的契约义务——离线分析脚本依赖这些字段做梯度分布统计。
 
 ### 9.1 reason_json 产出契约（planner → plan_order）
 
@@ -559,24 +559,24 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
   - `newhigh_t4`：20% ≤ distance ≤ 40%，units=0.5
   - distance > 40%：**不生成订单**（拒买，不进 plan_order 表）
 
-### 9.2 待加字段的契约扩展（解锁第 4/5/6 维，未实现）
+### 9.2 待加字段的契约扩展（解锁第 4/6/7 维，未实现）
 
 以下字段目前**未产出**，待 docs/05 M9 立项后按本契约扩展：
 
 | 字段 | 来源 | 解锁维度 | 契约改动 |
 |------|------|---------|---------|
-| `volume_ratio` | signal 上下文（突破日量 / N 日均量） | 第 5 维 | `contract.SignalContext` 加字段 + `planner` 写入 reason_json |
-| `is_top_box` | box 引擎（box 序列历史查询） | 第 6 维 | `box.Scanner` 加序列状态查询 + signal 上下文携带 + planner 写入 |
-| `break_strength_pct` | `(trigger - box_top) / box_top × 100` | 第 4 维 | 需配合 `buy.premium` 参数化（多轮跑不同值）才有梯度 |
+| `volume_ratio` | signal 上下文（突破日量 / N 日均量） | 第 7 维 | `contract.SignalContext` 加字段 + `planner` 写入 reason_json |
+| `is_top_box` | box 引擎（box 序列历史查询） | 第 4 维 | `box.Scanner` 加序列状态查询 + signal 上下文携带 + planner 写入 |
+| `break_strength_pct` | `(trigger - box_top) / box_top × 100` | 第 6 维 | 需配合 `buy.premium` 参数化（多轮跑不同值）才有梯度 |
 
-### 9.3 参数化契约（解锁第 1/4 维）
+### 9.3 参数化契约（解锁第 1/6 维）
 
-第 1 维（box 周期长度）与第 4 维（突破强度）的梯度实验需要把当前固定值参数化：
+第 1 维（box 宽度）与第 6 维（突破强度）的梯度实验需要把当前固定值参数化：
 
 | 参数 | 当前值 | 参数化键 | 解锁维度 | 改动位置 |
 |------|--------|---------|---------|---------|
 | box 周期长度 | 3 日（固定） | `box.period`（待加） | 第 1 维 | `internal/box` 三日法则→N 日法则 + migration 加参数 |
-| 突破溢价 | ×1.03（固定） | `buy.premium`（已存在但单一） | 第 4 维 | 多轮跑不同值（1.01/1.02/1.03/1.05），每轮独立回测库 |
+| 突破溢价 | ×1.03（固定） | `buy.premium`（已存在但单一） | 第 6 维 | 多轮跑不同值（1.01/1.02/1.03/1.05），每轮独立回测库 |
 
 - **参数化铁律**：参数化后，**每一轮回测必须用单一参数值跑完全部年份**，不得在同一年内混用不同参数——跨年可比性依赖于此。
 - **参数轮次隔离**：每轮参数用独立回测库（如 `bt_e17_<year>_p3.db` 表示 box.period=3），不覆盖默认库。
