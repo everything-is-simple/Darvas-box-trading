@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 530" width="680" role="img">
+  <title>十维实验全部落地后的系统终态：六问预测（2026-10-26）</title>
+  <desc>六问（买什么 何时买 买多少 卖什么 何时卖 卖多少）对应的维度、证据状态与预测终态。配套文档：docs/30-system-prediction.md（P1-P12 预言与对账册）。</desc>
+  <text x="40" y="38" font-size="14" font-weight="500" fill="#1e2430" font-family="Microsoft YaHei, PingFang SC, sans-serif">十维实验全部落地后的系统终态——千古六问的答案</text>
+  <text x="40" y="60" font-size="12" fill="#697386" font-family="Microsoft YaHei, PingFang SC, sans-serif">卡片颜色 = 证据状态：蓝=已出硬结论　琥珀=实验进行中　灰=尚未跑　青=已定稿　（2026-10-26 定格）</text>
+
+  <g>
+    <rect x="40" y="80" width="190" height="150" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+    <text x="52" y="102" font-size="13" font-weight="500" fill="#0C447C" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">买什么（维 1-4）</text>
+    <text x="52" y="120" font-size="11" fill="#378ADD" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">维2已验（P0-1）· 维1/3/4待跑</text>
+    <line x1="52" y1="132" x2="218" y2="132" stroke="#85B7EB" stroke-width="0.5"/>
+    <text x="52" y="150" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">上升序列里的最高箱体</text>
+    <text x="52" y="168" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">高度带 10–20%（10-15%最稳）</text>
+    <text x="52" y="186" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">距52周新高甜点区 0–10%</text>
+    <text x="52" y="204" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">深箱(25%+)永久出局</text>
+  </g>
+
+  <g>
+    <rect x="245" y="80" width="190" height="150" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+    <text x="257" y="102" font-size="13" font-weight="500" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">何时买（维 6/7）</text>
+    <text x="257" y="120" font-size="11" fill="#888780" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">P1-4 已立项：强度6档+量比6带</text>
+    <line x1="257" y1="132" x2="423" y2="132" stroke="#B4B2A9" stroke-width="0.5"/>
+    <text x="257" y="150" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">仍是事件驱动，不是预测</text>
+    <text x="257" y="168" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">= 放量确认 + 收盘越过箱顶</text>
+    <text x="257" y="186" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">写死的 3% 大概率被推翻</text>
+    <text x="257" y="204" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">量比门槛替代固定溢价</text>
+  </g>
+
+  <g>
+    <rect x="450" y="80" width="190" height="150" rx="10" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.5"/>
+    <text x="462" y="102" font-size="13" font-weight="500" fill="#633806" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">买多少（维 5+10）</text>
+    <text x="462" y="120" font-size="11" fill="#BA7517" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">维5已定阶梯 · 维10 B-1/B-2进行中</text>
+    <line x1="462" y1="132" x2="628" y2="132" stroke="#EF9F27" stroke-width="0.5"/>
+    <text x="462" y="150" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">阶梯单位为底（3/2/1/0.5）</text>
+    <text x="462" y="168" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">× 大盘深度乘数（52周回撤）</text>
+    <text x="462" y="186" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">深回撤降半仓而非停手</text>
+    <text x="462" y="204" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">固定单位是兜底底线</text>
+  </g>
+
+  <g>
+    <rect x="40" y="250" width="190" height="150" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+    <text x="52" y="272" font-size="13" font-weight="500" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">卖什么（组合层）</text>
+    <text x="52" y="290" font-size="11" fill="#888780" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">无独立维度 · 由维10组合约束承担</text>
+    <line x1="52" y1="302" x2="218" y2="302" stroke="#B4B2A9" stroke-width="0.5"/>
+    <text x="52" y="320" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">不挑票——每个仓位自带</text>
+    <text x="52" y="338" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">退出线，先破线者先走</text>
+    <text x="52" y="356" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">组合只管持仓上限（7只）</text>
+    <text x="52" y="374" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">和现金保留（30%）</text>
+  </g>
+
+  <g>
+    <rect x="245" y="250" width="190" height="150" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+    <text x="257" y="272" font-size="13" font-weight="500" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">何时卖（维 8/9）</text>
+    <text x="257" y="290" font-size="11" fill="#888780" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">P2-5/P2-6 待跑 · 证据最少的一环</text>
+    <line x1="257" y1="302" x2="423" y2="302" stroke="#B4B2A9" stroke-width="0.5"/>
+    <text x="257" y="320" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">三线分化——紧止损</text>
+    <text x="257" y="338" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">(箱顶×0.97)、时间止损</text>
+    <text x="257" y="356" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">(2日stale)、移动止盈</text>
+    <text x="257" y="374" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">锚箱体下轨——让利润奔跑</text>
+  </g>
+
+  <g>
+    <rect x="450" y="250" width="190" height="150" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+    <text x="462" y="272" font-size="13" font-weight="500" fill="#085041" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">卖多少（0017已定）</text>
+    <text x="462" y="290" font-size="11" fill="#1D9E75" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">金字塔/加码已证伪 · 已定稿</text>
+    <line x1="462" y1="302" x2="628" y2="302" stroke="#5DCAA5" stroke-width="0.5"/>
+    <text x="462" y="320" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">一次全出，不再分批</text>
+    <text x="462" y="338" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">分批卖出的复杂度</text>
+    <text x="462" y="356" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">收益比不划算——</text>
+    <text x="462" y="374" font-size="12" fill="#444441" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">简单是特性不是缺陷</text>
+  </g>
+
+  <g>
+    <circle cx="46" cy="432" r="5" fill="#185FA5"/><text x="58" y="432" font-size="12" fill="#5F5E5A" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">已出硬结论</text>
+    <circle cx="146" cy="432" r="5" fill="#BA7517"/><text x="158" y="432" font-size="12" fill="#5F5E5A" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">实验进行中</text>
+    <circle cx="246" cy="432" r="5" fill="#888780"/><text x="258" y="432" font-size="12" fill="#5F5E5A" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">尚未跑</text>
+    <circle cx="336" cy="432" r="5" fill="#0F6E56"/><text x="348" y="432" font-size="12" fill="#5F5E5A" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">已定稿</text>
+  </g>
+
+  <g>
+    <rect x="40" y="452" width="600" height="58" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+    <text x="56" y="472" font-size="12" font-weight="500" fill="#3C3489" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">元预测：十维的最终产出不是十组最优参数，而是「够用的简单规则 + 一份证伪清单」。</text>
+    <text x="56" y="492" font-size="12" fill="#3C3489" dominant-baseline="central" font-family="Microsoft YaHei, sans-serif">系统会像达瓦斯本人：一年只做三五种形态，其余 99% 的时间在等待。十维里最可能的结局是多数维被证伪——那正是它值钱的方式。</text>
+  </g>
+</svg>
