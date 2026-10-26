@@ -358,7 +358,7 @@ M7 周而复始运行 ◀── M6 GUI ◀── M5 CLI闭环 ◀── M4 信�
 
 | 实验 | 维度 | 类型 | 内容 | 产出 |
 |------|------|------|------|------|
-| P1-4 | 第 6/7 维 强度+量比 | 加字段+参数化 | reason_json 加 `volume_ratio`/`break_strength_pct`；`buy.premium` 参数化（默认 3% 保基准可比） | 强度 5 带 + 量比 6 带分布 |
+| P1-4 | 第 6/7 维 强度+量比 | 加字段+参数化 | reason_json 加 `volume_ratio`/`break_strength_pct`；`buy.premium` 参数化（默认 3% 保基准可比） | 强度 6 档 + 量比 6 带分布 |
 
 ### M10.2 · P2（第 8/9 维，出场归因+止损规则）
 
