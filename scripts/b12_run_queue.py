@@ -170,9 +170,13 @@ def main():
     lock = acquire_lock()
     try:
         for variant, year in jobs:
-            if (BT / f"bt_b12_{variant}_{year}.db").exists():
-                log(f"跳过 {variant}:{year}（库已存在，视为已完成）")
+            dbp = BT / f"bt_b12_{variant}_{year}.db"
+            if dbp.exists() and dbp.stat().st_size > 0:
+                log(f"跳过 {variant}:{year}（库已存在且非空，视为已完成）")
                 continue
+            if dbp.exists():
+                log(f"{variant}:{year} 存在 0 字节空库（疑似残留），删除后重跑")
+                dbp.unlink()
             run_job(variant, year)
         set_status("done", f"全部任务完成：{jobs}")
         return 0
