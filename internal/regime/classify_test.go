@@ -228,3 +228,50 @@ func TestClassifyDateAInsufficientHistory(t *testing.T) {
 		t.Fatalf("历史不足 61 根应判 range（保守不放大），got %s", got)
 	}
 }
+
+// TestCloseVsMA 验证 MA 闸门原料：升序窗口、含当日均值、历史不足保守返 ok=false。
+func TestCloseVsMA(t *testing.T) {
+	st := newTestStore(t)
+	dates := seedIndexCalendar(t, st, "2026-03-20", 80) // 80 根，close 恒 3000
+	last := dates[len(dates)-1]
+
+	// 历史足够：close=3000，MA20=3000（常数序列），ok=true，below=false
+	close, ma, ok := CloseVsMA(st, last, 20)
+	if !ok {
+		t.Fatalf("ok=false，期望 true（80 根历史足够）")
+	}
+	if math.Abs(close-3000) > 1e-6 || math.Abs(ma-3000) > 1e-6 {
+		t.Errorf("close=%.2f ma=%.2f，期望 3000/3000", close, ma)
+	}
+
+	// 历史不足：窗口首日往前再无 K 线 → ok=false（闸门不触发的保守口径）
+	first := dates[0]
+	if _, _, ok := CloseVsMA(st, first, 60); ok {
+		t.Errorf("首日 CloseVsMA ok=true，期望 false（历史不足 60 根）")
+	}
+
+	// 下跌序列：回填末 60 根为每日 −1%（时间正序递减）→ 末根 close < MA60
+	d, _ := time.Parse("2006-01-02", last)
+	bars := make([]contract.DailyBar, 0, 60)
+	px := 3000.0
+	for cur := d.AddDate(0, 0, -59); !cur.After(d); cur = cur.AddDate(0, 0, 1) {
+		if cur.Weekday() == time.Saturday || cur.Weekday() == time.Sunday {
+			continue
+		}
+		bars = append(bars, contract.DailyBar{
+			Code: DefaultIndex, Date: cur.Format("2006-01-02"),
+			Open: px, High: px, Low: px, Close: px, Volume: 1000, Amount: 1e8,
+		})
+		px *= 0.99
+	}
+	if _, err := st.BarRepo.UpsertBars(bars); err != nil {
+		t.Fatal(err)
+	}
+	close, ma, ok = CloseVsMA(st, last, 60)
+	if !ok {
+		t.Fatalf("下跌序列 ok=false，期望 true")
+	}
+	if close >= ma {
+		t.Errorf("下跌序列 close=%.2f 应 < MA60=%.2f", close, ma)
+	}
+}

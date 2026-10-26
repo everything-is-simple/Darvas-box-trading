@@ -75,6 +75,21 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	unitValue := equity * unitPct
 	market := p.regimeLabel(planDate)
 
+	// P0-3 B 类（2026-10-26）：MA60 闸门实验，参数 gate.ma60.mode = off|half|stop（未种子化，
+	// 回测时经 --set 注入；取不到时默认 off）。off 时必须完全短路——不读指数、不改 Reason、
+	// 不改任何输出，保证 bt_b12_off 与 bt_e17 历史基线逐单等价（等价性由 2014 对照跑验证）。
+	// half：上证收盘 < MA60 时首买降为 0.5 单位；stop：上证收盘 < MA60 时不生成买单。
+	// 判断时点 = planDate（与 reason_json.regime 同口径）；零未来信息（date ≤ planDate）；
+	// 历史不足（CloseVsMA ok=false）保守放行，与 A 判据历史不足返 Range 同口径，并写入 reason_json 供审计。
+	gateMode := p.st.ParamRepo.GetString("gate.ma60.mode", "off")
+	gate := gateState{mode: gateMode}
+	if gateMode != "off" {
+		if close, ma, ok := regime.CloseVsMA(p.st, planDate, 60); ok {
+			gate.ok, gate.close, gate.ma = true, close, ma
+			gate.below = close < ma
+		}
+	}
+
 	// 组合级约束：同时持仓数上限（A M1 升势 2 单位 × maxHold 只 ≈ 权益 28%，远低于 70%）。
 	// 不再有「试探/主力」分桶预算——不加码，仓位只有首买一档，组合风险由「持仓数」管。
 	openCount, err := p.st.TradeRepo.OpenPositionCount()
@@ -140,7 +155,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 			}
 			// A M1（2026-10-23）：首买单位由 A 判据升势决定（升势 2 / 其余 1），winner 5x 退役。
 			o := p.buyOrder(s, box, market, unitValue,
-				buyPrem, sellDisc, posByCode, budget, plannedQty, planDate, executeDate, maxEntryGap, ladder)
+				buyPrem, sellDisc, posByCode, budget, plannedQty, planDate, executeDate, maxEntryGap, ladder, gate)
 			if o != nil {
 				orders = append(orders, *o)
 			}
@@ -295,6 +310,16 @@ type holdBudget struct {
 	max  int // 上限 pool.max_hold
 }
 
+// gateState P0-3 B 类 MA60 闸门在 planDate 的状态（gate.ma60.mode != off 时填充）。
+// mode=off 时全零值且 buyOrder 完全不触碰——保证与历史基线逐单等价。
+type gateState struct {
+	mode  string // off | half | stop
+	ok    bool   // 指数历史是否足够计算 MA60（不足则保守放行）
+	below bool   // 上证收盘 < MA60
+	close float64
+	ma    float64
+}
+
 func (b *holdBudget) canOpen() bool { return b.open < b.max }
 
 func (b *holdBudget) take() { b.open++ }
@@ -421,7 +446,7 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
 	buyPrem, sellDisc float64, posByCode map[string]*contract.Position,
 	budget *holdBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64,
-	ladder newHighLadder) *contract.PlanOrder {
+	ladder newHighLadder, gate gateState) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
 	// 初始止损（B2 校订 2026-10-22，原书 §4.1 + §3.4）：=被突破箱体上轨（突破点）下方
 	// ——紧止损。原书 §3.4「新箱体下轨 ≈ 前一箱体上轨（±3%容差）」，故「新箱体下轨下方」
@@ -480,6 +505,16 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		basis = "A_regime_up"
 	}
 
+	// P0-3 B 类 MA60 闸门（gate.mode）：仅 off 以外模式生效；ok=false（历史不足）保守放行。
+	if gate.mode == "stop" && gate.ok && gate.below {
+		p.log.Printf("闸门拦截 %s：上证 %.2f < MA60 %.2f（gate.ma60.mode=stop）", s.Code, gate.close, gate.ma)
+		return nil
+	}
+	if gate.mode == "half" && gate.ok && gate.below && units > 0.5 {
+		units = 0.5
+		basis = basis + "|ma60_half"
+	}
+
 	// 组合约束：同时持仓数上限。
 	if !budget.canOpen() {
 		p.log.Printf("跳过 %s：同时持仓已达上限 %d 只（留 30%% 现金）", s.Code, budget.max)
@@ -497,18 +532,27 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	budget.take()
 	plannedQty[s.Code] = qty
 
+	reason := map[string]any{
+		"signal": string(s.Type), "box_top": box.Top, "box_bottom": box.Bottom,
+		"trigger": trigger, "stop": stop, "leg": 1,
+		"regime": string(market), "sizing_basis": basis,
+		"track_level": string(lv), "budget_bucket": "normal",
+		"unit_value": unitValue, "unit_shares": shares, "units": units,
+		"high_52w": high52w, "newhigh_distance_pct": distance,
+	}
+	// 仅闸门开启时写入 gate_ma60（off 模式不写，保 bt_b12_off 与历史基线逐单等价）。
+	if gate.mode != "off" {
+		reason["gate_ma60"] = map[string]any{
+			"mode": gate.mode, "below": gate.below,
+			"close": gate.close, "ma": gate.ma, "ok": gate.ok,
+		}
+	}
+
 	return &contract.PlanOrder{
 		PlanDate: planDate, ExecuteDate: execDate, Code: s.Code,
 		Side: "buy", OrderKind: "stop_buy",
 		TriggerPrice: trigger, LimitPrice: trigger, Qty: qty, LegNo: 1,
-		Reason: map[string]any{
-			"signal": string(s.Type), "box_top": box.Top, "box_bottom": box.Bottom,
-			"trigger": trigger, "stop": stop, "leg": 1,
-			"regime": string(market), "sizing_basis": basis,
-			"track_level": string(lv), "budget_bucket": "normal",
-			"unit_value": unitValue, "unit_shares": shares, "units": units,
-			"high_52w": high52w, "newhigh_distance_pct": distance,
-		},
+		Reason: reason,
 	}
 }
 

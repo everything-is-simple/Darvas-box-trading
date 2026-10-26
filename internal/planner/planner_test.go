@@ -804,3 +804,167 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// --- P0-3 B 类 MA60 闸门（gate.ma60.mode = off|half|stop）---
+
+// seedIndexDecline 播种 61 根逐日 −0.3% 的 sh000001 日线 → planDate 收盘 < MA60（A 判据降势）。
+func seedIndexDecline(t *testing.T, st *store.Store, planDate string) {
+	t.Helper()
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity("sh000001", "")})
+	d, err := time.Parse("2006-01-02", planDate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dates := make([]string, 0, 61)
+	for cur := d; len(dates) < 61; cur = cur.AddDate(0, 0, -1) {
+		if cur.Weekday() != time.Saturday && cur.Weekday() != time.Sunday {
+			dates = append([]string{cur.Format("2006-01-02")}, dates...)
+		}
+	}
+	bars := make([]contract.DailyBar, 0, 61)
+	lo := 1000.0
+	for _, ds := range dates {
+		bars = append(bars, contract.DailyBar{
+			Code: "sh000001", Date: ds, Open: lo + 10, High: lo + 15, Low: lo, Close: lo + 10,
+			Volume: 1000, Amount: 1e8,
+		})
+		lo *= 0.997 // 严格递减 0.3%/日 → 收盘 < MA60
+	}
+	if _, err := st.BarRepo.UpsertBars(bars); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func setGateMode(t *testing.T, st *store.Store, mode string) {
+	t.Helper()
+	if _, err := st.DB().Exec(
+		`INSERT INTO param(key,value) VALUES('gate.ma60.mode',?) ON CONFLICT(key) DO UPDATE SET value=?`,
+		mode, mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// gateTestSetup 造标准首买场景（与 TestPlannerBreakoutUnitQtyBear 同构），返回 store。
+func gateTestSetup(t *testing.T) *store.Store {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
+		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
+	}})
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+	return st
+}
+
+// TestGateMA60OffNoReasonField：默认 off 不写入 gate_ma60（保与历史基线逐单等价）。
+func TestGateMA60OffNoReasonField(t *testing.T) {
+	st := gateTestSetup(t)
+	seedIndexDecline(t, st, "2026-10-16") // 即使指数在跌，off 也不得生效
+	p := New(st)
+	res, err := p.Build(context.Background(), "2026-10-16")
+	if err != nil || res.Status != "ok" {
+		t.Fatalf("Build: res=%+v err=%v", res, err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("orders=%d want 1", len(orders))
+	}
+	if _, ok := orders[0].Reason["gate_ma60"]; ok {
+		t.Errorf("off 模式不应写 gate_ma60，got %v", orders[0].Reason["gate_ma60"])
+	}
+	if units, _ := orders[0].Reason["units"].(float64); units != 1 {
+		t.Errorf("off 模式 units=%v want 1（A判据降势→1单位，闸门不生效）", units)
+	}
+}
+
+// TestGateMA60Half：指数在 MA60 下方 → 首买降为 0.5 单位并留审计字段。
+func TestGateMA60Half(t *testing.T) {
+	st := gateTestSetup(t)
+	seedIndexDecline(t, st, "2026-10-16")
+	setGateMode(t, st, "half")
+	p := New(st)
+	res, err := p.Build(context.Background(), "2026-10-16")
+	if err != nil || res.Status != "ok" {
+		t.Fatalf("Build: res=%+v err=%v", res, err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("orders=%d want 1", len(orders))
+	}
+	o := orders[0]
+	if units, _ := o.Reason["units"].(float64); units != 0.5 {
+		t.Errorf("units=%v want 0.5（half 闸门）", units)
+	}
+	if basis, _ := o.Reason["sizing_basis"].(string); basis != "default|ma60_half" {
+		t.Errorf("sizing_basis=%v want default|ma60_half", basis)
+	}
+	if o.Qty != 400 { // 800 股/单位 × 0.5 = 400
+		t.Errorf("qty=%d want 400", o.Qty)
+	}
+	g, ok := o.Reason["gate_ma60"].(map[string]any)
+	if !ok {
+		t.Fatalf("reason.gate_ma60 缺失: %v", o.Reason)
+	}
+	if below, _ := g["below"].(bool); !below {
+		t.Errorf("gate_ma60.below=%v want true（下跌指数）", g["below"])
+	}
+}
+
+// TestGateMA60Stop：指数在 MA60 下方 → 不生成买单。
+func TestGateMA60Stop(t *testing.T) {
+	st := gateTestSetup(t)
+	seedIndexDecline(t, st, "2026-10-16")
+	setGateMode(t, st, "stop")
+	p := New(st)
+	res, err := p.Build(context.Background(), "2026-10-16")
+	if err != nil || res.Status != "ok" {
+		t.Fatalf("Build: res=%+v err=%v", res, err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 0 {
+		t.Fatalf("orders=%d want 0（stop 闸门拦截下方首买）", len(orders))
+	}
+}
+
+// TestGateMA60StopRisingNotTriggered：指数在 MA60 上方 → 闸门不触发，正常生成买单。
+func TestGateMA60StopRisingNotTriggered(t *testing.T) {
+	st := gateTestSetup(t)
+	seedARegimeUp(t, st, "2026-10-16") // 上涨指数 → 收盘 > MA60
+	setGateMode(t, st, "stop")
+	p := New(st)
+	res, err := p.Build(context.Background(), "2026-10-16")
+	if err != nil || res.Status != "ok" {
+		t.Fatalf("Build: res=%+v err=%v", res, err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("orders=%d want 1（上方不拦截）", len(orders))
+	}
+	g, ok := orders[0].Reason["gate_ma60"].(map[string]any)
+	if !ok {
+		t.Fatalf("reason.gate_ma60 缺失")
+	}
+	if below, _ := g["below"].(bool); below {
+		t.Errorf("gate_ma60.below=%v want false（上涨指数）", g["below"])
+	}
+	if units, _ := orders[0].Reason["units"].(float64); units != 2 {
+		t.Errorf("units=%v want 2（升势日 A M1 2 单位，闸门不触发）", units)
+	}
+}

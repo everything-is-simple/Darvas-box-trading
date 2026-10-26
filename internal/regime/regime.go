@@ -235,6 +235,29 @@ func ClassifyDateA(st *store.Store, date string) Regime {
 	return Range
 }
 
+// CloseVsMA 返回 date 当日 sh000001 的收盘与其 n 日简单均线（SMA，含当日）。
+//
+// 数据通路与零未来信息纪律与 ClassifyDateA 完全一致：BarsWindow(DefaultIndex, date, n)
+// 取「≤ date 的最近 n 根」升序窗口，末根即当日。历史不足 n 根返回 ok=false（保守口径，
+// 调用方应视为「闸门不触发」——与 ClassifyDateA 历史不足返 Range 的处理一致）。
+//
+// 用途（2026-10-26，P0-3 B 类）：planner 的 MA60 闸门实验（gate.ma60.mode=half/stop），
+// 判断「上证收盘是否低于 MA60」。仅为归因后的 B 类规则验证服务，不引入新的择时信号。
+func CloseVsMA(st *store.Store, date string, n int) (close, ma float64, ok bool) {
+	if n <= 0 {
+		return 0, 0, false
+	}
+	bars, err := st.BarRepo.BarsWindow(DefaultIndex, date, n)
+	if err != nil || len(bars) < n {
+		return 0, 0, false
+	}
+	sum := 0.0
+	for _, b := range bars {
+		sum += b.Close
+	}
+	return bars[len(bars)-1].Close, sum / float64(n), true
+}
+
 // Segment 连续同体制的一段。
 type Segment struct {
 	Regime     Regime

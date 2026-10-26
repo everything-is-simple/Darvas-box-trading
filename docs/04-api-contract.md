@@ -358,8 +358,12 @@ type Planner interface {
     //   不择时、不做熊市闸门（2026-10-23 六轮回测证伪，见 docs/00 第 0 条）。
     //   组合约束=同时持仓数上限 pool.max_hold。
     // 数量公式：1单位=权益×pos.unit(2%)；单位股数=floor(单位值/价/100)×100；qty=units×单位股数。
-    // reason_json：sizing_basis="A_regime_up"/"default"、units=2/1、regime=A判据标签、budget_bucket="normal"、track_level=审计。
-    //   （regime 字段完整契约见 §9.1，时点为 planDate——不是 execute_date）
+    // reason_json：sizing_basis="A_regime_up"/"default"/"newhigh_t1..t4"、units=2/1/3..0.5、
+    //   regime=A判据标签（planDate 口径，契约见 §9.1）、budget_bucket="normal"、track_level=审计。
+    //   MA60 闸门开启时（gate.ma60.mode=half/stop）追加 gate_ma60={mode,below,close,ma,ok}
+    //   与 sizing_basis 后缀 "|ma60_half"；off 模式两者都不写，保与历史基线逐单等价。
+    //   闸门判定：planner 在 planDate 以 CloseVsMA(sh000001,60) 判断收盘是否低于 MA60；
+    //   历史不足 ok=false 时保守放行（同 A 判据历史不足返 Range 的口径）。
 }
 
 type PlanParams struct {
