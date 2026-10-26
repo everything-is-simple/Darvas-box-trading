@@ -63,13 +63,13 @@ commit message约定：`feat(box): ...` / `feat(contract): ...`（contract前缀
 | signal.type封闭集合 | DDL CHECK+Go类型系统双重 |
 | 箱体阶梯 prev_box_id无环 | Upsert时应用层校验（链长度≤100） |
 
-**M8 复核沉淀的状态不变量**（← 沉淀自 archive/07-M8 回放审计、docs/18 量化复核）：
+**M8 复核沉淀的状态不变量**（← 沉淀自 archive/07-M8 回放审计、archive/18 量化复核）：
 
 | 不变量 | 保障机制 | 来源 |
 |--------|---------|------|
-| 跟踪池 active ≤ maxwatch | `check_consistency.py` 新增断言 `watch where stage in ('watching','pending','holding')` 数量 ≤ param `pool.maxwatch` | archive/07 #3 + docs/18 P0-4 |
-| 订单 trigger 与现价偏离上限 | `planner` 生成订单前校验 `abs(trigger/close - 1) < gap上限违反直接拒单 + `match` 成交后校验 `abs(fill/trigger - 1) ≤ max_entry_gap`（默认 1.05） | docs/18 P0-2 |
-| 同仓位同批次不产两张卖单 | `planner.pendingSell` 生成卖单后立即回写 `true`（修复后） | docs/18 P0-3/P0-5 |
+| 跟踪池 active ≤ maxwatch | `check_consistency.py` 新增断言 `watch where stage in ('watching','pending','holding')` 数量 ≤ param `pool.maxwatch` | archive/07 #3 + archive/18 P0-4 |
+| 订单 trigger 与现价偏离上限 | `planner` 生成订单前校验 `abs(trigger/close - 1) < gap上限违反直接拒单 + `match` 成交后校验 `abs(fill/trigger - 1) ≤ max_entry_gap`（默认 1.05） | archive/18 P0-2 |
+| 同仓位同批次不产两张卖单 | `planner.pendingSell` 生成卖单后立即回写 `true`（修复后） | archive/18 P0-3/P0-5 |
 
 ### 3.2 接口一致性（编译期）
 

@@ -178,7 +178,7 @@
 | 买入触发溢价 | `buy.premium` | ×1.03 | 突破确认 |
 | 卖出触发折价 | `sell.discount` | ×0.97 | 止损滑价 |
 | 进场跳空上限 | `match.max_entry_gap` | 1.05 | P0-2（2026-10-21）：成交价/触发价 > 1.05 弃单（达瓦斯买突破点+3%，非突破后追高） |
-| 撮合滑点 | `match.slippage` | 0.002 | C4（2026-10-22）：模拟成交买贵卖贱 0.2%，0=关闭；先加滑点再过 max_entry_gap 闸门（闸门校验实际要付的价）。docs/18 R5 估算年影响 0.3-0.8% |
+| 撮合滑点 | `match.slippage` | 0.002 | C4（2026-10-22）：模拟成交买贵卖贱 0.2%，0=关闭；先加滑点再过 max_entry_gap 闸门（闸门校验实际要付的价）。archive/18 R5 估算年影响 0.3-0.8% |
 | 放量倍数 | `box.volmult` | ×2.0 | 达瓦斯成交量确认 |
 | 均量窗口 | `box.volwindow` | 50日 | 放量参照基准 |
 | 箱体最小宽度 | `box.min_width` | 0.05 | A2 校订（2026-10-22）：箱体宽度校验 (top-bottom)/top ≥ 该值，工程假设非原书规则（原书仅三日法则，宽度自然走出）；参数化供回测校准，见 docs/00 §3.5 |
@@ -206,7 +206,7 @@
 | 仓位系数·猴 | `regime.mult.range` | 0.5 | **已退役**（M8.7） |
 | 仓位系数·熊 | `regime.mult.bear` | 0.2 | **已退役**（M8.7） |
 | 晴雨表指数 | `regime.indices` | sh000001 | **已退役**（M8.7 单一上证指数版，证伪） |
-**市场宽度标定（M8.8 内生法，← 沉淀自 archive/13）**：宽度比率 `ratio = ΣU/(ΣU+ΣD)`，U/D 为窗口内全市场个股（kind=stock、上市≥min_history 日历日）`box.Scan` 产生的 broken_up / broken_down 事件数。`ratio ≥ bull_thresh` 连续 `confirm` 日 → 牛（主力仓启用）；`< bear_thresh` 连续 `confirm` 日 → 熊（仅日志区分，仓位同猴）。已知偏差：BreadthAgg 读 box 表最终状态，宽度信号不可离线复现（docs/18 二(3)），修复列 docs/19 E6。
+**市场宽度标定（M8.8 内生法，← 沉淀自 archive/13）**：宽度比率 `ratio = ΣU/(ΣU+ΣD)`，U/D 为窗口内全市场个股（kind=stock、上市≥min_history 日历日）`box.Scan` 产生的 broken_up / broken_down 事件数。`ratio ≥ bull_thresh` 连续 `confirm` 日 → 牛（主力仓启用）；`< bear_thresh` 连续 `confirm` 日 → 熊（仅日志区分，仓位同猴）。已知偏差：BreadthAgg 读 box 表最终状态，宽度信号不可离线复现（archive/18 二(3)），修复列 archive/19 E6。
 
 | 宽度窗口 | `regime.breadth.window` | 20 | 滚动窗口交易日（M8.8，2026-10-20 用户拍板） |
 | 牛触发阈值 | `regime.breadth.bull_thresh` | 0.55 | 连续 3 日 ≥ 触发牛（主力仓启用） |

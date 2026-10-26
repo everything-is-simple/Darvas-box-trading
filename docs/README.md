@@ -1,81 +1,89 @@
 # Darvas-box-trading 文档索引
 
 > 本索引是文档治理的导航枢纽。阅读任何文档前先看这里，知道「现在该读什么、谁是事实源」。
-> 治理原则：**最少文件数 × 最大必要内容**——主目录只保留 7 个 SSoT + 现役审计/纲领文档，其余全部沉淀后归档。
+> 治理原则：**最少文件数 × 最大必要内容**——主目录只保留 SSoT + 现役纲领 + 中间文档，使命结束即归档。
+> 本索引更新于 2026-10-26（P0-3 完成后）。
 
 ---
 
-## 主目录（当前仅 10 个文件）
+## 主目录结构（2026-10-26 整理后）
 
 ### 第一层：7 个 SSoT（单一事实源，必须一致）
 
-这 7 份是系统的**宪法与工程基准**，代码与文档必须与之一致，由 `scripts/check_consistency.py` 强制校验。
+这 7 份是系统的**宪法与工程基准**，由 `scripts/check_consistency.py` 强制校验（C1 枚举 / C2 表覆盖 / C3 参数键 / C4 时刻表）。
 
-| #  | 文档                     | 职责                            | 事实源配对                                                 |
-| -- | ---------------------- | ----------------------------- | ----------------------------------------------------- |
-| 00 | `00-darvas-theory.md`  | 理论宪法（达瓦斯箱体理论唯一来源，含 M8.7 证伪教训 §10） | 代码必须能指回条目                                             |
-| 01 | `01-requirements.md`   | 需求/每日时间表/参数默认值（含宽度法定义与单位制参数）   | `migrations/*.sql` param 种子 + `scheduler/schedule.go` |
-| 02 | `02-architecture.md`   | 架构总览（单 exe + 本地 HTTP UI）      | —                                                     |
-| 03 | `03-erd.md`            | 数据库 ERD 释义                    | `internal/store/migrations/*.sql`                     |
-| 04 | `04-api-contract.md`   | 模块契约 + 撮合器成交语义（§7.5）          | `internal/contract/contract.go`                       |
-| 05 | `05-task-breakdown.md` | 里程碑划分与状态                      | —                                                     |
-| 06 | `06-consistency.md`    | 一致性维护机制 + 运行时不变量（含 M8 复核沉淀）   | `check_consistency.py`                                |
+| #  | 文档                     | 职责                            | 事实源配对                                     |
+| -- | ---------------------- | ----------------------------- | ------------------------------------------ |
+| 00 | `00-darvas-theory.md`  | 理论宪法（唯一理论来源；第 0 条不择时；§3.6 十维研究框架） | 代码必须能指回条目                              |
+| 01 | `01-requirements.md`   | 需求/每日时间表/参数默认值                | `migrations/*.sql` param 种子 + `scheduler/schedule.go` |
+| 02 | `02-architecture.md`   | 架构总览 + 数据流（含专项实验报告链路 §9）      | —                                          |
+| 03 | `03-erd.md`            | 数据库 ERD + §6 reason_json 研究字段契约 | `internal/store/migrations/*.sql`       |
+| 04 | `04-api-contract.md`   | 模块契约 + 撮合语义 + §9 研究字段产出契约     | `internal/contract/contract.go`            |
+| 05 | `05-task-breakdown.md` | 里程碑划分与状态（M1–M10）              | —                                          |
+| 06 | `06-consistency.md`    | 一致性维护机制 + 运行时不变量              | `check_consistency.py`                     |
 
 **入口先读 00 → 01 §4（每日时间表）→ 05（里程碑）→ 按任务需要跳读 02-04/06。**
 
-### 第二层：审计底稿与验证纲领（M8.8 复核阶段，两份；2026-10-23 状态更新）
+### 第二层：现行纲领与定稿（3 文件 + 1 目录）
 
-| #  | 文档                     | 定位（2026-10-23 更新）                     | 说明                     |
-| -- | ---------------------- | ---------------------- | ---------------------- |
-| 18 | `18-quant-review-m88-deepseek4.1flash-202610210410.md` | **审计底稿（保留）**（deepseek4.1flash 著） | M8.8「不建议转正」证据链仍成立；R1 P0 整改已落地（9b1e577），M8.8 整体被 A M1 取代。正文不再维护，作历史审计 |
-| 19 | `19-backtest-validation-loop-glm5.3-202610210610.md`   | **验证纲领（降为参考）**（glm5.3 著） | 现役纲领角色已结束，被 docs/21 + A M1 取代；§3 E1-E6/§4 S1-S4 验收口径仍被迁移 0012/0013 引用，故保留不归档 |
+| 文档 | 定位 | 状态 |
+| -- | -- | -- |
+| **29** `29-box-gradient-experiment-plan.md` | **box 十维梯度实验总计划（现行纲领）**：P0-1 box 高度 ✅、P0-3 regime 归因 ✅、B-1/B-2 MA60 闸门（进行中）、P1 起需改回测器 | 现役 |
+| **23** `23-position-ladder-math.md` | 头寸梯子演算 + **§9 仓位定稿（D0 A M1 / P5 不择时六轮证伪）**——B 类实验反复引用其硬结论 | 现役（§9 最终应并入 00，单独立项） |
+| **27** `27-iterative-experiment-prompt.md` | 迭代实验方法论模板（2014–2018 逐年回测纲领，已跑完）；docs/06 §6.5 引用 | 方法论保留 |
+| **experiments/** | **试验报告陈列馆（系统最宝贵资产）**：P0-1 双口径三级加密、P0-3 三口径×两时点、M9.0 距新高细分等，规则与结果两层分置 | 持续生长，只进不出 |
 
-> **现在该读什么？** 当前主入口已迁出 docs/：**`var/bt/regime_final_summary_and_prompt.md`**（A M1 交接 prompt，2026-10-23）+ **`docs/23 §9`**（仓位定稿 D0）+ **`docs/00 第 0 条`**（理论宪法，已回滚择时）。docs/18/19 降为审计/参考底稿。
->
-> **两份分工（历史）**：18 = 审计（问题清单与证据）；19 = 纲领（修复循环与验收判据）。R1 修复循环已由 docs/21（三家统一）收敛为回测前 2 项改动（A1/A2，已落地），仓位规则由 A M1 定稿。
->
-> **简称约定**：各文档正文中 `docs/18` / `docs/19` 即指上表两份文件。
+### 第三层：中间文档（使命将尽，逐个归档；2026-10-26 定性）
 
-### 第三层：post-M8.8 工作文档（仓位规则演进链，本地未全部入库）
+| 文档 | 定性 | 剩余价值 |
+| -- | -- | -- |
+| 24 | `24-regime-filter-and-position-redesign.md` | 中间 | 仓位管理演进链的一环（被 A M1 取代） |
+| 26 | `26-darvas-box-regime.md` | 中间 | A/B/C 三判据的谱系出处（P0-3 三口径溯源用） |
+| 28 | `28-e17-backtest-diagnosis.md` | 中间 | 回测时长教训（B 类排期引用） |
 
-> M8.8 退役后的仓位规则探索与定稿。部分入库（docs/23 已入库 commit 9207bb1），其余为本地工作稿。
+### 参考资料目录
 
-| #  | 文档 | 状态 | 内容 |
-| -- | -- | -- | -- |
-| 20 | `20-full-picture-three-way-audit-kimik3-*.md` | 本地工作稿 | Kimi K3 三向对照审计（暴露名存实亡规则） |
-| 21 | `21-three-ai-synthesis-unified-plan.md` | 本地工作稿 | **三家 AI 统一纲领**：回测前仅 A1(RS超额)+A2(ST排除) 两项改动（已落地 9b1e77） |
-| 22 | `22-p05-five-year-backtest-prompt.md` | 本地工作稿 | P0-5 五年回测 prompt |
-| 23 | `23-position-ladder-math.md` | **✅ 已入库（9207bb1）** | **头寸梯子演算 + §9 仓位定稿（D0 A M1 / D1 取消 winner 5x / D2 待落地 / D3 黑名单待验）** |
-| 24 | `24-regime-filter-and-position-redesign.md` | 本地工作稿 | 体制过滤与仓位重设计（被 A M1 取代） |
-| 26 | `26-darvas-box-regime.md` | 本地工作稿 | 道氏/箱体尺度寿命统计（P2 空闲作业，默认箱体太粗） |
+| 目录 | 内容 |
+| -- | -- |
+| `books/` | 原著依据（How I Made $2M / Wall Street: The Other Las Vegas 摘录），00 的理论出处 |
 
-### 归档目录
+---
 
-`docs/archive/`，存放退役、过期、被证伪、被替代的文档。**不作为当前事实源**，仅供溯源查阅。每份文件头部有归档声明，注明核心内容沉淀去向。
+## archive/（历史档案，不作为事实源）
 
-| 归档文件                                   | 原状态               | 核心内容沉淀去向                     |
-| -------------------------------------- | ----------------- | ------------------------------ |
-| 07-m8-issue-list.md                    | 9 个 issue 已修复 6 个 | 06 §3.1 执行层不变量                 |
-| 08-m8.2-matcher.md                     | 设计稿              | 04 §7.5 撮合器成交语义                |
-| 09-m8.3-regime.md                      | 已退役               | 方法论教训（动量法失败）→ 00 §10         |
-| 10-m8.6-pyramid-addon-proposal.md      | 提案待拍板            | 00 §4.1 五条件；拍板时从本档复活           |
-| 11-m8.7-regime-position-sizing.md      | 已证伪               | 教训 → 00 §10                   |
-| 12-m8.7-regime-root-cause.md           | 方法论保留             | 教训一句 → 00 §10                 |
-| 13-m8.8-breadth-unit-sizing.md         | 设计稿              | 01 §6 宽度法+单位制；宪法依据 00 第 0 条/§10 |
-| 14-bt-archive.md                       | 运维说明              | 回测库归档清单，并入常规运维                |
-| 15-next-session-prompt.md              | 已过期               | 交接完成                          |
-| 16-provenance-readiness.md             | 被证伪               | 上线判定被 docs/18 推翻               |
-| 17-m88-preliminary-readiness-update.md | 双重证伪              | 自身再审 + docs/18 双重推翻           |
+`docs/archive/`：退役、过期、被证伪、被替代的文档。每份头部有归档声明，注明核心内容沉淀去向。
+**07–22 编号连续；retrospective-2026/ 为一次性 HTML 复盘（2026-10-19）。**
+
+| 归档文件 | 原状态 | 核心内容沉淀去向 |
+| --- | --- | --- |
+| 07-m8-issue-list.md | 9 个 issue 已修复 6 个 | 06 §3.1 执行层不变量 |
+| 08-m8.2-matcher.md | 设计稿 | 04 §7.5 撮合器成交语义 |
+| 09-m8.3-regime.md | 已退役 | 方法论教训（动量法失败）→ 00 §10 |
+| 10-m8.6-pyramid-addon-proposal.md | 提案待拍板 | 00 §4.1 五条件；拍板时从本档复活 |
+| 11-m8.7-regime-position-sizing.md | 已证伪 | 教训 → 00 §10 |
+| 12-m8.7-regime-root-cause.md | 方法论保留 | 教训一句 → 00 §10 |
+| 13-m8.8-breadth-unit-sizing.md | 设计稿 | 01 §6 宽度法+单位制；宪法依据 00 第 0 条/§10 |
+| 14-bt-archive.md | 运维说明 | 回测库归档清单，并入常规运维 |
+| 15-next-session-prompt.md | 已过期 | 交接完成 |
+| 16-provenance-readiness.md | 被证伪 | 上线判定被 18 推翻 |
+| 17-m88-preliminary-readiness-update.md | 双重证伪 | 自身再审 + 18 双重推翻 |
+| 18-quant-review-m88-deepseek4.1flash-*.md | 审计底稿（2026-10-26 归档） | 「旧回测盈利不可信、不建议转正」→ 00 第 0 条；R1/A1/A2/C4 已落地（9b1e577） |
+| 19-backtest-validation-loop-glm5.3-*.md | 验证纲领（2026-10-26 归档） | E1-E6/S1-S4 验收口径被迁移 0012/0013 引用；修复已完成 |
+| 20-full-picture-three-way-audit-kimik3-*.md | 三向对照（2026-10-26 归档） | 增补拼图已固化 → 00 §11.4 |
+| 21-three-ai-synthesis-unified-plan.md | 三家统一纲领（2026-10-26 归档） | A1(RS超额)+A2(ST排除)+C4(滑点) 已落地 |
+| 22-p05-five-year-backtest-prompt.md | p05 接力 prompt（2026-10-26 归档） | 五年回测已完成，结论 → 23 §9 |
+| retrospective-2026/ | 一次性 HTML 复盘（2026-10-26 归档） | 历史快照，无活跃引用 |
 
 ---
 
 ## 引用规则（新增文档必读）
 
 1. **SSoT 互引**：00-06 之间用 `docs/0X-*.md` 短路径，由 `check_consistency.py` 校验存在性。
-2. **引用归档稿**：用 `archive/NN-*.md` 路径（如 `archive/12`），核心内容应已沉淀至 SSoT。
-3. **引用现役审计/纲领**：正文用简称 `docs/18` / `docs/19`（映射见上表）。
-4. **新工作不新建文档**：先回 SSoT 沉淀；确需新文档时顺号（20、21...）并在文件名标注作者模型与时间（如 `20-foo-glm5.3-YYYYMMDDHHMM.md`），归档时 git mv 至 archive/ 保历史。
+2. **引用归档稿**：用 `archive/NN` 路径（如 `archive/13`），核心内容应已沉淀至 SSoT（2026-10-26 起 18–22 亦属此类）。
+3. **引用现役纲领**：`docs/29`（十维实验）、`docs/23 §9`（仓位定稿）、`docs/experiments/`（实验报告）。
+4. **新工作不新建文档**：先回 SSoT 沉淀；确需新文档时顺号（30、31…）并在文件名标注作者模型与时间，归档时 git mv 至 archive/ 保历史。
+5. **实验报告**：一律沉淀 `docs/experiments/`（`_framework.md` 零结果 + `_report.{html,md}` + `_data.json`），不落 `var/bt/`。
 
 ## 一句话总结
 
-**7 个 SSoT（00-06）是事实源；docs/18 是审计底稿、docs/19 是降为参考的验证纲领；docs/23 §9 是仓位定稿（A M1）；当前主入口在 `var/bt/regime_final_summary_and_prompt.md`；archive/ 是历史。新内容回 SSoT 沉淀，不新建文档。**
+**00-06 是宪法与工程基准（check_consistency 强制）；29 是现行实验纲领、23 §9 是仓位定稿、experiments/ 是实验报告事实源；24/26/28 为中间文档待归档；archive/（07–22 + retrospective）是历史。当前研究主线 = docs/29 的十维梯度实验，B 类 MA60 闸门验证进行中。**
