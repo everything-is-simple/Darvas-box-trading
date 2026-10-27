@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 680 400" xmlns="http://www.w3.org/2000/svg" font-family="PingFang SC, Microsoft YaHei, sans-serif">
+<rect width="680" height="400" rx="10" fill="#f8fafc"/>
+<text x="340.0" y="24" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">逐年平均仓位占用（灰=baseline 红=baseline+）</text>
+<line x1="60" y1="340.0" x2="660" y2="340.0" stroke="#e2e8f0"/>
+<text x="52" y="344.0" text-anchor="end" font-size="9.5" fill="#64748b">0%</text>
+<line x1="60" y1="282.0" x2="660" y2="282.0" stroke="#e2e8f0"/>
+<text x="52" y="286.0" text-anchor="end" font-size="9.5" fill="#64748b">20%</text>
+<line x1="60" y1="224.0" x2="660" y2="224.0" stroke="#e2e8f0"/>
+<text x="52" y="228.0" text-anchor="end" font-size="9.5" fill="#64748b">40%</text>
+<line x1="60" y1="166.0" x2="660" y2="166.0" stroke="#e2e8f0"/>
+<text x="52" y="170.0" text-anchor="end" font-size="9.5" fill="#64748b">60%</text>
+<line x1="60" y1="108.0" x2="660" y2="108.0" stroke="#e2e8f0"/>
+<text x="52" y="112.0" text-anchor="end" font-size="9.5" fill="#64748b">80%</text>
+<line x1="60" y1="50.0" x2="660" y2="50.0" stroke="#e2e8f0"/>
+<text x="52" y="54.0" text-anchor="end" font-size="9.5" fill="#64748b">100%</text>
+<rect x="63.6" y="315.0" width="17.9" height="25.0" fill="#94a3b8"/>
+<rect x="81.4" y="327.4" width="17.9" height="12.6" fill="#dc2626"/>
+<text x="81.4" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2005</text>
+<rect x="106.4" y="283.7" width="17.9" height="56.3" fill="#94a3b8"/>
+<rect x="124.3" y="281.8" width="17.9" height="58.2" fill="#dc2626"/>
+<text x="124.3" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2006</text>
+<rect x="149.3" y="275.9" width="17.9" height="64.1" fill="#94a3b8"/>
+<rect x="167.1" y="278.4" width="17.9" height="61.6" fill="#dc2626"/>
+<text x="167.1" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2007</text>
+<rect x="192.1" y="332.7" width="17.9" height="7.3" fill="#94a3b8"/>
+<rect x="210.0" y="339.0" width="17.9" height="1.0" fill="#dc2626"/>
+<text x="210.0" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2008</text>
+<rect x="235.0" y="290.9" width="17.9" height="49.1" fill="#94a3b8"/>
+<rect x="252.9" y="294.3" width="17.9" height="45.7" fill="#dc2626"/>
+<text x="252.9" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2009</text>
+<rect x="277.9" y="286.9" width="17.9" height="53.1" fill="#94a3b8"/>
+<rect x="295.7" y="304.7" width="17.9" height="35.3" fill="#dc2626"/>
+<text x="295.7" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2010</text>
+<rect x="320.7" y="311.8" width="17.9" height="28.2" fill="#94a3b8"/>
+<rect x="338.6" y="327.1" width="17.9" height="12.9" fill="#dc2626"/>
+<text x="338.6" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2011</text>
+<rect x="363.6" y="313.2" width="17.9" height="26.8" fill="#94a3b8"/>
+<rect x="381.4" y="325.6" width="17.9" height="14.4" fill="#dc2626"/>
+<text x="381.4" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2012</text>
+<rect x="406.4" y="275.4" width="17.9" height="64.6" fill="#94a3b8"/>
+<rect x="424.3" y="293.5" width="17.9" height="46.5" fill="#dc2626"/>
+<text x="424.3" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2013</text>
+<rect x="449.3" y="262.7" width="17.9" height="77.3" fill="#94a3b8"/>
+<rect x="467.1" y="285.7" width="17.9" height="54.3" fill="#dc2626"/>
+<text x="467.1" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2014</text>
+<rect x="492.1" y="294.7" width="17.9" height="45.3" fill="#94a3b8"/>
+<rect x="510.0" y="296.7" width="17.9" height="43.3" fill="#dc2626"/>
+<text x="510.0" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2015</text>
+<rect x="535.0" y="315.9" width="17.9" height="24.1" fill="#94a3b8"/>
+<rect x="552.9" y="319.1" width="17.9" height="20.9" fill="#dc2626"/>
+<text x="552.9" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2016</text>
+<rect x="577.9" y="287.0" width="17.9" height="53.0" fill="#94a3b8"/>
+<rect x="595.7" y="296.3" width="17.9" height="43.7" fill="#dc2626"/>
+<text x="595.7" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2017</text>
+<rect x="620.7" y="308.3" width="17.9" height="31.7" fill="#94a3b8"/>
+<rect x="638.6" y="329.4" width="17.9" height="10.6" fill="#dc2626"/>
+<text x="638.6" y="356" text-anchor="middle" font-size="9.5" fill="#334155">2018</text>
+<text x="60" y="392" font-size="9.5" fill="#94a3b8">14 年平均仓位 baseline 14.9% / baseline+ 11.3%；7 只上限从未长期打满</text>
+</svg>
