@@ -47,7 +47,16 @@ OUT_MD = EXP / "e17_regime_attribution_report.md"
 OUT_JSON = EXP / "e17_regime_attribution_data.json"
 METRICS = BT / "e17_metrics.csv"
 
-INDEX_CODE = "sh000001"
+# INDEX_CODE 可用 env E17_REGIME_INDEX 切换，并行产出对照报告，不动上证版归档产物。
+# 2026-10-27：中证500 对照 = 指数选型结论（e17_market_index）的 regime 归因验证，
+# 用户拍板「单镜中证500、弃双指数、MA60/52周口径不动」。
+INDEX_CODE = os.environ.get("E17_REGIME_INDEX", "sh000001")
+if INDEX_CODE != "sh000001":
+    _sfx = "_" + INDEX_CODE[2:]
+    OUT_HTML = OUT_HTML.with_name(f"{OUT_HTML.stem}{_sfx}{OUT_HTML.suffix}")
+    OUT_MD = OUT_MD.with_name(f"{OUT_MD.stem}{_sfx}{OUT_MD.suffix}")
+    OUT_JSON = OUT_JSON.with_name(f"{OUT_JSON.stem}{_sfx}{OUT_JSON.suffix}")
+IS_OVERRIDE = INDEX_CODE != "sh000001"   # 对照运行：上证基线复现项不适用，降级为 INFO
 SAMPLE_START = "2005-01-04"     # 也是指数峰值回撤的基准峰起点（框架 §4.6）
 SAMPLE_END = "2018-12-31"
 MA_WINDOWS = (20, 60)
@@ -664,8 +673,12 @@ def calibrate(trades, funnel, metrics, eq_by_year, feat, dates, fps, data):
             "T6": sum(b["n"] for b in data["t6"])}
     # L3 只覆盖 ±4%，不是全样本划分，故不进 sums（由下方专门断言）
     bad_s = [f"{k}:{v}" for k, v in sums.items() if v != len(closed)]
-    add("HARD", "各表分桶笔数合计 = 已平仓样本", f"全部 = {len(closed)}",
-        "一致" if not bad_s else "; ".join(bad_s), not bad_s, "上限/下限边界漏算或重叠")
+    # 对照运行：指数序列从 2005-01-04 起，样本初段无 MA 历史 → 分桶笔数 < 1328 属预期
+    add("INFO" if IS_OVERRIDE else "HARD", "各表分桶笔数合计 = 已平仓样本",
+        f"全部 = {len(closed)}",
+        "一致" if not bad_s else "; ".join(bad_s), not bad_s,
+        ("对照运行：样本初段 MA 缺失致合计 <1328 属预期" if IS_OVERRIDE
+         else "上限/下限边界漏算或重叠"))
 
     # L3 是局部加密层（只覆盖 ±4%），不参与全样本划分；单独断言其覆盖区间与 L2 一致
     if data["t1"]["l3_enabled"]:
@@ -693,27 +706,29 @@ def calibrate(trades, funnel, metrics, eq_by_year, feat, dates, fps, data):
     got = {k: len(v) for k, v in a_open.items()}
     exp = BASELINE["regime_a_open"]
     ok = (got[1] == exp["bull"] and got[-1] == exp["bear"] and got[0] == exp["range"])
-    add("HARD", "C3@O 复现 M9.0 报告分布", "91/51/1186",
-        f"{got[1]}/{got[-1]}/{got[0]}", ok, "升/降/震（opened_date 口径）")
+    add("INFO" if IS_OVERRIDE else "HARD", "C3@O 复现 M9.0 报告分布", "91/51/1186",
+        f"{got[1]}/{got[-1]}/{got[0]}", ok if not IS_OVERRIDE else True,
+        "升/降/震（opened_date 口径）" + ("；对照运行：A判据基于指数 60 日低点，随指数切换属预期" if IS_OVERRIDE else ""))
     gp = {k: sum(t["pnl"] for t in v) for k, v in a_open.items()}
     bad = []
     for k, key in ((1, "bull"), (-1, "bear"), (0, "range")):
         if abs(gp[k] - BASELINE["regime_a_pnl"][key]) > 1.0:
             bad.append(f"{key}:{gp[k]:,.0f}≠{BASELINE['regime_a_pnl'][key]:,.0f}")
-    add("HARD", "C3@O 三桶净利 = M9.0 报告", "+265,532/−27,292/+604,560",
-        f"{gp[1]:+,.0f}/{gp[-1]:+,.0f}/{gp[0]:+,.0f}", not bad, "跨报告对账")
+    add("INFO" if IS_OVERRIDE else "HARD", "C3@O 三桶净利 = M9.0 报告", "+265,532/−27,292/+604,560",
+        f"{gp[1]:+,.0f}/{gp[-1]:+,.0f}/{gp[0]:+,.0f}", not bad if not IS_OVERRIDE else True,
+        "跨报告对账" + ("；对照运行：基线对账不适用" if IS_OVERRIDE else ""))
 
     # MA 分布
     n20u = len(num_rows(closed, "d20_O", 0.0, None))
     n20d = len(num_rows(closed, "d20_O", None, 0.0))
     n60u = len(num_rows(closed, "d60_O", 0.0, None))
     n60d = len(num_rows(closed, "d60_O", None, 0.0))
-    add("HARD", "C1@O 复现 801/527（上/下）", "801 / 527",
+    add("INFO" if IS_OVERRIDE else "HARD", "C1@O 复现 801/527（上/下）", "801 / 527",
         f"{n20u} / {n20d}",
-        n20u == BASELINE["ma20"]["above"] and n20d == BASELINE["ma20"]["below"])
-    add("HARD", "C2@O 复现 723/605（上/下）", "723 / 605",
+        (n20u == BASELINE["ma20"]["above"] and n20d == BASELINE["ma20"]["below"]) if not IS_OVERRIDE else True)
+    add("INFO" if IS_OVERRIDE else "HARD", "C2@O 复现 723/605（上/下）", "723 / 605",
         f"{n60u} / {n60d}",
-        n60u == BASELINE["ma60"]["above"] and n60d == BASELINE["ma60"]["below"])
+        (n60u == BASELINE["ma60"]["above"] and n60d == BASELINE["ma60"]["below"]) if not IS_OVERRIDE else True)
 
     # 标签缺失：建仓日三标签 + a_P 必须全覆盖；平仓日三标签只在已平仓交易上要求
     # （未平仓的 77 笔没有 closed_date，本就该缺，不属缺陷）
@@ -726,9 +741,11 @@ def calibrate(trades, funnel, metrics, eq_by_year, feat, dates, fps, data):
         c = sum(1 for t in closed if t.get(k) is None)
         if c:
             bad.append(f"{k}:{c}")
-    add("HARD", "regime 标签缺失 = 0（建仓日/信号日全覆盖 + 平仓日按已平仓）",
+    add("WARN" if IS_OVERRIDE else "HARD",
+        "regime 标签缺失 = 0（建仓日/信号日全覆盖 + 平仓日按已平仓）",
         "全部 0", "0" if not bad else "; ".join(bad), not bad,
-        f"全部交易 {len(trades)} 笔中 {len(trades) - len(closed)} 笔未平仓，无平仓日标签属正常")
+        ("对照运行：样本初段 MA 缺失属预期" if IS_OVERRIDE else
+         "全部交易 %d 笔中 %d 笔未平仓，无平仓日标签属正常" % (len(trades), len(trades) - len(closed))))
 
     # 指数指纹一致性
     same = len({(f["n"], f["min"], f["max"], f["sum_close"]) for f in fps}) == 1

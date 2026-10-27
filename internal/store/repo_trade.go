@@ -143,6 +143,24 @@ func (r *TradeRepo) OpenPositionCount() (int, error) {
 	return n, err
 }
 
+// PendingBuyCount 未成交买单数（docs/33 §2.2 挂单计入预算）。
+// 口径：trade_plan.execute_date >= planDate 且买单状态仍为 pending/placed（未成交、未撤、未过期）。
+// 为什么是 >= 而不是 docs/33 字面写的 >：Build(d) 在当日撮合 match(d) 之前运行（回放眼 Archive/08 §5
+// 时序 plan→match），上一计划生成的买单（execute_date == d）此刻尚未成交、正占着名额；
+// 若用 > 会漏掉它们，修复形同虚设（2007-01-12 堆单场景实测复核）。
+// execute_date < planDate 的未成交单要么是已被 match 跳过的死单、要么由 Build 收尾的
+// ExpireStaleOrders 置 expired，不会再成交，不计入。
+// 背景：原预算只数 position 表已开仓，未成交挂单不占位，连续多日挂单全部成交后
+// 实际持仓冲出上限（2007-01-12 实测 12 只）。
+func (r *TradeRepo) PendingBuyCount(planDate string) (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM plan_order po
+		JOIN trade_plan tp ON tp.id = po.trade_plan_id
+		WHERE po.side = 'buy' AND po.status IN ('pending','placed')
+		  AND tp.execute_date >= ?`, planDate).Scan(&n)
+	return n, err
+}
+
 // OpenExposureUnits 当前未平仓敞口折算成 M8.8 单位制仓位预算占用。
 // 规则（archive/13 §3.2）：持仓只有 leg1 = 试探仓；有 leg2+ = 主力仓（全部腿计入 main）。
 // 估值用最新收盘价（无行情回退 avg_cost）；unitValue = 权益 × pos.unit（调用方传入）。

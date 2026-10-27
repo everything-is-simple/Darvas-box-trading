@@ -55,7 +55,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	buyPrem := p.st.ParamRepo.GetFloat("buy.premium", 1.03)
 	sellDisc := p.st.ParamRepo.GetFloat("sell.discount", 0.97)
 	unitPct := p.st.ParamRepo.GetFloat("pos.unit", 0.02) // 1 单位 = 2% 权益
-	maxHold := p.st.ParamRepo.GetInt("pool.max_hold", 7) // 同时最多持仓数（留 30% 现金）
+	maxHold := p.st.ParamRepo.GetInt("pool.max_hold", 7) // 同时最多持仓+挂单数（docs/33）
 	ladder := p.newHighLadder()
 	// G1 观察期（2026-10-21）：入池后 N 个交易日内不产生首笔买入信号（原书 L1895/L1063）。
 	minWatchDays := p.st.ParamRepo.GetInt("pool.min_watch_days", 3)
@@ -92,12 +92,19 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 
 	// 组合级约束：同时持仓数上限（A M1 升势 2 单位 × maxHold 只 ≈ 权益 28%，远低于 70%）。
 	// 不再有「试探/主力」分桶预算——不加码，仓位只有首买一档，组合风险由「持仓数」管。
+	// docs/33 §2.2（2026-10-27）：预算必须含未成交买单——挂单在生成时预占名额，
+	// 否则连续多日挂单全部成交后持仓冲出上限（2007-01-12 实测 12 只）。
 	openCount, err := p.st.TradeRepo.OpenPositionCount()
 	if err != nil {
 		res.Status, res.Error = "failed", err.Error()
 		return res, err
 	}
-	budget := &holdBudget{open: openCount, max: maxHold}
+	pendingBuys, err := p.st.TradeRepo.PendingBuyCount(planDate)
+	if err != nil {
+		res.Status, res.Error = "failed", err.Error()
+		return res, err
+	}
+	budget := &holdBudget{open: openCount + pendingBuys, max: maxHold}
 	plannedQty := map[string]int{} // 同日多信号同票时，避免重复超配
 
 	// 信号
@@ -304,9 +311,9 @@ func regimeName(r regime.Regime) string {
 }
 
 // holdBudget 0017 组合级持仓数预算（不加码后，组合风险由「同时持仓数」约束）。
-// 7 只 × 赢家池 5 单位 = 70%，留 30% 现金（用户拍板）。
+// open = 已开仓数 + 未成交买单数（docs/33 §2.2 挂单预占；历史 70%/30% 算术已废，见 docs/33）。
 type holdBudget struct {
-	open int // 当前 open 持仓数
+	open int // 已开仓 + 未成交买单（挂单预占）
 	max  int // 上限 pool.max_hold
 }
 
@@ -515,9 +522,9 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		basis = basis + "|ma60_half"
 	}
 
-	// 组合约束：同时持仓数上限。
+	// 组合约束：同时持仓数上限（含未成交买单预占）。
 	if !budget.canOpen() {
-		p.log.Printf("跳过 %s：同时持仓已达上限 %d 只（留 30%% 现金）", s.Code, budget.max)
+		p.log.Printf("跳过 %s：持仓+挂单已达上限 %d 只（含未成交买单预占）", s.Code, budget.max)
 		return nil
 	}
 	qty := lotQty(shares, units)

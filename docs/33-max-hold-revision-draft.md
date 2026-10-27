@@ -84,6 +84,16 @@ budget := &holdBudget{open: openCount, max: maxHold}
 **修法（小改动）**：预算 = `已开仓数 + 未成交买单数`（挂单在 `plan_order` 里，用 `execute_date > planDate` 且未匹配的买单计数），
 `take()` 时同时递减。修完再谈实验，否则测的是「一个没在执行的上限」。
 
+> **✅ 已修（2026-10-27）**：新增 `TradeRepo.PendingBuyCount(planDate)`，planner 预算改为
+> `已开仓数 + 未成交买单数`（`internal/planner/planner.go`、`internal/store/repo_trade.go`，
+> 回归测试 `TestPendingBuyCount`）。**实现口径与上文有一处 deliberate 偏差**：上文写
+> `execute_date > planDate`，实现用 **`>=`**——复核流水线时序（archive/08 §5：Build(d) 在
+> 当日 match(d) **之前**运行）后发现昨计划生成的买单 `execute_date == d` 此刻尚未成交、
+> 正占着名额，用 `>` 恰好漏掉这批肇事单，修复将形同虚设；`execute_date < d` 的未成交单
+> 是已被撮合跳过的死单（由 Build 收尾 `ExpireStaleOrders` 置 expired），不会再成交，不计入。
+> ⚠️ **基线声明**：bt_e17 / b12 历史基线是旧语义产物，仍有效（归因只读 trades），但**修复后
+> 的新回测与历史基线不再逐单可比**——B-4 实验必须新旧成对重跑，不得混比。
+
 ---
 
 ## 三、提案：从「只数上限」换成「权益上限」

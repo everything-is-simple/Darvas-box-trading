@@ -123,3 +123,51 @@ func TestClosePositionBlacklistCooldown(t *testing.T) {
 		})
 	}
 }
+
+// TestPendingBuyCount docs/33 §2.2 挂单计入预算的口径回归：
+// execute_date == planDate 的未成交买单必须计入（Build 在当日撮合前运行），
+// execute_date < planDate 的死单与已成交/撤销/过期单不计入。
+func TestPendingBuyCount(t *testing.T) {
+	st := newTestStore(t)
+	seedSecs(t, st, "sh600001", "sh600002", "sh600003", "sh600004", "sh600005")
+
+	mk := func(planDate, execDate, code, status string) {
+		pid, err := st.TradeRepo.CreatePlan(contract.TradePlan{
+			PlanDate: planDate, ExecuteDate: execDate, EquityBase: 1e6, OpenPositionCount: 0,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.TradeRepo.AddOrders(pid, []contract.PlanOrder{
+			{Code: code, Side: "buy", OrderKind: "stop_buy", TriggerPrice: 10, LimitPrice: 10.3, Qty: 100},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if status != "pending" {
+			// 取该计划下该票的订单置状态（UNIQUE(plan_date) 冲突时多票共享 plan，必须按 code 定位）
+			var oid int64
+			if err := st.TradeRepo.db.QueryRow(
+				`SELECT id FROM plan_order WHERE trade_plan_id = ? AND code = ?`, pid, code).Scan(&oid); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.TradeRepo.UpdateOrderStatus(oid, status); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	// planDate = 2026-03-05 视角：
+	mk("2026-03-04", "2026-03-05", "sh600001", "pending") // 当日待撮合 → 计入
+	mk("2026-03-05", "2026-03-06", "sh600002", "pending") // 本计划自己（尚未生成，防未来）：execute>planDate，正常不存在
+	mk("2026-03-03", "2026-03-04", "sh600003", "pending") // 昨日死单（未成交未过期）→ 不计入
+	mk("2026-03-04", "2026-03-05", "sh600004", "filled")  // 已成交 → 不计入
+	mk("2026-03-04", "2026-03-05", "sh600005", "expired") // 已过期 → 不计入
+
+	n, err := st.TradeRepo.PendingBuyCount("2026-03-05")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("PendingBuyCount=%d want 2（当日待撮合 + 次日计划；死单/成交/过期不计）", n)
+	}
+}
