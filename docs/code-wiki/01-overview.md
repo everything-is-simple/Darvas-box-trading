@@ -122,7 +122,7 @@ Darvas-box-trading 是对尼古拉斯·达瓦斯《我如何在股市赚了 200 
 | 调度任务 | 每日 7 个 + 周六 weekly |
 | 回测模式 | prefill / progressive / verify / regime |
 
-> 状态类信息（里程碑完成度、观察期进度）以 `docs/05-task-breakdown.md` 与 `docs/30-system-prediction.md` 为准；本 Wiki 只描述代码事实。
+> 状态类信息（里程碑完成度、实验队列与下一步）以 `docs/05-task-breakdown.md` 与 `docs/29-box-gradient-experiment-plan.md` 为准；本 Wiki 只描述代码事实。
 
 ---
 
