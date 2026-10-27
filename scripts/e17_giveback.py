@@ -1186,8 +1186,8 @@ def render_html(data):
 每单位 {fsign(ts['agg']['pu'])}、胜率 {fpct(ts['agg']['wr'])}、回吐率中位 {week_pct(ts['agg']['gb_med'])}
 、MFE 中位 {week_pct(ts['agg']['mfe_med'])}；其余 {t['n'] - ts['n']} 笔合计 {fsign(ts['other']['pnl'])}
 （每单位 {fsign(ts['other']['pu'])}、胜率 {fpct(ts['other']['wr'])}）。</b>
-也就是说：<b>{fpct(ts['share'])} 的出口由一条「两天不赚就走」的规则决定</b>，它贡献了
-{fsign(ts['agg']['pnl'])} 的净利，而剩下的 {fpct(1 - ts['share'])} 出口贡献了 {fsign(ts['other']['pnl'])}。</p>
+也就是说：<b>{fpct(ts['share'])} 的出口由一条「两天不赚就走」的规则决定</b>，这批合计
+{fsign(ts['agg']['pnl'])}；而剩下的 {fpct(1 - ts['share'])} 出口合计 {fsign(ts['other']['pnl'])}。</p>
 
 <h2 id="s8">八、判定</h2>
 <div class="hyp">{hyp_html}</div>

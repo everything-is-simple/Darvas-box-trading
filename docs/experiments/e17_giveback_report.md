@@ -2,7 +2,7 @@
 
 > A 类后验、零回测。框架：`docs/experiments/e17_giveback_framework.md`（零结果纯规则）。
 
-生成时间：2026-10-27 20:15:03 · 生成器 `scripts/e17_giveback.py` sha256 `aebcf07ffdd2a0d7`
+生成时间：2026-10-27 20:17:58 · 生成器 `scripts/e17_giveback.py` sha256 `667616922cbb79c6`
 
 ## 核心结论
 

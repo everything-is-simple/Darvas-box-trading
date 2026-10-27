@@ -1,9 +1,9 @@
 {
  "meta": {
   "experiment": "P2-5 浮盈回吐分布（MFE）",
-  "generated_at": "2026-10-27 20:15:03",
+  "generated_at": "2026-10-27 20:17:58",
   "generator": "scripts/e17_giveback.py",
-  "generator_sha256": "aebcf07ffdd2a0d7",
+  "generator_sha256": "667616922cbb79c6",
   "framework": "docs/experiments/e17_giveback_framework.md",
   "db_mtimes": {
    "bt_e17_2005.db": "2026-10-25 10:07",

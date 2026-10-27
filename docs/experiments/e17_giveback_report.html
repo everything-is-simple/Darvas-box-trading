@@ -170,8 +170,8 @@ h2{break-after:avoid}.table-wrap,.panel{break-inside:avoid}}
 每单位 -848、胜率 0.0%、回吐率中位 179.6%
 、MFE 中位 3.8%；其余 492 笔合计 +1,748,007
 （每单位 +2,408、胜率 62.6%）。</b>
-也就是说：<b>63.0% 的出口由一条「两天不赚就走」的规则决定</b>，它贡献了
--905,208 的净利，而剩下的 37.0% 出口贡献了 +1,748,007。</p>
+也就是说：<b>63.0% 的出口由一条「两天不赚就走」的规则决定</b>，这批合计
+-905,208；而剩下的 37.0% 出口合计 +1,748,007。</p>
 
 <h2 id="s8">八、判定</h2>
 <div class="hyp"><div class="hyp-card no"><div class="t">H1 移动止损潜在价值大 —— 不成立 <span class="vd vd-neg">不成立/未复现</span></div><div class="d">判据① 盈利单回吐率&gt;50% 占比 <b>45.1%</b>（需≥50%）｜判据② 回吐金额中持有≥11 日占比 <b>43.5%</b>（需≥50%）｜判据③ 21 日+ 每单位 <b>+4,755</b>、ratio_f <b>92.3%</b>（Mf=13，需≥0.50 且 Mf≥8）</div></div><div class="hyp-card ok"><div class="t">H2 出场不是出血口 —— 成立 <span class="vd vd-edge">成立/复现</span></div><div class="d">判据① 回吐金额中「亏损且持有≤10 日」占比 <b>50.8%</b>（需≥50%）｜判据② 同批 MFE 金额占比 <b>18.0%</b>（需&lt;20%）｜该批 777 笔，MFE 金额 ¥811,825</div></div><div class="hyp-card ok"><div class="t">H3 复现「持有时间 = 唯一赚钱因子」—— 复现 <span class="vd vd-edge">成立/复现</span></div><div class="d">5 带每单位净利：1–5 日 -955｜6–10 日 -518｜11–20 日 +1,445｜21–60 日 +4,243｜60 日+ +9,681｜递增相邻对 <b>4/4</b>（需≥4）</div></div></div>
@@ -211,12 +211,12 @@ h2{break-after:avoid}.table-wrap,.panel{break-inside:avoid}}
 <h3>9.4 复现</h3>
 <div class="panel"><p class="small">生成器：<code>python scripts/e17_giveback.py</code>（先 <code>--check-only</code> 校准）<br>
 独立校验：<code>python scripts/e17_giveback_verify.py</code>（3 笔手算抽查，不复用生成器函数）<br>
-sha256（前 16 位）：<code>aebcf07ffdd2a0d7</code><br>
+sha256（前 16 位）：<code>667616922cbb79c6</code><br>
 数据源 mtime：bt_e17_2005.db 2026-10-25 10:07, bt_e17_2006.db 2026-10-25 12:56, bt_e17_2007.db 2026-10-25 13:54 …</p></div>
 
 <div class="foot">
 <p><b>结论边界</b>：本报告只量化「回吐了多少」，不预测「移动止损能赚多少」。任何「理论上可多赚」都是上限，真实规则会在假信号上被切碎（框架 §1.2）。</p>
 <p>单因子轮换：本实验只动「持有天数」一个分组变量，其余九维固定（docs/29 §2.3）。样本外（2019+）未参与。</p>
-<p>生成于 2026-10-27 20:15:03 · 1 单位 = 2% 权益；E17 阶梯 t1=3 / t2=2 / t3=1 / t4=0.5</p>
+<p>生成于 2026-10-27 20:17:58 · 1 单位 = 2% 权益；E17 阶梯 t1=3 / t2=2 / t3=1 / t4=0.5</p>
 </div>
 </div></body></html>
