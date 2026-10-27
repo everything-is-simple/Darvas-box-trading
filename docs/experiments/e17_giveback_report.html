@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>P2-5 浮盈回吐分布（MFE）· 2005–2018</title>
+<style>
+:root{--bg:#f5f6f8;--surface:#fff;--ink:#1e2430;--muted:#697386;--line:#e3e6eb;
+--soft:#f0f2f5;--red:#c0392b;--red2:#faece9;--green:#1b7a4b;--green2:#e9f5ef;
+--gold:#a66a12;--gold2:#fbf3e4;--blue:#2d5b8e;--blue2:#ecf2f9}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Microsoft YaHei","PingFang SC","Noto Sans SC",Arial,sans-serif;font-size:15px;line-height:1.7}
+.page{max-width:1220px;margin:0 auto;padding:42px 28px 64px}
+header{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:26px}
+.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--blue);font-weight:700;margin-bottom:10px}
+h1{font-size:32px;line-height:1.28;margin:0 0 10px;letter-spacing:-.02em}
+h2{font-size:23px;margin:38px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+h3{font-size:17px;margin:20px 0 9px}
+p{margin:9px 0}.sub{color:var(--muted);max-width:960px;margin:0}
+.muted{color:var(--muted)}.small{font-size:12.5px}
+.up{color:var(--red)}.down{color:var(--green)}.neutral{color:var(--gold)}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:22px 0}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:17px 18px}
+.kpi .label{font-size:12px;color:var(--muted)}
+.kpi .value{font-size:25px;font-weight:700;line-height:1.25;margin-top:4px}
+.kpi .note{font-size:12px;color:var(--muted);margin-top:3px}
+.summary{background:var(--surface);border-left:4px solid var(--blue);border-radius:8px;padding:18px 22px;margin:22px 0}
+.summary h2{border:0;margin:0 0 8px;padding:0;font-size:20px}
+.summary ul{margin:8px 0 0 19px;padding:0}.summary li{margin:6px 0}
+.callout{border-radius:8px;padding:14px 17px;margin:15px 0;font-size:14px}
+.callout.gold{background:var(--gold2);border:1px solid #ead9b8}
+.callout.red{background:var(--red2);border:1px solid #efd0ca}
+.callout.blue{background:var(--blue2);border:1px solid #d4e0ee}
+.table-wrap{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow-x:auto;margin:13px 0}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:900px}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+th{background:#fafbfc;color:#4b5565;font-size:12px;font-weight:600}
+th:first-child,td:first-child{text-align:left}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#fcfcfd}
+tr.empty td{background:#f4f5f7;color:#9aa1ad;font-style:italic}
+tr.subset td{background:#f8f9fb;font-style:italic;color:#5a6472}
+tr.sum td{background:#fafbfc;font-weight:700;border-top:2px solid #cfd4dc}
+.vd{font-size:11.5px;padding:1px 7px;border-radius:999px;white-space:nowrap}
+.vd-edge{background:var(--red2);color:var(--red);font-weight:700}
+.vd-fake{background:var(--gold2);color:var(--gold);font-weight:700}
+.vd-neg{background:var(--green2);color:var(--green);font-weight:700}
+.vd-unstable{background:var(--soft);color:#5a6472}
+.vd-small{background:#f1f3f6;color:#8b93a0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:17px 19px;margin:14px 0}
+.hist-row{display:grid;grid-template-columns:118px 1fr 132px;align-items:center;gap:10px;margin:7px 0}
+.hist-label{font-size:12.5px}
+.hist-track{position:relative;height:20px;background:var(--soft);border-radius:4px;overflow:hidden}
+.hist-track b{position:absolute;left:0;top:3px;bottom:3px;border-radius:2px}
+.hist-val{text-align:right;font-size:12.5px;font-variant-numeric:tabular-nums}
+.matrix td{font-size:12px}
+.toc{display:flex;gap:9px;flex-wrap:wrap;margin:18px 0}
+.toc a{text-decoration:none;color:var(--blue);background:var(--blue2);border:1px solid #d4e0ee;border-radius:999px;padding:3px 12px;font-size:12.5px}
+.foot{margin-top:38px;padding-top:17px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+.foot p{margin:5px 0}
+code{background:var(--soft);border-radius:3px;padding:1px 5px;font-size:12.5px}
+.hyp{display:grid;grid-template-columns:1fr;gap:10px}
+.hyp-card{background:var(--surface);border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:14px 17px}
+.hyp-card.ok{border-left-color:var(--red)}
+.hyp-card.no{border-left-color:var(--green)}
+.hyp-card .t{font-weight:700;font-size:15.5px}
+.hyp-card .d{font-size:13px;color:var(--muted);margin-top:4px}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.page{padding:28px 16px 48px}h1{font-size:26px}}
+@media print{body{background:#fff;font-size:11px}.page{max-width:none;padding:0}
+h2{break-after:avoid}.table-wrap,.panel{break-inside:avoid}}
+</style></head><body><div class="page">
+<header>
+<div class="eyebrow">DARVAS · E17 · 实验报告 · 十维 #8/#9 何时卖</div>
+<h1>P2-5 浮盈回吐分布（MFE）</h1>
+<p class="sub">2005–2018 全 14 年已平仓交易的最大浮盈与回吐率分布。A 类后验、零回测，只读
+<code>var/bt/bt_e17_&lt;year&gt;.db</code>。框架先于跑数定稿：<code>docs/experiments/e17_giveback_framework.md</code>。</p>
+</header>
+
+<div class="toc"><a href="#s0">核心结论</a><a href="#s1">口径与样本</a><a href="#s2">回吐率分布</a>
+<a href="#s3">持有天数主表</a><a href="#s4">加密复核</a><a href="#s5">逐年矩阵</a>
+<a href="#s6">切片</a><a href="#s7">结构性发现</a><a href="#s8">判定</a><a href="#s9">附录</a></div>
+
+<div class="kpis"><div class="kpi"><div class="label">已平仓样本</div><div class="value">1328</div><div class="note">2005–2018 · leg1 · 全部单腿</div></div><div class="kpi"><div class="label">可检验（MFE>0）</div><div class="value">1268</div><div class="note">不可检验 60 笔（从未浮盈）</div></div><div class="kpi"><div class="label">回吐率中位数</div><div class="value">151.8%</div><div class="note">P25 105.3% / P75 277.1%</div></div><div class="kpi"><div class="label">MFE 中位数</div><div class="value">5.2%</div><div class="note">持仓期最大浮盈幅度</div></div><div class="kpi"><div class="label">回吐金额合计</div><div class="value">¥3,562,757</div><div class="note">任何完美出场的收益上界</div></div></div>
+
+<div class="summary" id="s0"><h2>核心结论</h2>
+<ul><li>2005–2018 共 <b>1328</b> 笔已平仓交易，其中可检验（MFE>0）<b>1268</b> 笔、不可检验（从未浮盈）<b>60</b> 笔。</li><li>可检验样本的<b>回吐率中位数 151.8%</b>（P25 105.3% / P75 277.1%），MFE 中位数 5.2%。</li><li>盈利单中回吐率 >50% 的占 <b>45.1%</b>（308 笔盈利单）。</li><li>全样本回吐金额 <b>¥3,562,757</b>，其中持有 ≥11 日的占 <b>43.5%</b>、「亏损且持有 ≤10 日」的占 <b>50.8%</b>。</li><li><b>46 笔大赢家（MFE&gt;50%）贡献 1,133,049 元</b>（其余 1282 笔合计 -290,250），其回吐率中位仅 20.6%——真正跑起来的票并没有吐多少；而「亏损且持有≤10 日」的 777 笔合计 -996,930 元。</li><li>结构事实：<b>836 笔（63.0%）的出口由引擎既有的 <code>time_stop_noprofit</code>（<code>position.staledays=2</code>，「两天不赚就走」）决定</b>，这批合计 -905,208；其余 492 笔合计 +1,748,007。持有天数分布的 6 日尖峰即由此产生。</li></ul>
+<p class="small muted" style="margin-top:10px">读法：「回吐金额」是任何完美出场规则能回收的<b>上界</b>
+（连卖在最高点都只能拿回这么多），不是收益预测。真实移动止损会在假信号上被反复切碎——那要 P2-6 的 B 类回测回答。</p>
+</div>
+
+<h2 id="s1">一、口径与样本</h2>
+<div class="table-wrap"><table><thead><tr><th>口径</th><th style="text-align:left">定义</th></tr></thead><tbody>
+<tr><td><code>cost_basis</code></td><td style="text-align:left">Σ_legs(qty×price) —— <b>不从 position.qty 取</b>：平仓后 qty 已清零（框架 §3.3 陷阱）</td></tr>
+<tr><td><code>MFE</code></td><td style="text-align:left">max(high)/avg_cost − 1，窗口 [opened_date, closed_date] 含两端（日频上界）</td></tr>
+<tr><td><code>ret</code></td><td style="text-align:left">realized_pnl / cost_basis（净额，含双边费用）</td></tr>
+<tr><td><code>giveback</code></td><td style="text-align:left">(MFE − ret) / MFE，仅 MFE&gt;0 可检验；&gt;100% 表示浮盈全部吐出并倒亏</td></tr>
+<tr><td><code>hold_bars</code></td><td style="text-align:left">该股 daily_bar 在窗口内的行数（主口径）；对照口径为 sh000001 交易日历</td></tr>
+<tr><td>分带</td><td style="text-align:left">1–5 / 6–10 / 11–20 / 21–60 / &gt;60 交易日（照抄任务书预设，未按结果调整）</td></tr>
+</tbody></table></div>
+
+<div class="callout blue"><b>样本漏斗</b>：14 库 leg1 建仓 1405 笔 →
+已平仓且成本可算 1328 笔 → 窗口无行情剔除 0 笔 → <b>有效 1328 笔</b>。
+唯一的剔除动作是「未平仓」与「无行情」；MFE≤0 的 60 笔不剔除，留在本带内并单列子集行。</div>
+
+<div class="callout gold"><b>已知数据偏差（结论必须携带）</b>：库内 <code>adj_factor</code> 恒 1.0（<b>未复权</b>）。
+持仓期若除权，除权前高价会抬高 MFE、把回吐率打成虚假的大。诊断口径：窗口内收盘单日跌幅 &lt; −20%（涨跌停 ±10% 下基本只能是除权/数据错误），
+命中 <b>36</b> 笔。稳健性切片见 §八。此外 MFE 是日高不是可成交价（日频上界），且样本只含存续股票（幸存者偏差会<b>低估</b>回吐）。</div>
+
+<h2 id="s2">二、回吐率分布</h2>
+<div class="panel"><h3>回吐率分布（可检验样本）</h3><div class="hist-row"><div class="hist-label"><0%（异常）</div><div class="hist-track"><b style="width:0.40%;background:var(--gold)"></b></div><div class="hist-val">0 笔 · 0.0%</div></div><div class="hist-row"><div class="hist-label">0–25%</div><div class="hist-track"><b style="width:15.06%;background:var(--blue)"></b></div><div class="hist-val">97 笔 · 7.6%</div></div><div class="hist-row"><div class="hist-label">25–50%</div><div class="hist-track"><b style="width:11.18%;background:var(--blue)"></b></div><div class="hist-val">72 笔 · 5.7%</div></div><div class="hist-row"><div class="hist-label">50–75%</div><div class="hist-track"><b style="width:12.73%;background:var(--blue)"></b></div><div class="hist-val">82 笔 · 6.5%</div></div><div class="hist-row"><div class="hist-label">75–100%</div><div class="hist-track"><b style="width:8.85%;background:var(--blue)"></b></div><div class="hist-val">57 笔 · 4.5%</div></div><div class="hist-row"><div class="hist-label">100–150%</div><div class="hist-track"><b style="width:49.07%;background:var(--green)"></b></div><div class="hist-val">316 笔 · 24.9%</div></div><div class="hist-row"><div class="hist-label">≥150%</div><div class="hist-track"><b style="width:100.00%;background:var(--green)"></b></div><div class="hist-val">644 笔 · 50.8%</div></div><p class="small muted" style="margin-bottom:0">0–100% 区间 = 浮盈部分回吐；100%+ = 浮盈全部吐出并倒亏；&lt;0% 仅为浮点异常（应为 0 笔）。</p></div>
+<div class="table-wrap"><table><thead><tr><th>回吐率箱</th><th>笔数</th><th>占比</th><th>净利</th>
+<th>回吐金额</th><th>持有天数中位</th><th>胜率</th></tr></thead><tbody>
+<tr><td><strong><0%（异常）</strong></td><td>0</td><td>0.0%</td><td class="neutral">+0</td><td class="muted">0</td><td>—</td><td>—</td></tr><tr><td><strong>0–25%</strong></td><td>97</td><td>7.6%</td><td class="up">+1,432,368</td><td class="muted">204,003</td><td>19.0</td><td>100.0%</td></tr><tr><td><strong>25–50%</strong></td><td>72</td><td>5.7%</td><td class="up">+422,586</td><td class="muted">255,106</td><td>11.5</td><td>100.0%</td></tr><tr><td><strong>50–75%</strong></td><td>82</td><td>6.5%</td><td class="up">+199,207</td><td class="muted">335,975</td><td>11.0</td><td>100.0%</td></tr><tr><td><strong>75–100%</strong></td><td>57</td><td>4.5%</td><td class="up">+35,704</td><td class="muted">282,670</td><td>12.0</td><td>100.0%</td></tr><tr><td><strong>100–150%</strong></td><td>316</td><td>24.9%</td><td class="down">-182,171</td><td class="muted">963,899</td><td>9.0</td><td>0.0%</td></tr><tr><td><strong>≥150%</strong></td><td>644</td><td>50.8%</td><td class="down">-967,682</td><td class="muted">1,521,103</td><td>6.0</td><td>0.0%</td></tr>
+</tbody></table></div>
+
+<h2 id="s3">三、持有天数主表（L1 五带）</h2>
+<p>四项固定口径 + PF + 缺口 + 剔除前三 + 回吐分布。表格下附「不可检验」子集行（<b>非加总行</b>）：
+Σ 五带 = 1328 笔；Σ 各带不可检验 = 60 笔 = 子集行笔数。</p>
+<div class="table-wrap"><table><thead><tr><th>持有天数</th><th>笔数</th><th>可检验/不可检</th><th>胜率</th><th>每单位净利</th><th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔除前三净利</th><th>回吐率中位</th><th>回吐率均值</th><th>回吐金额</th><th>MFE 金额</th><th>净利</th><th>裁定</th></tr></thead><tbody><tr><td><strong>1–5 日</strong></td><td>188</td><td class="muted">161 / 27</td><td>16.5%</td><td class="down">-955</td><td>47.8%</td><td class="down">-31.3pp</td><td>0.22</td><td>35.7%</td><td class="down">-275,258</td><td>332.5%</td><td>1144.6%</td><td class="muted">412,536</td><td class="muted">223,906</td><td class="down">-250,641</td><td><span class="vd vd-neg">负 edge</span></td></tr><tr><td><strong>6–10 日</strong></td><td>777</td><td class="muted">744 / 33</td><td>12.5%</td><td class="down">-518</td><td>30.9%</td><td class="down">-18.4pp</td><td>0.32</td><td>24.3%</td><td class="down">-587,351</td><td>180.2%</td><td>462.9%</td><td class="muted">1,598,684</td><td class="muted">1,106,507</td><td class="down">-527,378</td><td><span class="vd vd-neg">负 edge</span></td></tr><tr><td><strong>11–20 日</strong></td><td>180</td><td class="muted">180 / 0</td><td>37.2%</td><td class="up">+1,445</td><td>11.2%</td><td class="up">+26.0pp</td><td>4.71</td><td>26.1%</td><td class="up">+239,752</td><td>117.9%</td><td>110.4%</td><td class="muted">596,113</td><td class="muted">954,532</td><td class="up">+358,419</td><td><span class="vd vd-edge">edge</span></td></tr><tr><td><strong>21–60 日</strong></td><td>160</td><td class="muted">160 / 0</td><td>58.8%</td><td class="up">+4,243</td><td>6.7%</td><td class="up">+52.0pp</td><td>19.74</td><td>27.3%</td><td class="up">+727,324</td><td>83.9%</td><td>77.3%</td><td class="muted">844,773</td><td class="muted">1,865,159</td><td class="up">+1,020,386</td><td><span class="vd vd-edge">edge</span></td></tr><tr><td><strong>60 日+</strong></td><td>23 ⚠</td><td class="muted">23 / 0</td><td>82.6%</td><td class="up">+9,681</td><td>3.3%</td><td class="up">+79.3pp</td><td>140.40</td><td>60.0%</td><td class="up">+95,645</td><td>37.8%</td><td>53.1%</td><td class="muted">110,652</td><td class="muted">352,665</td><td class="up">+242,013</td><td><span class="vd vd-small">样本不足</span></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>持有天数</th><th>笔数</th><th>可检验/不可检</th><th>胜率</th>
+<th>每单位净利</th><th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔除前三净利</th>
+<th>回吐统计</th><th>回吐金额</th><th>净利</th><th>裁定</th></tr></thead><tbody>
+<tr class="subset"><td><strong>不可检验（MFE ≤ 0，从未浮盈）</strong><br><span class="small">（子集标记，非加总行）</span></td><td>60</td><td class="muted">0 / 60</td><td>0.0%</td><td class="down">-1,555</td><td>—</td><td class="neutral">—</td><td>0.00</td><td>—</td><td class="down">-96,544</td><td colspan="3">回吐率无定义（MFE ≤ 0）</td><td class="muted">0</td><td class="down">-97,212</td><td><span class="vd vd-small">不可检验（从未浮盈）</span></td></tr>
+</tbody></table></div>
+
+<h2 id="s4">四、加密复核（L2/L3）</h2>
+<p>触发带：<b>6–10 日、11–20 日</b>。规则见框架 §5.4（n≥30 且 符号反转/集中度&gt;50%/剔除前三翻负），切法为宽度二分，非拟合拐点。</p>
+<h3>L2（二分）</h3>
+<div class="table-wrap"><table><thead><tr><th>持有天数</th><th>笔数</th><th>可检验/不可检</th><th>胜率</th><th>每单位净利</th><th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔除前三净利</th><th>回吐率中位</th><th>回吐率均值</th><th>回吐金额</th><th>MFE 金额</th><th>净利</th><th>裁定</th><th>所属带</th></tr></thead><tbody><tr><td><strong>6–7 日</strong></td><td>621</td><td class="muted">588 / 33</td><td>8.5%</td><td class="down">-725</td><td>41.8%</td><td class="down">-33.3pp</td><td>0.13</td><td>38.3%</td><td class="down">-623,675</td><td>206.4%</td><td>542.6%</td><td class="muted">1,244,023</td><td class="muted">689,261</td><td class="down">-589,963</td><td><span class="vd vd-neg">负 edge</span></td><td class="muted">6–10 日</td></tr><tr><td><strong>8–10 日</strong></td><td>156</td><td class="muted">156 / 0</td><td>28.2%</td><td class="up">+307</td><td>19.2%</td><td class="up">+9.0pp</td><td>1.65</td><td>35.6%</td><td class="up">+5,918</td><td>130.7%</td><td>162.5%</td><td class="muted">354,661</td><td class="muted">417,246</td><td class="up">+62,586</td><td><span class="vd vd-unstable">不稳定（正但非跨年）</span></td><td class="muted">6–10 日</td></tr><tr><td><strong>11–15 日</strong></td><td>128</td><td class="muted">128 / 0</td><td>32.0%</td><td class="up">+787</td><td>14.4%</td><td class="up">+17.6pp</td><td>2.79</td><td>29.8%</td><td class="up">+72,935</td><td>124.0%</td><td>120.9%</td><td class="muted">410,045</td><td class="muted">546,270</td><td class="up">+136,225</td><td><span class="vd vd-edge">edge</span></td><td class="muted">11–20 日</td></tr><tr><td><strong>16–20 日</strong></td><td>52</td><td class="muted">52 / 0</td><td>50.0%</td><td class="up">+2,963</td><td>7.9%</td><td class="up">+42.1pp</td><td>11.68</td><td>46.5%</td><td class="up">+109,121</td><td>97.3%</td><td>84.3%</td><td class="muted">186,068</td><td class="muted">408,262</td><td class="up">+222,194</td><td><span class="vd vd-edge">edge</span></td><td class="muted">11–20 日</td></tr></tbody></table></div>
+<h3>L3（再二分）</h3>
+<div class="table-wrap"><table><thead><tr><th>持有天数</th><th>笔数</th><th>可检验/不可检</th><th>胜率</th><th>每单位净利</th><th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔除前三净利</th><th>回吐率中位</th><th>回吐率均值</th><th>回吐金额</th><th>MFE 金额</th><th>净利</th><th>裁定</th><th>所属带</th></tr></thead><tbody><tr><td><strong>6 日</strong></td><td>612</td><td class="muted">579 / 33</td><td>7.7%</td><td class="down">-759</td><td>44.7%</td><td class="down">-37.0pp</td><td>0.10</td><td>39.1%</td><td class="down">-632,389</td><td>207.2%</td><td>549.5%</td><td class="muted">1,224,210</td><td class="muted">654,234</td><td class="down">-605,177</td><td><span class="vd vd-neg">负 edge</span></td><td class="muted">6–7 日</td></tr><tr><td><strong>7 日</strong></td><td>9 ⚠</td><td class="muted">9 / 0</td><td>66.7%</td><td class="up">+951</td><td>26.1%</td><td class="up">+40.5pp</td><td>5.65</td><td>89.1%</td><td class="down">-1,250</td><td>60.6%</td><td>101.7%</td><td class="muted">19,813</td><td class="muted">35,027</td><td class="up">+15,214</td><td><span class="vd vd-small">样本不足</span></td><td class="muted">6–7 日</td></tr><tr><td><strong>8 日</strong></td><td>20 ⚠</td><td class="muted">20 / 0</td><td>40.0%</td><td class="up">+335</td><td>28.1%</td><td class="up">+11.9pp</td><td>1.70</td><td>76.0%</td><td class="down">-7,055</td><td>111.4%</td><td>200.9%</td><td class="muted">42,842</td><td class="muted">51,226</td><td class="up">+8,384</td><td><span class="vd vd-small">样本不足</span></td><td class="muted">8–10 日</td></tr><tr><td><strong>9–10 日</strong></td><td>136</td><td class="muted">136 / 0</td><td>26.5%</td><td class="up">+303</td><td>18.0%</td><td class="up">+8.5pp</td><td>1.64</td><td>40.8%</td><td class="down">-2,466</td><td>131.9%</td><td>156.9%</td><td class="muted">311,818</td><td class="muted">366,020</td><td class="up">+54,201</td><td><span class="vd vd-fake">假 edge（前三撑起）</span></td><td class="muted">8–10 日</td></tr><tr><td><strong>16–17 日</strong></td><td>9 ⚠</td><td class="muted">9 / 0</td><td>77.8%</td><td class="up">+3,178</td><td>3.8%</td><td class="up">+73.9pp</td><td>87.84</td><td>73.4%</td><td class="up">+9,805</td><td>51.2%</td><td>58.5%</td><td class="muted">28,657</td><td class="muted">66,788</td><td class="up">+38,132</td><td><span class="vd vd-small">样本不足</span></td><td class="muted">16–20 日</td></tr><tr><td><strong>18–20 日</strong></td><td>43</td><td class="muted">43 / 0</td><td>44.2%</td><td class="up">+2,922</td><td>7.3%</td><td class="up">+36.9pp</td><td>10.04</td><td>55.3%</td><td class="up">+70,989</td><td>112.5%</td><td>89.7%</td><td class="muted">157,411</td><td class="muted">341,474</td><td class="up">+184,062</td><td><span class="vd vd-edge">edge</span></td><td class="muted">16–20 日</td></tr></tbody></table></div>
+
+<h2 id="s5">五、逐年矩阵</h2>
+<p>左表：逐格「净利（笔数）」。右表：逐格「回吐率中位数（可检验笔数）」——用于区分
+「某一年全市场普遍大回吐」（如 2015）与「长期结构性回吐」。</p>
+<h3>5.1 净利矩阵</h3>
+<div class="table-wrap"><table class="matrix"><thead><tr><th>年份</th><th>全年净利</th><th>1–5 日</th><th>6–10 日</th><th>11–20 日</th><th>21–60 日</th><th>60 日+</th></tr></thead><tbody><tr><td><strong>2005</strong></td><td class="down">-14,693</td><td class="down">-3,583<span class="muted small">(5)</span></td><td class="down">-18,808<span class="muted small">(46)</span></td><td class="up">+5,407<span class="muted small">(14)</span></td><td class="up">+1,343<span class="muted small">(8)</span></td><td class="up">+948<span class="muted small">(2)</span></td></tr><tr><td><strong>2006</strong></td><td class="up">+223,911</td><td class="down">-4,902<span class="muted small">(6)</span></td><td class="up">+11,763<span class="muted small">(53)</span></td><td class="up">+173,308<span class="muted small">(25)</span></td><td class="up">+43,741<span class="muted small">(7)</span></td><td class="muted">—</td></tr><tr><td><strong>2007</strong></td><td class="up">+421,255</td><td class="down">-52,151<span class="muted small">(17)</span></td><td class="up">+3,297<span class="muted small">(35)</span></td><td class="up">+5,656<span class="muted small">(7)</span></td><td class="up">+448,629<span class="muted small">(15)</span></td><td class="up">+15,823<span class="muted small">(1)</span></td></tr><tr><td><strong>2008</strong></td><td class="down">-79,655</td><td class="down">-41,173<span class="muted small">(24)</span></td><td class="down">-40,455<span class="muted small">(26)</span></td><td class="up">+3,153<span class="muted small">(4)</span></td><td class="down">-1,180<span class="muted small">(2)</span></td><td class="muted">—</td></tr><tr><td><strong>2009</strong></td><td class="down">-9,639</td><td class="down">-36,479<span class="muted small">(19)</span></td><td class="down">-66,362<span class="muted small">(51)</span></td><td class="up">+36,236<span class="muted small">(11)</span></td><td class="up">+49,599<span class="muted small">(14)</span></td><td class="up">+7,367<span class="muted small">(1)</span></td></tr><tr><td><strong>2010</strong></td><td class="down">-53,345</td><td class="down">-18,813<span class="muted small">(9)</span></td><td class="down">-40,829<span class="muted small">(33)</span></td><td class="down">-7,222<span class="muted small">(7)</span></td><td class="up">+2,147<span class="muted small">(19)</span></td><td class="up">+11,372<span class="muted small">(4)</span></td></tr><tr><td><strong>2011</strong></td><td class="down">-85,243</td><td class="down">-13,907<span class="muted small">(22)</span></td><td class="down">-55,436<span class="muted small">(61)</span></td><td class="down">-10,657<span class="muted small">(22)</span></td><td class="down">-4,178<span class="muted small">(10)</span></td><td class="down">-1,064<span class="muted small">(1)</span></td></tr><tr><td><strong>2012</strong></td><td class="down">-26,584</td><td class="down">-6,748<span class="muted small">(8)</span></td><td class="down">-50,440<span class="muted small">(83)</span></td><td class="up">+1,329<span class="muted small">(13)</span></td><td class="up">+24,546<span class="muted small">(11)</span></td><td class="up">+4,728<span class="muted small">(3)</span></td></tr><tr><td><strong>2013</strong></td><td class="up">+81,564</td><td class="down">-2,135<span class="muted small">(5)</span></td><td class="down">-87,644<span class="muted small">(93)</span></td><td class="up">+21,994<span class="muted small">(20)</span></td><td class="up">+131,786<span class="muted small">(14)</span></td><td class="up">+17,563<span class="muted small">(1)</span></td></tr><tr><td><strong>2014</strong></td><td class="up">+182,188</td><td class="down">-13,787<span class="muted small">(8)</span></td><td class="down">-42,789<span class="muted small">(65)</span></td><td class="up">+28,033<span class="muted small">(6)</span></td><td class="up">+136,390<span class="muted small">(18)</span></td><td class="up">+74,341<span class="muted small">(3)</span></td></tr><tr><td><strong>2015</strong></td><td class="up">+241,757</td><td class="down">-12,383<span class="muted small">(18)</span></td><td class="down">-9,745<span class="muted small">(30)</span></td><td class="up">+48,597<span class="muted small">(8)</span></td><td class="up">+128,730<span class="muted small">(7)</span></td><td class="up">+86,558<span class="muted small">(3)</span></td></tr><tr><td><strong>2016</strong></td><td class="down">-14,292</td><td class="down">-10,210<span class="muted small">(13)</span></td><td class="down">-42,551<span class="muted small">(52)</span></td><td class="up">+27,418<span class="muted small">(14)</span></td><td class="up">+10,360<span class="muted small">(8)</span></td><td class="up">+690<span class="muted small">(2)</span></td></tr><tr><td><strong>2017</strong></td><td class="down">-6,607</td><td class="down">-11,396<span class="muted small">(7)</span></td><td class="down">-56,496<span class="muted small">(75)</span></td><td class="up">+13,030<span class="muted small">(8)</span></td><td class="up">+24,569<span class="muted small">(16)</span></td><td class="up">+23,686<span class="muted small">(2)</span></td></tr><tr><td><strong>2018</strong></td><td class="down">-17,816</td><td class="down">-22,974<span class="muted small">(27)</span></td><td class="down">-30,883<span class="muted small">(74)</span></td><td class="up">+12,138<span class="muted small">(21)</span></td><td class="up">+23,903<span class="muted small">(11)</span></td><td class="muted">—</td></tr></tbody></table></div>
+<h3>5.2 回吐率中位数矩阵</h3>
+<div class="table-wrap"><table class="matrix"><thead><tr><th>年份</th><th>全年净利</th><th>1–5 日</th><th>6–10 日</th><th>11–20 日</th><th>21–60 日</th><th>60 日+</th></tr></thead><tbody><tr><td><strong>2005</strong></td><td class="down">-14,693</td><td>1220.7%<span class="muted small">(3)</span></td><td>198.7%<span class="muted small">(43)</span></td><td>120.8%<span class="muted small">(14)</span></td><td>101.8%<span class="muted small">(8)</span></td><td>85.8%<span class="muted small">(2)</span></td></tr><tr><td><strong>2006</strong></td><td class="up">+223,911</td><td>222.2%<span class="muted small">(6)</span></td><td>125.2%<span class="muted small">(49)</span></td><td>62.7%<span class="muted small">(25)</span></td><td>24.0%<span class="muted small">(7)</span></td><td class="muted">—</td></tr><tr><td><strong>2007</strong></td><td class="up">+421,255</td><td>298.5%<span class="muted small">(14)</span></td><td>152.0%<span class="muted small">(33)</span></td><td>114.5%<span class="muted small">(7)</span></td><td>13.1%<span class="muted small">(15)</span></td><td>0.7%<span class="muted small">(1)</span></td></tr><tr><td><strong>2008</strong></td><td class="down">-79,655</td><td>432.4%<span class="muted small">(22)</span></td><td>192.2%<span class="muted small">(24)</span></td><td>63.6%<span class="muted small">(4)</span></td><td>129.0%<span class="muted small">(2)</span></td><td class="muted">—</td></tr><tr><td><strong>2009</strong></td><td class="down">-9,639</td><td>588.8%<span class="muted small">(13)</span></td><td>168.0%<span class="muted small">(51)</span></td><td>121.2%<span class="muted small">(11)</span></td><td>60.6%<span class="muted small">(14)</span></td><td>29.4%<span class="muted small">(1)</span></td></tr><tr><td><strong>2010</strong></td><td class="down">-53,345</td><td>288.5%<span class="muted small">(7)</span></td><td>201.7%<span class="muted small">(33)</span></td><td>128.7%<span class="muted small">(7)</span></td><td>106.2%<span class="muted small">(19)</span></td><td>50.8%<span class="muted small">(4)</span></td></tr><tr><td><strong>2011</strong></td><td class="down">-85,243</td><td>269.4%<span class="muted small">(21)</span></td><td>202.7%<span class="muted small">(58)</span></td><td>132.9%<span class="muted small">(22)</span></td><td>121.6%<span class="muted small">(10)</span></td><td>138.8%<span class="muted small">(1)</span></td></tr><tr><td><strong>2012</strong></td><td class="down">-26,584</td><td>531.1%<span class="muted small">(8)</span></td><td>220.8%<span class="muted small">(79)</span></td><td>127.5%<span class="muted small">(13)</span></td><td>110.0%<span class="muted small">(11)</span></td><td>11.4%<span class="muted small">(3)</span></td></tr><tr><td><strong>2013</strong></td><td class="up">+81,564</td><td>715.7%<span class="muted small">(5)</span></td><td>176.3%<span class="muted small">(91)</span></td><td>116.1%<span class="muted small">(20)</span></td><td>49.8%<span class="muted small">(14)</span></td><td>34.1%<span class="muted small">(1)</span></td></tr><tr><td><strong>2014</strong></td><td class="up">+182,188</td><td>505.7%<span class="muted small">(7)</span></td><td>156.7%<span class="muted small">(62)</span></td><td>82.5%<span class="muted small">(6)</span></td><td>78.2%<span class="muted small">(18)</span></td><td>24.6%<span class="muted small">(3)</span></td></tr><tr><td><strong>2015</strong></td><td class="up">+241,757</td><td>227.9%<span class="muted small">(17)</span></td><td>162.0%<span class="muted small">(30)</span></td><td>52.2%<span class="muted small">(8)</span></td><td>45.9%<span class="muted small">(7)</span></td><td>37.8%<span class="muted small">(3)</span></td></tr><tr><td><strong>2016</strong></td><td class="down">-14,292</td><td>232.7%<span class="muted small">(11)</span></td><td>209.6%<span class="muted small">(50)</span></td><td>115.4%<span class="muted small">(14)</span></td><td>107.1%<span class="muted small">(8)</span></td><td>95.7%<span class="muted small">(2)</span></td></tr><tr><td><strong>2017</strong></td><td class="down">-6,607</td><td>667.0%<span class="muted small">(6)</span></td><td>226.3%<span class="muted small">(70)</span></td><td>135.0%<span class="muted small">(8)</span></td><td>105.2%<span class="muted small">(16)</span></td><td>55.4%<span class="muted small">(2)</span></td></tr><tr><td><strong>2018</strong></td><td class="down">-17,816</td><td>498.0%<span class="muted small">(21)</span></td><td>178.5%<span class="muted small">(71)</span></td><td>144.8%<span class="muted small">(21)</span></td><td>67.4%<span class="muted small">(11)</span></td><td class="muted">—</td></tr></tbody></table></div>
+
+<h2 id="s6">六、专项切片</h2>
+<h3>6.1 t1 甜区（距 52 周新高 ≤15%）vs 其余</h3>
+<div class="table-wrap"><table><thead><tr><th>切片</th><th>笔数</th><th>可检验/不可检</th><th>胜率</th>
+<th>每单位净利</th><th>保本胜率</th><th>缺口</th><th>集中度</th><th>剔除前三净利</th>
+<th>回吐率中位</th><th>回吐金额</th><th>MFE 金额</th><th>净利</th></tr></thead><tbody>
+<tr><td><strong>t1 甜区（距 52 周新高 ≤15%）</strong></td><td>590</td><td class="muted">569/21</td><td>27.6%</td><td class="up">+635</td><td>16.7%</td><td class="up">+11.0pp</td><td>16.2%</td><td class="up">+569,468</td><td>143.4%</td><td class="muted">2,807,876</td><td class="muted">3,736,651</td><td class="up">+862,530</td></tr><tr><td><strong>对照：非 t1（距新高 >15%）</strong></td><td>738</td><td class="muted">699/39</td><td>19.6%</td><td class="down">-45</td><td>20.7%</td><td class="down">-1.1pp</td><td>13.3%</td><td class="down">-56,795</td><td>157.9%</td><td class="muted">754,882</td><td class="muted">766,118</td><td class="down">-19,731</td></tr><tr><td><strong>大赢家（MFE > 50%）</strong></td><td>46</td><td class="muted">46/0</td><td>100.0%</td><td class="up">+14,715</td><td>—</td><td class="neutral">—</td><td>25.9%</td><td class="up">+839,987</td><td>20.6%</td><td class="muted">317,337</td><td class="muted">1,450,387</td><td class="up">+1,133,049</td></tr><tr><td><strong>对照：非大赢家（MFE ≤ 50%）</strong></td><td>1282</td><td class="muted">1222/60</td><td>20.4%</td><td class="down">-169</td><td>25.1%</td><td class="down">-4.6pp</td><td>7.8%</td><td class="down">-365,142</td><td>156.9%</td><td class="muted">3,245,420</td><td class="muted">3,052,382</td><td class="down">-290,250</td></tr>
+</tbody></table></div>
+<p class="small muted">前两行为 t1 与「非 t1」对照，后两行为大赢家（MFE&gt;50%）与其余对照。
+进场甜区（第 5 维）与出场回吐（第 8/9 维）是两个维度，<b>不得据此说「甜区该止盈」</b>。</p>
+
+<h2 id="s7">七、结构性发现：出口早有一条时间止损</h2>
+<p>追查「持有天数分布为何在 <b>6 日</b>出现 612 笔尖峰（占全样本 46%）」时发现：
+其中 <b>558</b> 笔由引擎既有的 <code>time_stop_noprofit</code> 规则平仓，而非自然持有期。
+该规则（<code>internal/planner/planner.go:195-218</code>，参数 <code>position.staledays=2</code>）语义是：
+<b>持有 ≥ staledays 个交易日 且 当日收盘 ≤ 成本 → 次日以当日收盘价清仓</b>。它的 reason 里带
+<code>signal:"time_stop_noprofit"</code>，因此可以逐笔精确识别。</p>
+
+<div class="callout red"><b>这意味着「持有天数是唯一赚钱因子」有一个内生性问题</b>：
+不赚钱的单子会在跌破成本后一两天内被这条规则砍掉，只有<b>从未跌破成本</b>的单子才可能活成 21–60 日、60 日+ 的长持。
+所以「长持 = 赚钱」部分是<b>规则筛出来的结果</b>，不完全是「拿得住所以赚钱」。
+本节把这个结构摊开，是因为它直接决定了 P2-6 该测什么（见 §八）。</div>
+
+<div class="table-wrap"><table><thead><tr><th>持有天数</th><th>总笔数</th><th>其中 time_stop 平仓</th>
+<th>占比</th><th>time_stop 这部分净利</th><th>该带净利合计</th><th>该带每单位净利</th></tr></thead><tbody>
+<tr><td><strong>1–5 日</strong></td><td>188</td><td>15</td><td>8.0%</td><td class="down">-16,016</td><td class="down">-250,641</td><td class="down">-955</td></tr><tr><td><strong>6–10 日</strong></td><td>777</td><td>664</td><td>85.5%</td><td class="down">-757,492</td><td class="down">-527,378</td><td class="down">-518</td></tr><tr><td><strong>11–20 日</strong></td><td>180</td><td>101</td><td>56.1%</td><td class="down">-82,831</td><td class="up">+358,419</td><td class="up">+1,445</td></tr><tr><td><strong>21–60 日</strong></td><td>160</td><td>53</td><td>33.1%</td><td class="down">-48,198</td><td class="up">+1,020,386</td><td class="up">+4,243</td></tr><tr><td><strong>60 日+</strong></td><td>23</td><td>3</td><td>13.0%</td><td class="down">-672</td><td class="up">+242,013</td><td class="up">+9,681</td></tr>
+<tr class="sum"><td>合计</td><td>1328</td><td>836</td>
+<td>63.0%</td><td class="down">-905,208</td>
+<td class="up">+842,800</td><td class="up">+470</td></tr>
+</tbody></table></div>
+
+<p><b>time_stop 出口 836 笔（63.0%）合计净利 -905,208，
+每单位 -848、胜率 0.0%、回吐率中位 179.6%
+、MFE 中位 3.8%；其余 492 笔合计 +1,748,007
+（每单位 +2,408、胜率 62.6%）。</b>
+也就是说：<b>63.0% 的出口由一条「两天不赚就走」的规则决定</b>，它贡献了
+-905,208 的净利，而剩下的 37.0% 出口贡献了 +1,748,007。</p>
+
+<h2 id="s8">八、判定</h2>
+<div class="hyp"><div class="hyp-card no"><div class="t">H1 移动止损潜在价值大 —— 不成立 <span class="vd vd-neg">不成立/未复现</span></div><div class="d">判据① 盈利单回吐率&gt;50% 占比 <b>45.1%</b>（需≥50%）｜判据② 回吐金额中持有≥11 日占比 <b>43.5%</b>（需≥50%）｜判据③ 21 日+ 每单位 <b>+4,755</b>、ratio_f <b>92.3%</b>（Mf=13，需≥0.50 且 Mf≥8）</div></div><div class="hyp-card ok"><div class="t">H2 出场不是出血口 —— 成立 <span class="vd vd-edge">成立/复现</span></div><div class="d">判据① 回吐金额中「亏损且持有≤10 日」占比 <b>50.8%</b>（需≥50%）｜判据② 同批 MFE 金额占比 <b>18.0%</b>（需&lt;20%）｜该批 777 笔，MFE 金额 ¥811,825</div></div><div class="hyp-card ok"><div class="t">H3 复现「持有时间 = 唯一赚钱因子」—— 复现 <span class="vd vd-edge">成立/复现</span></div><div class="d">5 带每单位净利：1–5 日 -955｜6–10 日 -518｜11–20 日 +1,445｜21–60 日 +4,243｜60 日+ +9,681｜递增相邻对 <b>4/4</b>（需≥4）</div></div></div>
+<div class="callout blue">
+<b>P2-6 立项建议（按预注册判据 + 结构事实）</b><br>
+① H1 <b>不成立</b>：回吐金额只有 43.5% 来自持有 ≥11 日（需 ≥50%），盈利单回吐率 >50% 的仅占 45.1%（需 ≥50%）。更进一步——盈利单回吐率中位 44.5%、46 笔大赢家（MFE>50%）回吐率中位仅 20.6%，这些正是移动止损最容易切碎的对象。<b>「用 trail% 保护浮盈」在本口径下没有证据支撑。</b><br>
+② H2 成立：回吐金额 50.8% 来自「亏损且持有≤10 日」，其 MFE 金额仅占 18.0%（&lt;20%）——这批单的浮盈天花板本来就低，任何 trail 规则都<b>无盈可保</b>。但请注意这个结论很薄：判据 ② 是 18.0% vs 20% 的门槛，去掉疑似除权样本后为 19.4%，方向不变但余量不大。这批单合计净利 -996,930 元，是账本最大的单一失血块。<br>
+③ <b>结构事实改变了标的</b>：63.0% 的出口已经由 <code>time_stop_noprofit</code>
+（<code>position.staledays=2</code>）决定，它的实质就是一条「两天不赚就走」的时间止损。
+因此 P2-6 的<b>第一优先不是 trail 5/8/10/15%，而是给 <code>position.staledays</code> 做梯度
+（0/2/3/5/10）</b>——这是十维 #9 里唯一「已实现、零工程成本、却从未被验证」的旋钮，
+且它直接解释了 6–10 日带 58% 的样本与最大失血块。<br>
+④ 若 ③ 的梯度显示 staledays 越大越好，则矛盾会转向入场端（P1-4）：说明真正的问题不是「什么时候砍」，
+而是「为什么买到的票两天就跌破成本」。
+</div>
+
+<h3>8.1 逐带裁定</h3>
+<div class="table-wrap"><table><thead><tr><th>持有天数</th><th>n</th><th>Mf</th><th>P′/M′</th>
+<th>最长连续同号年</th><th>正号年净利占比</th><th>裁定</th></tr></thead><tbody>
+<tr><td><strong>1–5 日</strong></td><td>188</td><td>14</td><td>0/14<span class="muted small">（0.0%）</span></td><td>14</td><td>0.0%</td><td><span class="vd vd-neg">负 edge</span></td></tr><tr><td><strong>6–10 日</strong></td><td>777</td><td>14</td><td>2/14<span class="muted small">（14.3%）</span></td><td>11</td><td>-2.9%</td><td><span class="vd vd-neg">负 edge</span></td></tr><tr><td><strong>11–20 日</strong></td><td>180</td><td>14</td><td>12/14<span class="muted small">（85.7%）</span></td><td>7</td><td>105.0%</td><td><span class="vd vd-edge">edge</span></td></tr><tr><td><strong>21–60 日</strong></td><td>160</td><td>13</td><td>12/13<span class="muted small">（92.3%）</span></td><td>7</td><td>100.5%</td><td><span class="vd vd-edge">edge</span></td></tr><tr><td><strong>60 日+</strong></td><td>23</td><td>4</td><td>4/4<span class="muted small">（100.0%）</span></td><td>4</td><td>100.4%</td><td><span class="vd vd-small">样本不足</span></td></tr>
+</tbody></table></div>
+
+<h2 id="s9">九、附录</h2>
+<h3>9.1 稳健性：剔除疑似除权污染</h3>
+<div class="callout blue">剔除疑似除权污染 <b>36</b> 笔后，可检验 1234 笔，回吐率中位数 <b>154.2%</b>、回吐金额 ¥3,458,535；重裁 H1 → <b>不成立</b>（判据①45.7% / ②42.6%）、H2 → <b>成立</b>（①52.0% / ②19.4%）。</div>
+<h3>9.2 退出方式切片（不作判据）</h3>
+<div class="table-wrap"><table><thead><tr><th>close_reason</th><th>笔数</th><th>可检验/不可检</th>
+<th>胜率</th><th>每单位净利</th><th>集中度</th><th>净利</th><th>回吐率中位</th>
+<th>回吐金额</th><th>MFE 中位</th></tr></thead><tbody>
+<tr><td><strong>manual</strong></td><td>135</td><td class="muted">132/3</td><td>79.3%</td><td class="up">+4,492</td><td>25.6%</td><td class="up">+963,598</td><td>44.2%</td><td class="muted">393,330</td><td>17.6%</td></tr><tr><td><strong>stop</strong></td><td>1193</td><td class="muted">1136/57</td><td>16.8%</td><td class="down">-77</td><td>19.3%</td><td class="down">-120,799</td><td>161.1%</td><td class="muted">3,169,427</td><td>4.5%</td></tr>
+</tbody></table></div>
+<p class="small muted">引擎的 <code>stop</code> 可能同时包含初始止损与移动止损，语义未核实，<b>只作观察不作判据</b>（框架 §9）。</p>
+
+<h3>9.3 HARD 校验</h3>
+<div class="table-wrap"><table><thead><tr><th>级别</th><th>校验项</th><th>期望</th><th>实际</th><th>结果</th><th>备注</th></tr></thead><tbody><tr><td>HARD</td><td style="text-align:left">年份连续 2005–2018</td><td class="muted">14 年连续</td><td>14 年 2005–2018</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">缺年或乱序</td></tr><tr><td>HARD</td><td style="text-align:left">①逐年笔数与净利 vs e17_metrics.csv</td><td class="muted">14/14 一致</td><td>14/14 一致</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">跨源对账</td></tr><tr><td>HARD</td><td style="text-align:left">①样本总数 vs P0-1 基线 1328</td><td class="muted">1328</td><td>1328</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left"></td></tr><tr><td>HARD</td><td style="text-align:left">②Σ(L1 五带 n) = 样本总数</td><td class="muted">1328</td><td>1328</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">带内包含方案，不可检验样本不剥离</td></tr><tr><td>HARD</td><td style="text-align:left">②Σ(各带 n_untestable) = 不可检验子集行 n</td><td class="muted">60</td><td>60</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">子集一致</td></tr><tr><td>HARD</td><td style="text-align:left">③逐年符号表齐备 2005–2018</td><td class="muted">14 行</td><td>14 行</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">缺年须登记原因</td></tr><tr><td>HARD</td><td style="text-align:left">④持有天数两口径一致率 ≥95%</td><td class="muted">≥95.0%</td><td>96.23%</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">低于则主表切 hold_cal</td></tr><tr><td>HARD</td><td style="text-align:left">⑤回吐率<0 的异常笔数 = 0</td><td class="muted">0</td><td>0</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">非零说明成本或行情口径有错</td></tr><tr><td>HARD</td><td style="text-align:left">⑥成本两路一致 avg_cost×qty ≡ Σ(qty×price)</td><td class="muted">0 笔不符</td><td>0 笔</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">position.qty 已清零，成本来自 legs</td></tr><tr><td>HARD</td><td style="text-align:left">⑦每笔 hold_bars ≥ 1</td><td class="muted">0 笔缺失</td><td>0 笔缺失</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left"></td></tr><tr><td>HARD</td><td style="text-align:left">⑧Σ逐年 realized_pnl ≈ +842,799.7</td><td class="muted">842,799.7</td><td>842,799.5</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">按年取整和是 842,801，差 1.3</td></tr><tr><td>WARN</td><td style="text-align:left">疑似除权污染笔数（单日跌幅<−20%）</td><td class="muted">登记</td><td>36 笔</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">未复权，稳健性切片见附录</td></tr><tr><td>WARN</td><td style="text-align:left">单腿头寸占比</td><td class="muted">100%</td><td>100.0%</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">非单腿时成本口径需重审</td></tr><tr><td>INFO</td><td style="text-align:left">close_reason 取值集合</td><td class="muted">登记</td><td>manual:135/stop:1193</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">退出方式切片见附录，不作判据</td></tr></tbody></table></div>
+
+<h3>9.4 复现</h3>
+<div class="panel"><p class="small">生成器：<code>python scripts/e17_giveback.py</code>（先 <code>--check-only</code> 校准）<br>
+独立校验：<code>python scripts/e17_giveback_verify.py</code>（3 笔手算抽查，不复用生成器函数）<br>
+sha256（前 16 位）：<code>aebcf07ffdd2a0d7</code><br>
+数据源 mtime：bt_e17_2005.db 2026-10-25 10:07, bt_e17_2006.db 2026-10-25 12:56, bt_e17_2007.db 2026-10-25 13:54 …</p></div>
+
+<div class="foot">
+<p><b>结论边界</b>：本报告只量化「回吐了多少」，不预测「移动止损能赚多少」。任何「理论上可多赚」都是上限，真实规则会在假信号上被切碎（框架 §1.2）。</p>
+<p>单因子轮换：本实验只动「持有天数」一个分组变量，其余九维固定（docs/29 §2.3）。样本外（2019+）未参与。</p>
+<p>生成于 2026-10-27 20:15:03 · 1 单位 = 2% 权益；E17 阶梯 t1=3 / t2=2 / t3=1 / t4=0.5</p>
+</div>
+</div></body></html>
