@@ -178,6 +178,12 @@ erDiagram
         TEXT old_value
     }
 ```
+> **复利前提（2026-10-27）**：回测按年独立起跑，`equity_snapshot` 每年首日 `total = 1,000,000`（起始资金），
+> 年末含未平仓头寸的市价估值（即含浮盈浮亏）；`drawdown` 为**年内**距峰值回撤，逐年重置。
+> 滚雪球复利按 `total_d / total_{d-1}` 逐日链式推演、跨年直接衔接，口径见 docs/01 §10.6。
+> ⚠️ `e17_metrics.csv` 的 `ret` 列是**权益口径**（年末权益/100 万 − 1），`pnl` 列是**已实现口径**；
+> 两者在 V 型年（如 2009）会背离，判读必须双口径并列，不得混用。
+
 
 ---
 
@@ -206,7 +212,7 @@ erDiagram
 | watching → exited | 箱体broken_down / 连续4箱不涨 / 人工移除 |
 | watching/holding → suspended | 人工挂起（`pool suspend --resume <价>`，B2） |
 | suspended → watching | 收盘价 ≥ resume_trigger 激活价（poolsync 巡检） |
-| watching/pending/holding → blacklisted | 战绩分级（0017）：最近一笔持仓周期亏损 `realized_pnl<0` → blacklist 冷却 `pool.blacklist_months` 月。A M1（2026-10-23）后 winner 档退役，流转简化为盈利→normal、亏损→blacklist 两态（docs/00 §5.6.5、docs/23 §9 D1） |
+| watching/pending/holding → blacklisted | 战绩分级（0017）：最近一笔持仓周期亏损 `realized_pnl<0` → blacklist 冷却 `pool.blacklist_months` 月。A M1（2026-10-23）后 winner 档退役，流转简化为盈利→normal、亏损→blacklist 两态（docs/00 §5.6.5、docs/00 §5.6.7 D1） |
 
 注：suspended 不占跟踪名额（`pool.maxwatch` 只计 watching+pending+holding，但已降级软参考）；blacklisted 冷却 `pool.blacklist_months` 月后解禁回 normal（0017 战绩分级，非终态；0003 起 CHECK 六值）。
 

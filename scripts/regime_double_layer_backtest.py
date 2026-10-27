@@ -22,7 +22,7 @@ SRC = r'var\bt\full_hist_10pct.db'
 
 
 def load_a_labels():
-    """A 判据：60日低点相邻日比（docs/26 同源）。"""
+    """A 判据：60日低点相邻日比（docs/00 §5.6.8 同源）。"""
     con = sqlite3.connect(f'file:{SRC}?mode=ro', uri=True)
     rows = con.execute(
         "SELECT date, low FROM daily_bar WHERE code='sh000001' ORDER BY date"

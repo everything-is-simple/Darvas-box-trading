@@ -217,7 +217,13 @@ e17_watch.py + e17_annual_tier_report.py  (Python 离线分析, 只读查 db)
    ▼
 var/bt/e17_metrics.csv             (年度汇总, append)
 var/bt/e17_watch_report.md         (摘要, 每次重建)
-var/bt/e17_annual_tier_report.html (逐年分层详细报告, 每年跑完自动补章节)
+var/bt/e17_annual_tier_report.html (逐年分层详细报告, 每年跑完自动补章节)var/bt/e17_annual_tier_report.html (逐年分层详细报告, 每年跑完自动补章节)
+
+e17_snowball.py                    (滚雪球复利, 只读 28 库 equity_snapshot)
+   │  逐年链式复利 level *= total_d/total_{d-1}（跨年直接衔接）
+   ▼
+var/bt/snowball_stats.json         (复利统计: 终值/CAGR/MDD/夏普/Calmar)
+docs/experiments/e17_snowball_report.md + e17_snowball_curve.svg
 
 专项实验报告（独立链路，产物一律进 docs/experiments/，不落 var/bt/）
    │  只读 var/bt/bt_e17_<year>.db × 14 + e17_metrics.csv（mode=ro）
@@ -236,7 +242,7 @@ docs/experiments/<实验>_framework.md (零结果纯规则) + _report.{html,md} 
 | 年度报告 | `var/bt/bt_e17_<year>_report.md` | `p05_yearly_report.py` 后处理 | 单年 Markdown 报告 |
 | metrics 汇总 | `var/bt/e17_metrics.csv` | 每年完成后 append 一行 | 跨年汇总，是"已完成年份"的事实源 |
 | 监控摘要 | `var/bt/e17_watch_report.md` | `e17_watch.py` 每次运行重建 | 含已完成年份四项口径 + 进行中年份进度 + 2008 队列状态 |
-| 逐年分层报告 | `var/bt/e17_annual_tier_report.html` | `e17_annual_tier_report.py` 每年完成后重建 | 每年一章，含 t1-t4 四项口径 + box 高度梯度分布 + 诚实标注 |
+| 逐年分层报告 | `var/bt/e17_annual_tier_report.html` | `e17_annual_tier_report.py` 每年完成后重建 | 每年一章，含 t1-t4 四项口径 + box 高度梯度分布 + 诚实标注 || 复利统计 | `var/bt/snowball_stats.json` + `docs/experiments/e17_snowball_report.md` | `e17_snowball.py` 手动重建 | baseline / baseline+ 的链式复利终值、CAGR、日频最大回撤、夏普、Calmar（口径见 docs/01 §10.6） |
 | 已汇报年份 | `var/bt/e17_reported_years.txt` | 自动汇报成功后 append | 避免重复汇报同一年份 |
 | 队列状态 | `var/bt/e17_years_status.json` | 队列脚本每次状态变化时写 | state=waiting/running/done/failed + 当前 year + detail |
 
@@ -246,7 +252,7 @@ docs/experiments/<实验>_framework.md (零结果纯规则) + _report.{html,md} 
 - **文件锁**：`e17_years.lock` 防止队列并发启动；`MultipleInstances=IgnoreNew` 计划任务设置防止重复触发。
 - **跳过已完成**：每年启动前查 `e17_metrics.csv`，已有该年则跳过；重复启动不会重跑。
 - **失败即停**：任一年失败（rc≠0 或后处理异常）即停止队列，不带着错误往后跑；失败 traceback 写入 `e17_years_status.json` 的 detail 字段。
-- **不并发铁律**：2014 年曾因环境 I/O 争抢出现单日 boxscan 4 小时异常（详见 docs/28），所有回测必须串行。
+- **不并发铁律**：2014 年曾因环境 I/O 争抢出现单日 boxscan 4 小时异常（历史诊断见 git 历史：2026-10-25 E17 耗时诊断），所有回测必须串行。
 
 ### 9.4 自动监控与汇报
 

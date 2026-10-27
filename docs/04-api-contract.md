@@ -352,7 +352,7 @@ type Planner interface {
     Build(ctx context.Context, planDate string) (TaskResult, error)
     // 输入：当日signal + 持仓 + param + equity_snapshot + 市场趋势（A 判据）
     // 输出：trade_plan + plan_order（停损买/卖单，含触发价、委托价、数量、腿号）
-    // A M1（2026-10-23，docs/23 §9 D0）：只首买、一律不加码。首买档位由 **A 判据升势**决定：
+    // A M1（2026-10-23，docs/00 §5.6.7 D0）：只首买、一律不加码。首买档位由 **A 判据升势**决定：
     //   regime.ClassifyDateA(planDate) == Bull（60 日低点逐级抬升）→ 2 单位；其余 → 1 单位。
     //   winner 5x 退役（D1 意图由 D0 实现）；track_level 保留作审计字段不驱动 units。
     //   不择时、不做熊市闸门（2026-10-23 六轮回测证伪，见 docs/00 第 0 条）。
@@ -592,6 +592,33 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
 - **参数化铁律**：参数化后，**每一轮回测必须用单一参数值跑完全部年份**，不得在同一年内混用不同参数——跨年可比性依赖于此。
 - **参数轮次隔离**：每轮参数用独立回测库（如 `bt_e17_<year>_p3.db` 表示 box.period=3），不覆盖默认库。
 
+
+### 9.5 metrics CSV 与闸门参数契约（2026-10-27）
+
+**`e17_metrics.csv` / `b12_metrics_<variant>.csv` 列语义（append-only，逐列冻结）**
+
+| 列 | 语义 | 口径 |
+|---|---|---|
+| year / days | 年份 / 交易日数 | — |
+| initial / final_equity | 起始资金（恒 1,000,000）/ 年末权益 | 权益口径（含未平仓浮盈） |
+| ret | 年收益率 | = final_equity / 1,000,000 − 1 |
+| dd | 年内最深回撤 | 权益口径，逐年重置 |
+| sharpe / pf | 夏普 / 利润因子 | pf = 毛盈利 / \|毛亏损\| |
+| n / wr | 平仓笔数 / 胜率 | 只统计已平仓 |
+| pnl | **已实现**净利 | 与 `ret` 不同源，V 型年会背离（见 docs/03 equity_snapshot 注） |
+
+**闸门参数与审计字段**
+
+| 项 | 契约 |
+|---|---|
+| `gate.ma60.mode` | `off`（默认，完全短路，不读指数、不写审计字段）/ `half`（下方首买降 0.5 单位）/ `stop`（下方不生成买单）；回测时 `--set` 注入，未种子化 |
+| `reason_json.gate_ma60` | 仅非 off 时写入：`{mode, below, close, ma, ok}`，时点为 `plan_date` 与 `regime` 同口径 |
+| 时点冻结 | 闸门判定用 `plan_date` 的收盘 vs MA60；**不得**用 `execute_date` 或未来数据 |
+
+> 本文件只定义**字段语义**，不定义统计口径；加法账/复利账、CAGR/MDD/Calmar 与擂台规则见 docs/01 §10.6，机检 C5 见 docs/06 §7。
+
+> 三变体（off/half/stop）唯一差别 = `gate.ma60.mode`；其余阶梯与参数必须与 `run_e17.bat` 逐字一致，
+> 否则对照失效（off 模式已用四表逐单 diff 验证与历史基线 bit 级等价）。
 ### 9.4 离线分析脚本的只读契约
 
 `scripts/e17_watch.py`、`scripts/e17_annual_tier_report.py` 等离线分析脚本：
