@@ -460,6 +460,13 @@ A 判据的现行用途是**仓位缩放（升势 2 单位）**，不是闸门�
 - 挂单生成即预占额度，撤单/过期释放（与 §5.6.7 D2 的挂单预占同源）；
 - 单票 8% 上限保留（防止在 50% 额度内把风险堆进一只票）。
 
+> **已落地（2026-10-27，commit 见 git log）**：`internal/planner/planner.go` 的 `equityBudget`——
+> 已用额度 = Σ持仓市值（最新收盘，无行情回退成本）+ Σ未成交买单名义（qty×limit_price，
+> `PendingBuyNotional`，口径 `execute_date >= planDate`，因为 Build 在当日撮合之前运行）；
+> 三层取小后 `eqb.take(qty×trigger)` 同日累计。参数：`pos.equity_gate=on`、`pos.equity_limit=0.5`、
+> `pos.single_limit=0.08`；**`pool.max_hold` 默认 0 = 废止**（仅 B-4 变体对照时临时设 7/14）。
+> `pos.equity_gate=off` 可复现历史基线（旧语义只有只数约束）。
+
 **风险登记（系统诞生以来最大的风险抬升）**
 - 暴露从平均 14.9% / 最高 51.1% 抬到 50% 常态：按暴露近似线性放大，复利最大回撤可能从 −21.10%
   走向 −35%~−45%，波动率约 2–3 倍。**接受 50% = 接受回撤显著加深**，必须走完整 B 类验证

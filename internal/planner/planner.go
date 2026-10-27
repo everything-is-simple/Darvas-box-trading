@@ -55,7 +55,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	buyPrem := p.st.ParamRepo.GetFloat("buy.premium", 1.03)
 	sellDisc := p.st.ParamRepo.GetFloat("sell.discount", 0.97)
 	unitPct := p.st.ParamRepo.GetFloat("pos.unit", 0.02) // 1 单位 = 2% 权益
-	maxHold := p.st.ParamRepo.GetInt("pool.max_hold", 7) // 同时最多持仓+挂单数（docs/33）
+	maxHold := p.st.ParamRepo.GetInt("pool.max_hold", 0) // 0 = 废止（docs/00 §5.6.9：改由 50% 权益预算约束）
 	ladder := p.newHighLadder()
 	// G1 观察期（2026-10-21）：入池后 N 个交易日内不产生首笔买入信号（原书 L1895/L1063）。
 	minWatchDays := p.st.ParamRepo.GetInt("pool.min_watch_days", 3)
@@ -105,6 +105,9 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		return res, err
 	}
 	budget := &holdBudget{open: openCount + pendingBuys, max: maxHold}
+	// A′ 50% 权益预算（docs/00 §5.6.9，2026-10-27 拍板）：持仓市值 + 挂单预占 → 剩余额度；
+	// 下单金额 = min(单位仓, 剩余额度, 单票 8%)。max_hold 废止后这是唯一的组合级约束。
+	eqb := p.equityBudget(planDate, equity, unitValue)
 	plannedQty := map[string]int{} // 同日多信号同票时，避免重复超配
 
 	// 信号
@@ -162,7 +165,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 			}
 			// A M1（2026-10-23）：首买单位由 A 判据升势决定（升势 2 / 其余 1），winner 5x 退役。
 			o := p.buyOrder(s, box, market, unitValue,
-				buyPrem, sellDisc, posByCode, budget, plannedQty, planDate, executeDate, maxEntryGap, ladder, gate)
+				buyPrem, sellDisc, posByCode, budget, eqb, plannedQty, planDate, executeDate, maxEntryGap, ladder, gate)
 			if o != nil {
 				orders = append(orders, *o)
 			}
@@ -327,9 +330,41 @@ type gateState struct {
 	ma    float64
 }
 
-func (b *holdBudget) canOpen() bool { return b.open < b.max }
+func (b *holdBudget) canOpen() bool { return b.max <= 0 || b.open < b.max }
 
 func (b *holdBudget) take() { b.open++ }
+
+// equityBudget A′ 权益预算（docs/00 §5.6.9，2026-10-27 拍板）：
+// 永久留 50% 现金，总仓位（持仓市值 + 未成交买单名义）≤ 50% 权益；
+// 单票名义 ≤ 8% 权益。下单金额 = min(单位仓, 剩余额度, 单票上限) 三层取小。
+// 取代 pool.max_hold=7（7 × 实测均值 2.6% ≈ 18%，吃不满 50%，与预算不兼容）。
+type equityBudget struct {
+	on     bool    // pos.equity_gate=on 时生效；off 用于复现历史基线
+	equity float64 // 权益基准（LatestEquity）
+	limit  float64 // 总仓位上限（pos.equity_limit，默认 0.5）
+	single float64 // 单票上限（pos.single_limit，默认 0.08）
+	used   float64 // 已用 = 持仓市值 + 挂单预占名义
+}
+
+// capFor 本单可用的名义上限（剩余总额度与单票上限取小）；off 时无上限。
+func (b *equityBudget) capFor() float64 {
+	if b == nil || !b.on {
+		return math.Inf(1)
+	}
+	rem := b.limit*b.equity - b.used
+	single := b.single * b.equity
+	if single < rem {
+		return single
+	}
+	return rem
+}
+
+// take 预占额度（同日多信号共享累计，防一日内叠加突破 50%）。
+func (b *equityBudget) take(notional float64) {
+	if b != nil {
+		b.used += notional
+	}
+}
 
 // newHighLadder E17：按信号日收盘价距52周新高的距离分档首买单位。
 // 仅当 pos.newhigh_ladder=on 时启用；默认 off 保持 A M1。
@@ -438,6 +473,34 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 	return moves
 }
 
+// equityBudget 计算计划日的已用额度：持仓市值（最新收盘，无行情回退成本）
+// + 未成交买单名义（挂单预占）。pos.equity_gate=off 时原样返回（on=false，无上限），
+// 供 B-4 实验复现历史基线（旧语义 = 只有 pool.max_hold 只数约束）。
+func (p *Planner) equityBudget(planDate string, equity, unitValue float64) *equityBudget {
+	b := &equityBudget{
+		on:     p.st.ParamRepo.GetString("pos.equity_gate", "on") == "on",
+		equity: equity,
+		limit:  p.st.ParamRepo.GetFloat("pos.equity_limit", 0.5),
+		single: p.st.ParamRepo.GetFloat("pos.single_limit", 0.08),
+	}
+	if !b.on {
+		return b
+	}
+	probe, main, err := p.st.TradeRepo.OpenExposureUnits(unitValue)
+	if err != nil {
+		p.log.Printf("⚠ 权益预算：持仓市值读取失败，按 0 计（%v）", err)
+	} else {
+		b.used += (probe + main) * unitValue
+	}
+	n, err := p.st.TradeRepo.PendingBuyNotional(planDate)
+	if err != nil {
+		p.log.Printf("⚠ 权益预算：挂单预占读取失败，按 0 计（%v）", err)
+	} else {
+		b.used += n
+	}
+	return b
+}
+
 // buyOrder 构造停损买单（A M1：首买，一律不加码）。
 // 规则（2026-10-23，var/bt/regime_final_summary_and_prompt.md + docs/23 §9 D0/D1）：
 //   - 交易只发生在「第一次信号」——同一只票持仓期间一律不加码（0017）。
@@ -445,14 +508,16 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 //     升势日 2 单位、其余 1 单位。取消 winner 5x（D1：实证有害无益）。
 //   - E17 实验开关 pos.newhigh_ladder=on 时改为按信号收盘距52周新高分档：
 //     0-5/5-10/10-20/20-40% 分别取参数单位，>cutoff 拒买；默认 off。
-//   - 组合约束 = 同时持仓数上限（pool.max_hold，留 30% 现金），不是试探/主力分桶。
+//   - 组合约束（docs/00 §5.6.9，2026-10-27 拍板）＝ 50% 权益预算：下单金额 = min(单位仓,
+//     50% 剩余额度, 单票 8%)，挂单生成即预占；pool.max_hold 废止（0）。
+//     旧「同时持仓数上限 7 只 / 留 30% 现金」已废——7 × 实测均值 2.6% ≈ 18%，吃不满 50%。
 //   - 不引入 C 判据、不做熊市闸门（2026-10-23 六轮回测硬结论：大盘择时不通）。
 //   - track_level 保留作审计字段（记录该票战绩等级），不再驱动 units。
 // 腿号金字塔（leg1=1/leg2=3/leg3补到10）、第②通道加码、单票上限10单位、主力预算30单位
 //   全部随「不加码」退役（见 docs/00 §5.6）。
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
 	buyPrem, sellDisc float64, posByCode map[string]*contract.Position,
-	budget *holdBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64,
+	budget *holdBudget, eqb *equityBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64,
 	ladder newHighLadder, gate gateState) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
 	// 初始止损（B2 校订 2026-10-22，原书 §4.1 + §3.4）：=被突破箱体上轨（突破点）下方
@@ -531,12 +596,33 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	if qty <= 0 {
 		return nil
 	}
+	// A′ 三层取小（docs/00 §5.6.9）：实际下单 = min(单位仓, 50% 剩余额度, 单票 8%)。
+	// 挂单在生成时即预占额度（eqb.take），撤单/过期由下次 Build 重新计算释放。
+	if eqb != nil && eqb.on {
+		capAmt := eqb.capFor()
+		if capAmt <= 0 {
+			p.log.Printf("跳过 %s：50%% 权益预算已用满（已用 %.0f / 上限 %.0f）",
+				s.Code, eqb.used, eqb.limit*eqb.equity)
+			return nil
+		}
+		if maxQty := lotQty(int(math.Floor(capAmt/trigger)), 1.0); qty > maxQty {
+			if maxQty <= 0 {
+				p.log.Printf("跳过 %s：剩余额度 %.0f 元不足 1 手（触发价 %.2f）", s.Code, capAmt, trigger)
+				return nil
+			}
+			p.log.Printf("缩量 %s：%d → %d 股（剩余额度 %.0f 元，单票上限 %.0f 元）",
+				s.Code, qty, maxQty, capAmt, eqb.single*eqb.equity)
+			qty = maxQty
+			basis = basis + "|eq_cap"
+		}
+	}
 	// 同日同票多信号防重复超配（defense）
 	if plannedQty[s.Code] > 0 {
 		p.log.Printf("跳过 %s：同日已生成买单，不重复", s.Code)
 		return nil
 	}
 	budget.take()
+	eqb.take(float64(qty) * trigger)
 	plannedQty[s.Code] = qty
 
 	reason := map[string]any{
@@ -552,6 +638,14 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		reason["gate_ma60"] = map[string]any{
 			"mode": gate.mode, "below": gate.below,
 			"close": gate.close, "ma": gate.ma, "ok": gate.ok,
+		}
+	}
+	// A′ 预算审计（仅 on 时写；off 保持历史基线逐单等价）。
+	if eqb != nil && eqb.on {
+		reason["equity_budget"] = map[string]any{
+			"limit": eqb.limit, "single": eqb.single,
+			"equity": eqb.equity, "used_before": eqb.used - float64(qty)*trigger,
+			"notional": float64(qty) * trigger,
 		}
 	}
 

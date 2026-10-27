@@ -143,6 +143,19 @@ func (r *TradeRepo) OpenPositionCount() (int, error) {
 	return n, err
 }
 
+// PendingBuyNotional 未成交买单的名义金额合计（docs/00 §5.6.9 挂单预占额度）。
+// 口径与 PendingBuyCount 一致（execute_date >= planDate 且 pending/placed），
+// 名义金额 = qty × limit_price（委托价，不用触发价——保守取更高的一侧；
+// 实际触发价 ≤ limit_price 由 buy.premium 决定，见 planner.buyOrder）。
+func (r *TradeRepo) PendingBuyNotional(planDate string) (float64, error) {
+	var v sql.NullFloat64
+	err := r.db.QueryRow(`SELECT SUM(po.qty * po.limit_price) FROM plan_order po
+		JOIN trade_plan tp ON tp.id = po.trade_plan_id
+		WHERE po.side = 'buy' AND po.status IN ('pending','placed')
+		  AND tp.execute_date >= ?`, planDate).Scan(&v)
+	return v.Float64, err
+}
+
 // PendingBuyCount 未成交买单数（docs/33 §2.2 挂单计入预算）。
 // 口径：trade_plan.execute_date >= planDate 且买单状态仍为 pending/placed（未成交、未撤、未过期）。
 // 为什么是 >= 而不是 docs/33 字面写的 >：Build(d) 在当日撮合 match(d) 之前运行（回放眼 Archive/08 §5

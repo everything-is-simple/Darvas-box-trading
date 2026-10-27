@@ -3,6 +3,7 @@ package planner
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -199,9 +200,18 @@ func TestPlannerNoWinnerBoost(t *testing.T) {
 	}
 }
 
-// TestPlannerMaxHoldCap 0017：同时持仓达上限 pool.max_hold=7 → 不再开新仓。
+// TestPlannerMaxHoldCap 只数上限（B-4 变体①口径）：显式设 pool.max_hold=7 时，
+// 持仓达 7 只不再开新仓。注意 2026-10-27 起该上限已废止（默认 0），
+// 只保留作「新旧成对重跑」的基线变体（docs/33 §四）。
 func TestPlannerMaxHoldCap(t *testing.T) {
 	st := newPlannerStore(t)
+	if err := st.ParamRepo.Set("pool.max_hold", "7"); err != nil {
+		t.Fatal(err)
+	}
+	// 权益预算闸门用大额权益排除干扰：本测试只验证只数口径。
+	if err := st.ParamRepo.Set("pos.equity_gate", "off"); err != nil {
+		t.Fatal(err)
+	}
 	// 已持有 7 只（达上限）
 	for i := 1; i <= 7; i++ {
 		code := fmt.Sprintf("sh60000%d", i)
@@ -966,5 +976,69 @@ func TestGateMA60StopRisingNotTriggered(t *testing.T) {
 	}
 	if units, _ := orders[0].Reason["units"].(float64); units != 2 {
 		t.Errorf("units=%v want 2（升势日 A M1 2 单位，闸门不触发）", units)
+	}
+}
+
+// TestEquityBudgetThreeTier docs/00 §5.6.9 三层取小：min(单位仓, 50% 剩余额度, 单票 8%)。
+func TestEquityBudgetThreeTier(t *testing.T) {
+	// off：无上限，复现历史基线用
+	if got := (&equityBudget{on: false}).capFor(); !math.IsInf(got, 1) {
+		t.Fatalf("off capFor=%v want +Inf", got)
+	}
+	// 空仓：单票 8% 先触顶（80,000 < 剩余 500,000）
+	b := &equityBudget{on: true, equity: 1e6, limit: 0.5, single: 0.08}
+	if got := b.capFor(); got != 80000 {
+		t.Fatalf("空仓 capFor=%.0f want 80000（单票 8%%）", got)
+	}
+	// 已用 480k：剩余 20k 先触顶
+	b.used = 480000
+	if got := b.capFor(); got != 20000 {
+		t.Fatalf("已用480k capFor=%.0f want 20000（剩余额度）", got)
+	}
+	// 已用满：cap=0
+	b.used = 500000
+	if got := b.capFor(); got != 0 {
+		t.Fatalf("已用满 capFor=%.0f want 0", got)
+	}
+	// take 累计（同日多信号叠加不得突破 50%）
+	b2 := &equityBudget{on: true, equity: 1e6, limit: 0.5, single: 0.08}
+	b2.take(300000)
+	b2.take(150000)
+	if b2.used != 450000 || b2.capFor() != 50000 {
+		t.Fatalf("take 累计 used=%.0f cap=%.0f want 450000/50000", b2.used, b2.capFor())
+	}
+}
+
+// TestPlannerEquityGateBlocks docs/00 §5.6.9：只数上限废止后，组合约束只剩 50% 权益预算——
+// 已用 49.8% 时新单被拒；且 reason_json 带 equity_budget 审计字段。
+func TestPlannerEquityGateBlocks(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
+		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
+	}})
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+	// 已用 49.9%（20 只 × 24,950）：剩余 1,000 元 < 1 手（触发价 ~24.7 → 100 股 ≈ 2,472）
+	for i := 1; i <= 20; i++ {
+		seedPosition(t, st, fmt.Sprintf("sh6010%02d", i), 998, 25, 1)
+	}
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range orders {
+		if o.Side == "buy" && o.Code == code {
+			t.Fatalf("50%% 预算已用满，不应再开新仓: qty=%d", o.Qty)
+		}
 	}
 }
