@@ -131,6 +131,9 @@ def structural(con, rows):
         r["mfe"] = (hi * (r["qty"] or 0) / cost - 1) if (hi and cost) else None
     big = [r for r in rows if r["mfe"] is not None and r["mfe"] > 0.5]
     pnl_top3 = sorted((r["realized_pnl"] for r in rows), reverse=True)[:3]
+    hh = {b: sum(1 for h in holds if lo <= h <= hi)
+          for b, lo, hi in [("0", 0, 0), ("1-2", 1, 2), ("3-5", 3, 5), ("6-10", 6, 10),
+                            ("11-20", 11, 20), ("21-60", 21, 60), ("61+", 61, 10 ** 6)]}
     return {
         "ts_n": len(tss), "ts_share": (len(tss) / n) if n else 0.0,
         "ts_pnl": sum(r["realized_pnl"] for r in tss),
@@ -145,9 +148,9 @@ def structural(con, rows):
         "top3_pnl": sum(pnl_top3),
         "by_reason": {k: sum(1 for r in rows if (r["close_reason"] or "?") == k)
                       for k in sorted({(r["close_reason"] or "?") for r in rows})},
-        "hold_hist": {b: sum(1 for h in holds if lo <= h <= hi)
-                      for b, lo, hi in [("1-2", 1, 2), ("3-5", 3, 5), ("6-10", 6, 10),
-                                        ("11-20", 11, 20), ("21-60", 21, 60), ("61+", 61, 10 ** 6)]},
+        "hold_hist": hh,
+        # HARD④：持有分布合计必须等于已平仓笔数，不得静默丢弃
+        "hist_sum": sum(hh.values()), "hist_ok": sum(hh.values()) == n,
     }
 
 
@@ -161,6 +164,10 @@ def load_band(db, year, stale):
         m.update(structural(con, rows))
         m["stale_param"] = con.execute(
             "SELECT value FROM param WHERE key='position.staledays'").fetchone()[0]
+        # 防御：有权益快照但无已平仓样本 = 回测未完成或中途失败，必须拒收，
+        # 否则一个半成品库会被当成「收益率 0%」的档位参与裁定。
+        if m["n"] == 0:
+            raise ValueError("无已平仓样本（回测未完成？）")
         return m
     finally:
         con.close()
@@ -239,6 +246,15 @@ def pct(x, d=1):
 
 def money(x):
     return "—" if x is None else f"{x:,.0f}"
+
+
+def num(x, d=0):
+    """安全数值格式化：None → —，inf → ∞。"""
+    if x is None:
+        return "—"
+    if isinstance(x, float) and (x == float("inf") or x == float("-inf")):
+        return "∞"
+    return f"{x:.{d}f}"
 
 
 def compound(bands, years):
@@ -363,12 +379,12 @@ def render_html(data):
             rc = "pos" if m["ret"] > 0 else "neg"
             A(f"<tr><td>{E(STALE_LABEL.get(s, str(s)))}</td>"
               f"<td class={rc}>{pct(m['ret'], 2)}</td><td>{money(m['eq_end'])}</td>"
-              f"<td class=neg>{pct(m['maxdd'], 2)}</td><td>{m['sharpe']:.2f}</td>"
-              f"<td>{m['n']}</td><td>{pct(m['wr'])}</td><td>{m['pf']:.2f}</td>"
+              f"<td class=neg>{pct(m['maxdd'], 2)}</td><td>{num(m['sharpe'], 2)}</td>"
+              f"<td>{m['n']}</td><td>{pct(m['wr'])}</td><td>{num(m['pf'], 2)}</td>"
               f"<td class={'pos' if m['pnl'] > 0 else 'neg'}>{money(m['pnl'])}</td>"
               f"<td>{m['ts_n']}</td><td>{pct(m['ts_share'])}</td>"
               f"<td class={'pos' if m['ts_pnl'] > 0 else 'neg'}>{money(m['ts_pnl'])}</td>"
-              f"<td>{m['hold_med']:.0f}</td></tr>")
+              f"<td>{num(m['hold_med'])}</td></tr>")
         A("</table>")
     # ---- 复利链接
     A("<h2 id=s3>三、代表年链接复利终值（主判据）</h2>")
@@ -382,11 +398,12 @@ def render_html(data):
             A(f"<tr><td>{E(STALE_LABEL.get(s, str(s)))}</td><td>{c.get('years', 0)}</td>"
               f"<td colspan=4 class=mut>未完跑</td></tr>")
             continue
-        rel = c["terminal"] / comp[2]["terminal"] - 1 if comp.get(2, {}).get("terminal") else 0
+        base_t = (comp.get(2) or {}).get("terminal")
+        rel = (c["terminal"] / base_t - 1) if base_t else None
         rc = "pos" if rel > 0 else ("neg" if rel < 0 else "mut")
         A(f"<tr><td>{E(STALE_LABEL.get(s, str(s)))}</td><td>{c['years']}</td>"
           f"<td>{c['terminal']:.4f}</td><td>{pct(c['cagr'], 2)}</td>"
-          f"<td class=neg>{pct(c['worst_mdd'], 2)}</td><td class={rc}>{rel*100:+.2f}%</td></tr>")
+          f"<td class=neg>{pct(c['worst_mdd'], 2)}</td><td class={rc}>{'—' if rel is None else f'{rel*100:+.2f}%'}</td></tr>")
     A("</table>")
     # ---- 结构指标
     A("<h2 id=s4>四、结构指标（判「怎么变的」，不给分）</h2>")
@@ -400,13 +417,13 @@ def render_html(data):
           f"<th>短持笔数</th><th>大赢家笔数</th><th>大赢家净利</th><th>MFE 中位</th>"
           f"<th>前三赢家占净利</th><th>日均暴露</th><th>持有 P90</th></tr>")
         for s, m in rows:
-            share = (m["top3_pnl"] / m["pnl"]) if m["pnl"] else 0
+            share = (m["top3_pnl"] / m["pnl"]) if (m["pnl"] or 0) > 0 else None
             A(f"<tr><td>{E(STALE_LABEL.get(s, str(s)))}</td><td>{pct(m['ts_share'])}</td>"
               f"<td class={'pos' if m['short_pnl'] > 0 else 'neg'}>{money(m['short_pnl'])}</td>"
               f"<td>{m['short_n']}</td><td>{m['big_n']}</td>"
               f"<td class=pos>{money(m['big_pnl'])}</td><td>{pct(m['mfe_med'])}</td>"
               f"<td>{pct(share, 0)}</td><td>{pct(m['exposure'], 0)}</td>"
-              f"<td>{m['hold_p90']:.0f}</td></tr>")
+              f"<td>{num(m['hold_p90'])}</td></tr>")
         A("</table>")
     # ---- 持有分布
     A("<h2 id=s5>五、持有天数分布变化</h2>")
@@ -415,7 +432,7 @@ def render_html(data):
         rows = [(s, bands.get((s, y))) for s in STALE_ORDER if (s, y) in bands]
         if len(rows) < 2:
             continue
-        keys = ["1-2", "3-5", "6-10", "11-20", "21-60", "61+"]
+        keys = ["0", "1-2", "3-5", "6-10", "11-20", "21-60", "61+"]
         A(f"<h3>{y} 年</h3><table><tr><th>档位</th>" +
           "".join(f"<th>{k} 日</th>" for k in keys) + "</tr>")
         for s, m in rows:
@@ -447,6 +464,18 @@ def render_html(data):
             st = "不通过（off 档 ts 应为 0）"
         A(f"<tr><td>{r['year']}</td><td>{r['stale']}</td><td>{r['param']}</td>"
           f"<td>{r['ts_n']}</td><td class={'ok' if r['ok'] and r.get('off_ok') is not False else 'fail'}>{st}</td></tr>")
+    A("</table>")
+    A("<h3>④ 持有分布合计闭合</h3>")
+    A("<p class=small>各档各年「持有天数分布」合计必须等于已平仓笔数，不得静默丢弃。"
+      "持有天数取 <code>BarCount</code> 口径（<code>date &gt; opened_date</code>，不含开仓日），"
+      "故中位 5 对应 P2-5 报告（含开仓日）的 6。</p>")
+    A("<table><tr><th>年</th><th>档位</th><th>已平仓</th><th>分布合计</th><th>结论</th></tr>")
+    for m in sorted(data["bands"].values(), key=lambda r: (r["year"], r["stale"])):
+        if m["n"] == 0:
+            continue
+        A(f"<tr><td>{m['year']}</td><td>{E(STALE_LABEL.get(m['stale'], str(m['stale'])))}</td>"
+          f"<td>{m['n']}</td><td>{m['hist_sum']}</td>"
+          f"<td class={'ok' if m['hist_ok'] else 'fail'}>{'通过' if m['hist_ok'] else '不通过'}</td></tr>")
     A("</table>")
     A(f"<div class=callout blue><b>复现命令</b>：<code>python scripts/p26_report.py</code>"
       f"（只读 var/bt/p26/*.db 与历史基线库）；回测执行器 <code>scripts/p26_run.py</code>。</div>")
@@ -488,9 +517,9 @@ def render_md(data):
         A("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for s, m in rows:
             A(f"| {STALE_LABEL.get(s, s)} | {pct(m['ret'],2)} | {money(m['eq_end'])} | "
-              f"{pct(m['maxdd'],2)} | {m['sharpe']:.2f} | {m['n']} | {pct(m['wr'])} | "
-              f"{m['pf']:.2f} | {money(m['pnl'])} | {m['ts_n']} | {pct(m['ts_share'])} | "
-              f"{money(m['ts_pnl'])} | {m['hold_med']:.0f} |")
+              f"{pct(m['maxdd'],2)} | {num(m['sharpe'], 2)} | {m['n']} | {pct(m['wr'])} | "
+              f"{num(m['pf'], 2)} | {money(m['pnl'])} | {m['ts_n']} | {pct(m['ts_share'])} | "
+              f"{money(m['ts_pnl'])} | {num(m['hold_med'])} |")
         A("")
     A("## 三、代表年链接复利终值")
     A("")
@@ -501,9 +530,10 @@ def render_md(data):
         if not c.get("terminal"):
             A(f"| {STALE_LABEL.get(s, s)} | {c.get('years',0)} | — | — | — | 未完跑 |")
             continue
-        rel = c["terminal"] / comp[2]["terminal"] - 1 if comp.get(2, {}).get("terminal") else 0
+        base_t = (comp.get(2) or {}).get("terminal")
+        rel = (c["terminal"] / base_t - 1) if base_t else None
         A(f"| {STALE_LABEL.get(s, s)} | {c['years']} | {c['terminal']:.4f} | {pct(c['cagr'],2)} | "
-          f"{pct(c['worst_mdd'],2)} | {rel*100:+.2f}% |")
+          f"{pct(c['worst_mdd'],2)} | {'—' if rel is None else f'{rel*100:+.2f}%'} |")
     A("")
     A("## 四、结构指标")
     A("")
@@ -516,10 +546,10 @@ def render_md(data):
         A("| 档位 | ts 占比 | 短持块净利 | 短持笔数 | 大赢家笔数 | 大赢家净利 | MFE 中位 | 前三赢家占比 | 日均暴露 | 持有 P90 |")
         A("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for s, m in rows:
-            share = (m["top3_pnl"] / m["pnl"]) if m["pnl"] else 0
+            share = (m["top3_pnl"] / m["pnl"]) if (m["pnl"] or 0) > 0 else None
             A(f"| {STALE_LABEL.get(s, s)} | {pct(m['ts_share'])} | {money(m['short_pnl'])} | "
               f"{m['short_n']} | {m['big_n']} | {money(m['big_pnl'])} | {pct(m['mfe_med'])} | "
-              f"{pct(share,0)} | {pct(m['exposure'],0)} | {m['hold_p90']:.0f} |")
+              f"{pct(share,0)} | {pct(m['exposure'],0)} | {num(m['hold_p90'])} |")
         A("")
     A("## 五、持有天数分布")
     A("")
@@ -527,7 +557,7 @@ def render_md(data):
         rows = [(s, bands.get((s, y))) for s in STALE_ORDER if (s, y) in bands]
         if len(rows) < 2:
             continue
-        keys = ["1-2", "3-5", "6-10", "11-20", "21-60", "61+"]
+        keys = ["0", "1-2", "3-5", "6-10", "11-20", "21-60", "61+"]
         A(f"### {y}")
         A("")
         A("| 档位 | " + " | ".join(f"{k} 日" for k in keys) + " |")
@@ -556,6 +586,16 @@ def render_md(data):
             st = "不通过（off 档 ts 应为 0）"
         A(f"| {r['year']} | {r['stale']} | {r['param']} | {r['ts_n']} | {st} |")
     A("")
+    A("### ④ 持有分布合计闭合")
+    A("")
+    A("| 年 | 档位 | 已平仓 | 分布合计 | 结论 |")
+    A("|---|---|---:|---:|---|")
+    for m in sorted(data["bands"].values(), key=lambda r: (r["year"], r["stale"])):
+        if m["n"] == 0:
+            continue
+        A(f"| {m['year']} | {STALE_LABEL.get(m['stale'], m['stale'])} | {m['n']} | "
+          f"{m['hist_sum']} | {'通过' if m['hist_ok'] else '**不通过**'} |")
+    A("")
     A("## 七、复现")
     A("")
     A("```")
@@ -570,14 +610,13 @@ def build():
     years = sorted({y for (_, y) in bands_raw})
     comp = compound(bands_raw, years)
     v = judge(bands_raw, comp, years)
-    # JSON 友好：dict key 转字符串
-    bands = {f"{s}_{y}": m for (s, y), m in bands_raw.items()}
     data = {
         "meta": {"generated_at": datetime.now().isoformat(timespec="seconds"),
                  "years": years, "bands": [s for s in STALE_ORDER
                                            if any(ss == s for ss, _ in bands_raw)]},
         "years": years,
-        "bands": bands,
+        # 渲染用 tuple key；写 JSON 时由 json_payload() 展平为记录列表
+        "bands": bands_raw,
         "compound": {str(k): v_ for k, v_ in comp.items()},
         "verdict": v,
         "hard_baseline": hard_baseline(bands_raw),
@@ -585,6 +624,15 @@ def build():
     }
     data["conclusion"] = make_conclusion(data)
     return data
+
+
+def json_payload(data):
+    """JSON 输出：库里别名为记录列表，避免 tuple key 变成字符串。"""
+    out = dict(data)
+    out["bands"] = sorted((dict(m) for m in data["bands"].values()),
+                          key=lambda r: (r["year"], r["stale"]))
+    out["compound"] = {str(k): v for k, v in data["compound"].items()}
+    return out
 
 
 def make_conclusion(data):
@@ -628,9 +676,10 @@ def main():
     EXP.mkdir(parents=True, exist_ok=True)
     OUT_HTML.write_text(render_html(data), encoding="utf-8")
     OUT_MD.write_text(render_md(data), encoding="utf-8")
-    OUT_JSON.write_text(json.dumps(data, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    OUT_JSON.write_text(json.dumps(json_payload(data), ensure_ascii=False, indent=1, default=str),
+                        encoding="utf-8")
     print(f"已生成：{OUT_HTML.name} / {OUT_MD.name} / {OUT_JSON.name}")
-    print(f"档位×年份：{sorted((k) for k in data['bands'])}")
+    print(f"档位×年份：{sorted(data['bands'].keys())}")
     return 0
 
 
