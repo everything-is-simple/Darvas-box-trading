@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""新基线 · 双镜对照执行器（docs/29 §六之二，2026-10-28 立项）。
+
+跑两组：A = 上证 MA60 停买（B-2 擂主延续，能对账）；B = 中证500 MA60 停买（擂台挑战者）。
+三阶段：1 冒烟（单年）→ 2 代表年 → 3 全量 14 年。串行，失败即停。
+
+参数（跑前写死，docs/29 §六之二）：
+  共同：pos.newhigh_ladder=on, lookback=252, cutoff=40, units.t1=3/t2=2/t3=1/t4=0.5
+        + pool.max_hold=14 + pos.equity_gate=off + gate.ma60.mode=stop
+  区别：A 组 gate.ma60.index=sh000001（默认）；B 组 gate.ma60.index=sh000905
+
+用法：
+  python scripts/base_run.py --dry-run
+  python scripts/base_run.py --years 2007 --mirrors A           # 冒烟：仅上证
+  python scripts/base_run.py --years 2007 --mirrors A,B         # 冒烟：双镜
+  python scripts/base_run.py --years 2007,2010,2013,2018 --mirrors A,B   # 代表年
+  python scripts/base_run.py --years 2005..2018 --mirrors A,B   # 全量
+"""
+import argparse
+import subprocess
+import time
+from datetime import datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+BT = ROOT / "var" / "bt"
+OUT = BT / "base"
+SRC = BT / "full_hist_10pct.db"
+EXE = BT / "darvas_base.exe"
+
+MIRRORS = {
+    "A": ("sh000001", "上证"),
+    "B": ("sh000905", "中证500"),
+}
+
+# 共同参数（跑前写死，不含镜子指数——那是每组唯一差异）
+COMMON = {
+    "pos.newhigh_ladder": "on",
+    "pos.newhigh.lookback": "252",
+    "pos.newhigh.cutoff": "40",
+    "pos.newhigh.units.t1": "3",
+    "pos.newhigh.units.t2": "2",
+    "pos.newhigh.units.t3": "1",
+    "pos.newhigh.units.t4": "0.5",
+    "pool.max_hold": "14",
+    "pos.equity_gate": "off",
+    "gate.ma60.mode": "stop",
+    "position.staledays": "2",
+}
+
+
+def now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def log(msg, path=None):
+    line = f"[{now()}] {msg}"
+    print(line, flush=True)
+    if path:
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+
+def setargs(mirror):
+    idx, _ = MIRRORS[mirror]
+    p = dict(COMMON)
+    p["gate.ma60.index"] = idx
+    return ",".join(f"{k}={v}" for k, v in sorted(p.items()))
+
+
+def run_one(year, mirror, force=False):
+    idx, name = MIRRORS[mirror]
+    db = OUT / f"bt_base{mirror}_{year}.db"
+    logp = OUT / f"bt_base{mirror}_{year}.log"
+    if db.exists() and not force:
+        log(f"跳过（已存在）：{db.name}", logp)
+        return 0
+    sa = setargs(mirror)
+    cmd = [str(EXE), "backtest", "--src", str(SRC),
+           "--from", f"{year}-01-01", "--to", f"{year}-12-31",
+           "--mode", "regime", "--db", str(db), "--set", sa]
+    log(f"START {year} {mirror}({name}) idx={idx} → {db.name}", logp)
+    log(f"  set: {sa}", logp)
+    t0 = time.time()
+    with logp.open("a", encoding="utf-8") as f:
+        rc = subprocess.call(cmd, stdout=f, stderr=subprocess.STDOUT)
+    dt = time.time() - t0
+    if rc != 0:
+        log(f"FAILED {year} {mirror} rc={rc} 耗时 {dt/60:.1f}min", logp)
+        return rc
+    log(f"DONE {year} {mirror} 耗时 {dt/60:.1f}min", logp)
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--years", default="2007", help="逗号分隔，如 2007,2010,2013,2018")
+    ap.add_argument("--mirrors", default="A,B", help="A=上证 B=中证500，逗号分隔")
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args()
+    years = [int(x) for x in a.years.split(",")]
+    mirrors = [m for m in a.mirrors.split(",")]
+    for m in mirrors:
+        if m not in MIRRORS:
+            raise SystemExit(f"未知镜子 {m}，可选 {sorted(MIRRORS)}")
+    OUT.mkdir(parents=True, exist_ok=True)
+    if not EXE.exists():
+        raise SystemExit(f"二进制不存在：{EXE}（须先编译 darvas_base.exe）")
+    if a.dry_run:
+        print(f"二进制 {EXE.name}  源库 {SRC.name}")
+        for y in years:
+            for m in mirrors:
+                idx, name = MIRRORS[m]
+                print(f"\n{y} {m}({name}) idx={idx}")
+                for kv in setargs(m).split(","):
+                    print(f"   {kv}")
+        return 0
+    total = len(years) * len(mirrors)
+    i = 0
+    for y in years:
+        for m in mirrors:
+            i += 1
+            print(f"\n=== [{i}/{total}] {y} {m} ===", flush=True)
+            if run_one(y, m, a.force) != 0:
+                print(f"失败即停：{y} {m}", flush=True)
+                return 1
+    print("\n全部完成")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
