@@ -1,0 +1,112 @@
+<!doctype html><html lang=zh><head><meta charset=utf-8><title>B-4 仓位语义成对重跑</title><style>
+:root{--bg:#0f1115;--fg:#e6e8eb;--muted:#8b929c;--card:#171a21;--line:#262b35;
+--good:#e0524d;--bad:#3fa96a;--warn:#d9a441;--acc:#5b8def}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+font:15px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:36px 22px 80px}
+h1{font-size:25px;margin:0 0 6px;letter-spacing:.4px}
+h2{font-size:18px;margin:38px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+h3{font-size:15px;margin:22px 0 8px;color:#c9ced6}
+.sub{color:var(--muted);font-size:13px;margin-bottom:22px}
+table{border-collapse:collapse;width:100%;margin:10px 0 6px;font-size:13px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:600;background:#141821;text-align:right}
+th:first-child,td:first-child{text-align:left}
+tr:hover td{background:#1b1f28}
+.pos{color:var(--good)}.neg{color:var(--bad)}.mut{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+.callout{border-left:3px solid var(--acc);background:#15192499;padding:13px 16px;margin:14px 0;border-radius:0 8px 8px 0}
+.callout.red{border-color:var(--good)}.callout.green{border-color:var(--bad)}
+.callout.amber{border-color:var(--warn)}
+.tag{display:inline-block;padding:1px 7px;border-radius:5px;font-size:12px;background:#222836;color:#aeb6c2}
+.ok{color:var(--bad);font-weight:600}.fail{color:var(--good);font-weight:600}
+.small{font-size:12.5px;color:var(--muted)}
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 8px}
+.toc a{color:var(--acc);text-decoration:none;font-size:13px;padding:3px 9px;border:1px solid var(--line);border-radius:6px}
+code{background:#1d222c;padding:1px 5px;border-radius:4px;font-size:12.5px}
+</style></head><body><div class=wrap>
+<h1>B-4 · 仓位语义成对重跑</h1>
+<div class=sub>Darvas 箱体量化系统 · 十维 #10（买多少）· B 类单变量回测 · 生成于 2026-10-28 19:32</div>
+<div class=toc><a href=#s0>核心结论</a><a href=#s1>变体与样本</a><a href=#s2>HARD① 对账</a><a href=#s3>逐变体逐年</a><a href=#s4>复利与裁定</a><a href=#s5>结构指标</a><a href=#s6>附录</a></div>
+<h2 id=s0>一、核心结论</h2>
+<div class=callout>
+<div>阶段：<b>matrix</b>；已跑变体 [1, 2, 3]、年份 [2007, 2010, 2013, 2018]。</div>
+<div>HARD① 判定 <b>B</b> —— 不完全复现但可归因（① 降级为同二进制锚，①②③ 内部仍可比）。</div>
+<div>① 旧语义：1 年链接终值 <b>1.649×</b>（CAGR +64.86%、最差 MDD -5.22%）。</div>
+<div>② 过渡：4 年链接终值 <b>2.235×</b>（CAGR +22.27%、最差 MDD -11.41%）。</div>
+<div>③ 新默认：4 年链接终值 <b>1.922×</b>（CAGR +17.74%、最差 MDD -10.58%）。</div>
+<div>裁定：<b>非单调 / 无稳定结论</b> —— ③ 相对 ①：复利 +16.58%、MDD 差 -5.36pp，不满足任一单边条件 → 按 H2 处理，登记「机制可分离但结论不稳定」，不得挑单点最优。 ⚠️ HARD① 判 B：① 为「新二进制下的旧语义锚」，其绝对值不得与 14 年历史库横比。</div>
+</div>
+<h2 id=s1>二、变体与样本</h2>
+<table><tr><th>变体</th><th>pos.equity_gate</th><th>pool.max_hold</th><th>语义</th></tr>
+<tr><td>① 旧语义</td><td>off</td><td>7</td><td style='text-align:left'>14 年历史基线所用（显式传参才能回到）</td></tr>
+<tr><td>② 过渡</td><td>off</td><td>14</td><td style='text-align:left'>只放宽只数上限，不加预算闸门（分离机制用）</td></tr>
+<tr><td>③ 新默认</td><td>on</td><td>0</td><td style='text-align:left'>0018 生产语义：50% 权益闸门 + 挂单预占</td></tr>
+</table>
+<p class=small>年份 [2007, 2010, 2013, 2018]；噪声口径 ±3%；MDD 不更差容差 0.5pp。</p>
+<h2 id=s2>三、HARD① 对账（生死线）</h2>
+<table><tr><th>年</th><th>判定</th><th>历史笔数</th><th>变体笔数</th><th>历史 Σpnl</th><th>变体 Σpnl</th><th>仅历史</th><th>仅变体</th><th>金额差</th></tr>
+<tr><td>2007</td><td class=mut>B</td><td>75</td><td>65</td><td>421,255</td><td>549,454</td><td>23</td><td>13</td><td>37</td></tr>
+</table>
+<h3>2007 参数差异</h3><table><tr><th>键</th><th>历史</th><th>变体</th><th>可归因</th></tr>
+<tr><td>pos.equity_gate</td><td>None</td><td>off</td><td class=ok>是</td></tr>
+<tr><td>pos.equity_limit</td><td>None</td><td>0.5</td><td class=ok>是</td></tr>
+<tr><td>pos.single_limit</td><td>None</td><td>0.08</td><td class=ok>是</td></tr>
+</table>
+<p class=small>A=逐笔全等；B=差异可归因到 f6a4c4c/caac49f/0018，① 降级为同二进制锚、绝对值不得与历史库横比；C=不可归因，实验作废。判据跑前写死于框架 §6.2。</p>
+<h2 id=s3>四、逐变体逐年</h2>
+<table><tr><th>变体</th><th>年</th><th>笔数</th><th>收益</th><th>MDD</th><th>Sharpe</th><th>Σpnl</th><th>PF</th><th>胜率</th><th>保本胜率</th><th>缺口</th><th>集中度</th><th>剔除前三</th></tr>
+<tr><td>① 旧语义</td><td>2007</td><td>65</td><td class=pos>64.86%</td><td class=neg>-5.22%</td><td>4.65</td><td class=pos>549,454</td><td>4.86</td><td>40.0%</td><td>12.1%</td><td class=pos>27.9%</td><td>69.1%</td><td class=pos>169,760</td></tr>
+<tr><td>② 过渡</td><td>2007</td><td>116</td><td class=pos>118.29%</td><td class=neg>-7.90%</td><td>4.82</td><td class=pos>963,551</td><td>4.46</td><td>41.4%</td><td>13.7%</td><td class=pos>27.7%</td><td>48.6%</td><td class=pos>495,292</td></tr>
+<tr><td>② 过渡</td><td>2010</td><td>147</td><td class=neg>-8.32%</td><td class=neg>-11.41%</td><td>-0.81</td><td class=neg>-107,565</td><td>0.44</td><td>21.1%</td><td>37.7%</td><td class=neg>-16.6%</td><td>—</td><td class=neg>-143,267</td></tr>
+<tr><td>② 过渡</td><td>2013</td><td>209</td><td class=pos>17.52%</td><td class=neg>-5.31%</td><td>1.51</td><td class=pos>141,487</td><td>1.65</td><td>25.8%</td><td>17.4%</td><td class=pos>8.4%</td><td>65.6%</td><td class=pos>48,633</td></tr>
+<tr><td>② 过渡</td><td>2018</td><td>202</td><td class=neg>-4.99%</td><td class=neg>-6.75%</td><td>-0.98</td><td class=neg>-50,946</td><td>0.63</td><td>17.3%</td><td>25.0%</td><td class=neg>-7.7%</td><td>—</td><td class=neg>-88,087</td></tr>
+<tr><td>③ 新默认</td><td>2007</td><td>159</td><td class=pos>97.01%</td><td class=neg>-7.36%</td><td>4.11</td><td class=pos>779,287</td><td>3.60</td><td>44.7%</td><td>18.3%</td><td class=pos>26.4%</td><td>35.9%</td><td class=pos>499,407</td></tr>
+<tr><td>③ 新默认</td><td>2010</td><td>288</td><td class=neg>-3.43%</td><td class=neg>-10.58%</td><td>-0.17</td><td class=neg>-84,729</td><td>0.64</td><td>19.8%</td><td>27.9%</td><td class=neg>-8.1%</td><td>—</td><td class=neg>-127,636</td></tr>
+<tr><td>③ 新默认</td><td>2013</td><td>363</td><td class=pos>10.79%</td><td class=neg>-6.92%</td><td>0.84</td><td class=pos>80,423</td><td>1.26</td><td>23.1%</td><td>19.2%</td><td class=pos>3.9%</td><td>112.1%</td><td class=neg>-9,768</td></tr>
+<tr><td>③ 新默认</td><td>2018</td><td>302</td><td class=neg>-8.82%</td><td class=neg>-10.31%</td><td>-1.24</td><td class=neg>-89,245</td><td>0.55</td><td>16.9%</td><td>26.9%</td><td class=neg>-10.0%</td><td>—</td><td class=neg>-128,685</td></tr>
+</table>
+<p class=small>保本胜率 = 1/(1+平均盈亏比)，与 P0-1/P2-5 同源；缺口 = 胜率 − 保本胜率；集中度 = 前三赢家占净利比重（净利≤0 时显示 —）。</p>
+<h2 id=s4>五、复利与裁定</h2>
+<table><tr><th>变体</th><th>年数</th><th>链接终值</th><th>CAGR</th><th>最差 MDD</th><th>Calmar</th></tr>
+<tr><td>① 旧语义</td><td>1</td><td>1.649×</td><td>64.86%</td><td class=neg>-5.22%</td><td>12.42</td></tr>
+<tr><td>② 过渡</td><td>4</td><td>2.235×</td><td>22.27%</td><td class=neg>-11.41%</td><td>1.95</td></tr>
+<tr><td>③ 新默认</td><td>4</td><td>1.922×</td><td>17.74%</td><td class=neg>-10.58%</td><td>1.68</td></tr>
+</table>
+<div class='callout amber'><b>裁定：非单调 / 无稳定结论</b><br>③ 相对 ①：复利 +16.58%、MDD 差 -5.36pp，不满足任一单边条件 → 按 H2 处理，登记「机制可分离但结论不稳定」，不得挑单点最优。 ⚠️ HARD① 判 B：① 为「新二进制下的旧语义锚」，其绝对值不得与 14 年历史库横比。</div>
+<h3>逐年符号表</h3><table><tr><th>年</th><th>① 旧语义</th><th>② 过渡</th><th>③ 新默认</th><th>③−①</th></tr>
+<tr><td>2007</td><td class=pos>64.86%</td><td class=pos>118.29%</td><td class=pos>97.01%</td><td class=pos>32.16%</td></tr>
+<tr><td>2010</td><td class=>—</td><td class=neg>-8.32%</td><td class=neg>-3.43%</td><td class=>—</td></tr>
+<tr><td>2013</td><td class=>—</td><td class=pos>17.52%</td><td class=pos>10.79%</td><td class=>—</td></tr>
+<tr><td>2018</td><td class=>—</td><td class=neg>-4.99%</td><td class=neg>-8.82%</td><td class=>—</td></tr>
+</table>
+<h2 id=s5>六、结构指标（判「怎么变的」，不给分）</h2>
+<table><tr><th>变体</th><th>年</th><th>平均持仓</th><th>最大持仓</th><th>日均暴露</th><th>单票最大</th><th>闸门饱和度</th><th>贴顶比例</th><th>短持块净利</th><th>大赢家笔数</th><th>大赢家净利</th><th>ts_n</th><th>ts_share</th></tr>
+<tr><td>① 旧语义</td><td>2007</td><td>3.7</td><td>7</td><td>22.2%</td><td>6.1%</td><td>—</td><td>—</td><td class=neg>-80,979</td><td>9</td><td class=pos>591,764</td><td>29</td><td>44.6%</td></tr>
+<tr><td>② 过渡</td><td>2007</td><td>6.8</td><td>14</td><td>39.8%</td><td>6.4%</td><td>—</td><td>—</td><td class=neg>-78,708</td><td>13</td><td class=pos>898,823</td><td>54</td><td>46.6%</td></tr>
+<tr><td>② 过渡</td><td>2010</td><td>9.2</td><td>14</td><td>31.0%</td><td>6.3%</td><td>—</td><td>—</td><td class=neg>-138,680</td><td>3</td><td class=pos>27,086</td><td>100</td><td>68.0%</td></tr>
+<tr><td>② 过渡</td><td>2013</td><td>11.6</td><td>14</td><td>38.0%</td><td>6.4%</td><td>—</td><td>—</td><td class=neg>-146,328</td><td>11</td><td class=pos>179,377</td><td>139</td><td>66.5%</td></tr>
+<tr><td>② 过渡</td><td>2018</td><td>7.6</td><td>14</td><td>15.9%</td><td>6.1%</td><td>—</td><td>—</td><td class=neg>-90,096</td><td>1</td><td class=pos>4,311</td><td>126</td><td>62.4%</td></tr>
+<tr><td>③ 新默认</td><td>2007</td><td>8.7</td><td>29</td><td>37.6%</td><td>6.3%</td><td>50.0%</td><td>0.0%</td><td class=neg>-61,703</td><td>18</td><td class=pos>677,146</td><td>69</td><td>43.4%</td></tr>
+<tr><td>③ 新默认</td><td>2010</td><td>17.2</td><td>49</td><td>45.9%</td><td>6.3%</td><td>50.0%</td><td>0.0%</td><td class=neg>-179,436</td><td>6</td><td class=pos>49,740</td><td>197</td><td>68.4%</td></tr>
+<tr><td>③ 新默认</td><td>2013</td><td>19.4</td><td>35</td><td>49.0%</td><td>6.3%</td><td>50.0%</td><td>0.0%</td><td class=neg>-222,311</td><td>14</td><td class=pos>199,211</td><td>244</td><td>67.2%</td></tr>
+<tr><td>③ 新默认</td><td>2018</td><td>11.6</td><td>36</td><td>22.7%</td><td>6.2%</td><td>50.0%</td><td>0.0%</td><td class=neg>-145,082</td><td>1</td><td class=pos>4,311</td><td>195</td><td>64.6%</td></tr>
+</table>
+<div class='callout amber'><b>诚实边界：拦单数不可得。</b>`equity_budget` 审计只在买单**生成时**写入（<code>planner.go:645</code>），被闸门拒绝的候选不产生订单，故「拒绝了多少笔」无法由库反推。本报告用**闸门饱和度**（买单提交后预算占用/上限的最大值与贴顶比例）作代理：饱和度接近上限 → 闸门真的咬住了；远低于上限 → 闸门在本年几乎未起作用。</div>
+<h2 id=s6>七、附录</h2>
+<h3>7.1 HARD② 参数生效 / HARD④ 闭合</h3>
+<table><tr><th>年</th><th>变体</th><th>gate</th><th>max_hold</th><th>②参数</th><th>已平仓</th><th>未平仓</th><th>建仓</th><th>④闭合</th><th>持有分布合计</th></tr>
+<tr><td>2007</td><td>① 旧语义</td><td>off</td><td>7</td><td class=ok>通过</td><td>65</td><td>7</td><td>72</td><td class=ok>通过</td><td>65 ✔</td></tr>
+<tr><td>2007</td><td>② 过渡</td><td>off</td><td>14</td><td class=ok>通过</td><td>116</td><td>14</td><td>130</td><td class=ok>通过</td><td>116 ✔</td></tr>
+<tr><td>2010</td><td>② 过渡</td><td>off</td><td>14</td><td class=ok>通过</td><td>147</td><td>4</td><td>151</td><td class=ok>通过</td><td>147 ✔</td></tr>
+<tr><td>2013</td><td>② 过渡</td><td>off</td><td>14</td><td class=ok>通过</td><td>209</td><td>11</td><td>220</td><td class=ok>通过</td><td>209 ✔</td></tr>
+<tr><td>2018</td><td>② 过渡</td><td>off</td><td>14</td><td class=ok>通过</td><td>202</td><td>2</td><td>204</td><td class=ok>通过</td><td>202 ✔</td></tr>
+<tr><td>2007</td><td>③ 新默认</td><td>on</td><td>0</td><td class=ok>通过</td><td>159</td><td>28</td><td>187</td><td class=ok>通过</td><td>159 ✔</td></tr>
+<tr><td>2010</td><td>③ 新默认</td><td>on</td><td>0</td><td class=ok>通过</td><td>288</td><td>9</td><td>297</td><td class=ok>通过</td><td>288 ✔</td></tr>
+<tr><td>2013</td><td>③ 新默认</td><td>on</td><td>0</td><td class=ok>通过</td><td>363</td><td>21</td><td>384</td><td class=ok>通过</td><td>363 ✔</td></tr>
+<tr><td>2018</td><td>③ 新默认</td><td>on</td><td>0</td><td class=ok>通过</td><td>302</td><td>3</td><td>305</td><td class=ok>通过</td><td>302 ✔</td></tr>
+</table>
+<h3>7.2 复现</h3>
+<p class=small>回测执行器 <code>scripts/p4_run.py</code>；HARD① 独立校验 <code>scripts/p4_verify.py</code>；本报告 <code>python scripts/p4_report.py</code>。指标口径复用 <code>scripts/p26_report.py</code>（同一引擎，避免两套 MDD/暴露）。</p>
+</div></body></html>

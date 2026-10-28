@@ -131,12 +131,17 @@ def check_c3_params():
     keys = set()
     for b in blocks:
         keys |= set(re.findall(r"\('([\w.]+)',\s*'", b))
+    # 0019 起：死参数用 DELETE 清理。DELETE 的键应从「种子累积键集合」中剔除，
+    # 否则 C3 会把「本应删除的键」误报为 docs/01 缺失。方向是：种子-删除 == docs/01 活参数。
+    dropped = set(re.findall(r"'([\w.]+)'", "\n".join(
+        re.findall(r"DELETE FROM param\s+WHERE key IN\s*\((.*?)\)", sql, re.I | re.S))))
+    keys -= dropped
     req = read(REQ_MD)
     doc_keys = set(re.findall(r"`([\w.]+)`", req))
     missing = keys - doc_keys
     if missing:
         return fail(f"C3 参数键DDL有但docs/01§6无: {missing}")
-    ok(f"C3 参数键对齐 ({len(keys)}键)")
+    ok(f"C3 参数键对齐 ({len(keys)}键，清理死参数 {len(dropped)} 键)")
     return 0
 
 def check_c4_schedule():

@@ -18,8 +18,8 @@
 | 1 | 买什么 | 候选池 + 跟踪池中的突破股票清单 |
 | 2 | 何时买 | 明日停损买单触发价（箱体上轨上方） |
 | 3 | 买多少 | A M1 仓位：升势日首买 2 单位、其余 1 单位（一律不加码，见 docs/00 §5.6.7 D0） |
-| 4 | 卖什么 | 跌破箱体下轨的持仓清单 |
-| 5 | 何时卖 | 明日止损卖单触发价（最新箱体下轨下方） |
+| 4 | 卖什么 | 跌破**最新**箱体下轨的持仓清单（box 是活的，止损底随新箱体上移，见 docs/00 §5.1） |
+| 5 | 何时卖 | 明日止损卖单触发价（**最新**箱体下轨下方） |
 | 6 | 卖多少 | 全部（达瓦斯纪律：一次全出） |
 
 ---
@@ -167,75 +167,56 @@
 
 ## 6. 仓位与风险参数（默认值，全部可调）
 
+> **2026-10-28 全量清点（对照 `internal/` 代码引用）**：原表 62 键，其中 **29 键代码不读（死参数）**，
+> 已从下表移除并集中登记于文末「已废除参数清单」。下表只列**代码实际读取**的参数。
+
+### 6.0 活参数（代码实际读取）
+
 | 参数 | 键 | 默认 | 依据 |
 |------|-----|------|------|
-| 单笔风险（第1腿） | `risk.leg1` | 1.0% | 测试单 |
-| 单笔风险（第2/3腿） | `risk.leg23` | 2.0% | 确认/加码 |
-| 单股仓位上限 | `risk.maxpos` | 20% | T+1补偿 |
-| 试探仓股数下限 | `risk.probe_min_shares` | 200股 | 原书：首批试探200-500股 |
-| 试探仓名义上限 | `risk.probe_max_pct` | 5% | 原书500股的A股等价（500股茅台≈75%权益不可行） |
-| 确认放大倍数 | `risk.scale` | 5倍 | 原书：确认后放大3-10倍 |
-| 买入触发溢价 | `buy.premium` | ×1.03 | 突破确认 |
+| 买入触发溢价 | `buy.premium` | ×1.03 | 突破确认（**梯度未验，P1-4**） |
 | 卖出触发折价 | `sell.discount` | ×0.97 | 止损滑价 |
-| 进场跳空上限 | `match.max_entry_gap` | 1.05 | P0-2（2026-10-21）：成交价/触发价 > 1.05 弃单（达瓦斯买突破点+3%，非突破后追高） |
-| 撮合滑点 | `match.slippage` | 0.002 | C4（2026-10-22）：模拟成交买贵卖贱 0.2%，0=关闭；先加滑点再过 max_entry_gap 闸门（闸门校验实际要付的价）。archive/18 R5 估算年影响 0.3-0.8% |
-| 放量倍数 | `box.volmult` | ×2.0 | 达瓦斯成交量确认 |
+| 进场跳空上限 | `match.max_entry_gap` | 1.05 | P0-2：成交价/触发价 > 1.05 弃单（**梯度未验**） |
+| 撮合滑点 | `match.slippage` | 0.002 | C4：模拟成交买贵卖贱 0.2% |
+| 放量倍数 | `box.volmult` | ×2.0 | 达瓦斯成交量确认（**梯度未验，P1-4**） |
 | 均量窗口 | `box.volwindow` | 50日 | 放量参照基准 |
-| 箱体最小宽度 | `box.min_width` | 0.05 | A2 校订（2026-10-22）：箱体宽度校验 (top-bottom)/top ≥ 该值，工程假设非原书规则（原书仅三日法则，宽度自然走出）；参数化供回测校准，见 docs/00 §3.5 |
+| 箱体最小宽度 | `box.min_width` | 0.05 | A2 校订：宽度校验 (top-bottom)/top ≥ 0.05（**梯度未验**） |
 | RS窗口 | `screen.rswindow` | 20日 | 相对强度 |
-| RS超额收益下限 | `screen.rs_excess_min` | 0.20 | A1（2026-10-22）：20日个股涨幅−上证涨幅 ≥ 0.20（+20pp）得RS分；熊市抗跌股可得分（L1273「股市下跌时逆市而动」）。阈值以百分点直接可解释 |
-| RS阈值（退役） | `screen.rsthreshold` | 1.2 | ⚠️ 2026-10-22 A1 起退役：比值法市场极值处失真（深熊分母塌缩/温和熊市筛掉抗跌股，docs/00 §6 注2）。保留键作对照，代码不再读取 |
+| RS超额收益下限 | `screen.rs_excess_min` | 0.20 | A1：20日个股涨幅−上证涨幅 ≥ 20pp 得RS分（**梯度未验**） |
 | 流动性门槛 | `screen.turnover` | 5000万 | A股适配 |
-| 箱体最长有效期 | `screen.maxboxage` | 60日 | 横盘过久出池 |
 | 跟踪池横盘箱上限 | `pool.flatboxmax` | 4 | 连续4箱不涨出池 |
-| 太晚规则阈值 | `screen.latedays` | 4日 | 原书：突破后第4日还没买=太晚，放弃 |
-| 两亏拉黑阈值 | `pool.maxloss` | 2次 | ⚠️ **0017 退役**：两亏永久拉黑改为「战绩分级（最近一笔亏损→黑名单，冷却N月）」 |
-| 跟踪池活跃上限 | `pool.maxwatch` | 8支 | ⚠️ **2026-10-21 降级软参考**：原书 L1074「节省电报费」倒逼，系统无此成本；不再拒绝入池，仅日志告警。资金预算（单位制）是唯一约束 |
-| 入池观察期 | `pool.min_watch_days` | 3日 | G1（2026-10-21）：入池后 N 个交易日内不产生首笔买单（原书 L1895/L1063「投资前仔细研究」）；pyramid 加码不受限 |
-| 不获利持仓约束 | `position.staledays` | 2日 | 原书3周≈15交易日（1960年代节奏）；B3 校订（2026-10-22）改2：开仓后N个交易日收盘仍≤成本→退出，尽快斩断亏损（《简简单单做股票》L755「不赚钱立刻出局」+A股T+1） |
-| 最大腿数 | `risk.maxlegs` | 3 | ⚠️ **0017 退役**：腿号金字塔废除（一律不加码，leg 恒为1） |
-| 第②通道加码上限 | `risk.addon_max_premium` | 7% | ⚠️ **0017 退役**：第②通道加码废除 |
-| 佣金费率 | `fee.commission_rate` | 万2.5 | 双向（M8.2 撮合） |
-| 单笔最低佣金 | `fee.commission_min` | 5元 | 券商最低收费（M8.2 撮合） |
-| 印花税 | `fee.stamp_tax` | 千1 | 卖出单边（M8.2 撮合） |
-| 过户费 | `fee.transfer_rate` | 万0.1 | 双向简化（M8.2 撮合） |
-| 体制动量窗口 | `regime.window` | 60日 | **已退役**（M8.3 动量法，2026-10-19 改箱体法；M8.7 证伪后保留禁用作对照） |
-| 牛阈值 | `regime.bull_thresh` | +10% | **已退役**（动量法） |
-| 熊阈值 | `regime.bear_thresh` | -10% | **已退役**（动量法） |
-| 仓位系数·牛 | `regime.mult.bull` | 2.0 | **已退役**（M8.7 证伪，archive/12；保留禁用，M8.8 失败可回滚） |
-| 仓位系数·猴 | `regime.mult.range` | 0.5 | **已退役**（M8.7） |
-| 仓位系数·熊 | `regime.mult.bear` | 0.2 | **已退役**（M8.7） |
-| 晴雨表指数 | `regime.indices` | sh000001 | **已退役**（M8.7 单一上证指数版，证伪） |
-**市场宽度标定（M8.8 内生法，← 沉淀自 archive/13）**：宽度比率 `ratio = ΣU/(ΣU+ΣD)`，U/D 为窗口内全市场个股（kind=stock、上市≥min_history 日历日）`box.Scan` 产生的 broken_up / broken_down 事件数。`ratio ≥ bull_thresh` 连续 `confirm` 日 → 牛（主力仓启用）；`< bear_thresh` 连续 `confirm` 日 → 熊（仅日志区分，仓位同猴）。已知偏差：BreadthAgg 读 box 表最终状态，宽度信号不可离线复现（archive/18 二(3)），修复列 archive/19 E6。
-
-| 宽度窗口 | `regime.breadth.window` | 20 | 滚动窗口交易日（M8.8，2026-10-20 用户拍板） |
-| 牛触发阈值 | `regime.breadth.bull_thresh` | 0.55 | 连续 3 日 ≥ 触发牛（主力仓启用） |
-| 熊标记阈值 | `regime.breadth.bear_thresh` | 0.40 | 仅日志区分，仓位规则同猴 |
-| 确认日数 | `regime.breadth.confirm` | 3 | 与三日法则同构，过滤假脉冲 |
+| 太晚规则阈值 | `screen.latedays` | 4日 | 原书：突破后第4日没买=太晚 |
+| 入池观察期 | `pool.min_watch_days` | 3日 | G1：入池后 N 个交易日内不产生首笔买单 |
+| 不获利持仓约束 | `position.staledays` | 2日 | B3 校订：开仓后 N 个交易日收盘仍≤成本→退出（**P2-6a 梯度待验**） |
+| 佣金费率 | `fee.commission_rate` | 万2.5 | 双向 |
+| 单笔最低佣金 | `fee.commission_min` | 5元 | 券商最低收费 |
+| 印花税 | `fee.stamp_tax` | 千1 | 卖出单边 |
+| 过户费 | `fee.transfer_rate` | 万0.1 | 双向简化 |
+| 宽度窗口 | `regime.breadth.window` | 20 | M8.8 滚动窗口交易日 |
+| 牛触发阈值 | `regime.breadth.bull_thresh` | 0.55 | 连续 3 日 ≥ 触发牛 |
+| 熊标记阈值 | `regime.breadth.bear_thresh` | 0.40 | 仅日志区分 |
+| 确认日数 | `regime.breadth.confirm` | 3 | 与三日法则同构 |
 | 次新过滤 | `regime.breadth.min_history` | 60 | 个股最少 60 根日线才计事件 |
-| A 判据回看 | `regime.a.lookback` | 60 | A M1（2026-10-23）：代码默认值，未种子化（取默认即生效）；planner 调 `regime.ClassifyDateA` 读 sh000001 最近 lookback+1 根 low |
-| A 升势阈值 | `regime.a.up_bias` | 1.002 | cur(末60日最低) > prev(前60日最低) × 此值 → 升势，首买 2 单位 |
-| A 降势阈值 | `regime.a.down_bias` | 0.998 | cur < prev × 此值 → 降势（A M1 不做熊市闸门，降势同震荡=1 单位） |
-| 单位市值 | `pos.unit` | 0.02 | 1 单位 = 2% 权益（A M1 升势日首买 2 单位=4%、其余 1 单位=2%） |
-| 赢家池首买单位 | `pos.units.winner` | 5 | ⚠️ **A M1 退役**（2026-10-23，docs/00 §5.6.7 D1→D0）：planner 不再读取，winner 5x 取消；首买单位改由 A 判据升势决定（升势2/其余1）。键保留作审计 |
-| 黑名单冷却月数 | `pool.blacklist_months` | 12 | 0017：最近一笔亏损→黑名单，冷却 N 月后解禁回普通池。2026-10-24 修复：截止日以清仓日（回放=模拟日）为基准，不再用 `time.Now`；E16 扩展语义 `0`=关闭拉黑、`<0`=永久（截止日 9999-12-31） |
-| 同时持仓上限 | `pool.max_hold` | 0 | ⚠️ **已废止**（2026-10-27，docs/00 §5.6.9）：0 = 不限只数，组合级约束改由 50% 权益预算承担；设 >0 仅用于 B-4 变体对照 |
-| 权益闸门开关 | `pos.equity_gate` | on | **A′ 50% 总仓位预算**（docs/00 §5.6.9，2026-10-27 拍板）：on = 生效，off = 复现历史基线（旧语义只有只数约束） |
-| 总仓位上限 | `pos.equity_limit` | 0.5 | 永久留 50% 现金：Σ(持仓市值)+Σ(未成交买单名义) ≤ 此值 × 权益 |
-| 单票上限 | `pos.single_limit` | 0.08 | 单票名义 ≤ 8% 权益（4 单位），防在 50% 额度内把风险堆进一只票 |
-| 单位总数 | `pos.units_total` | 50 | ⚠️ **0017 退役**（2026-10-22）：单位制预算随「不加码」废弃，改「持仓数上限」约束 |
-| 试探仓总顶 | `pos.units.probe` | 5 | ⚠️ **0017 退役**：试探/主力分桶废除 |
-| 主力仓总顶 | `pos.units.main` | 30 | ⚠️ **0017 退役**：主力预算废除 |
-| 预备仓 | `pos.units.reserve` | 15 | ⚠️ **0017 退役**（永不动 30% 改由 pool.max_hold 承载） |
-| 单票试探·熊猴 | `pos.units.per_stock_probe_bear` | 1 | ⚠️ **0017 退役**：首买档位改由战绩等级决定（普通1/赢家5） |
-| 单票试探·牛 | `pos.units.per_stock_probe_bull` | 2 | ⚠️ **0017 退役**：不择时，无牛熊档位 |
-| 单票主力上限 | `pos.units.per_stock_main_max` | 10 | ⚠️ **0017 退役**：单票上限随「不加码」失效（赢家池首买最多5单位） |
-| 单票主力加码步长 | `pos.units.per_stock_main_step` | 3 | ⚠️ **0017 退役**：加码步长废除 |
-| TDX数据根目录 | `tdx.root` | H:/new_tdx64/vipdoc | 运行时路径配置 |
+| A 判据回看 | `regime.a.lookback` | 60 | 代码默认值（**未种子化**，取默认即生效） |
+| A 升势阈值 | `regime.a.up_bias` | 1.002 | 升势→首买 2 单位（**未调过**） |
+| A 降势阈值 | `regime.a.down_bias` | 0.998 | 降势→1 单位（**未调过**） |
+| 单位市值 | `pos.unit` | 0.02 | 1 单位 = 2% 权益 |
+| 跟踪池活跃上限 | `pool.maxwatch` | 8 | 软参考：不再拒绝入池，仅日志告警 |
+| 同时持仓上限 | `pool.max_hold` | **14** | ⚠️ **2026-10-28 定案**：新基线用 14（牛市铺满 60–70%）；原 0=废止、7=旧账本语义 |
+| 权益闸门开关 | `pos.equity_gate` | **off** | ⚠️ **2026-10-28 定案**：B-4 ③ 否决 → 新基线关闭；on 仅作对照保留 |
+
+### 6.1 已废除参数（代码不读，2026-10-28 清点后移除）
+
+> 以下 29 键存在于历史库参数表，但 `internal/` 代码**零引用**。移出活参数表，仅留名备查。
+> 其中 `risk.*` = 金字塔加码整套（量化时代废除，docs/00 §4.1）；`pos.units.*` = 旧单位制；
+> `regime.mult.*` = 牛熊乘数（功能升级为「牛冲熊守」待立项，非参数）。
+
+- **加码整套（9）**：`risk.leg1 / risk.leg23 / risk.maxpos / risk.scale / risk.maxlegs / risk.addon_max_premium / risk.probe_min_shares / risk.probe_max_pct`
+- **旧单位制（9）**：`pos.units.main / pos.units_total / pos.units.reserve / pos.units.winner / pos.units.probe / pos.units.per_stock_main_max / pos.units.per_stock_main_step / pos.units.per_stock_probe_bear / pos.units.per_stock_probe_bull`
+- **牛熊乘数（7）**：`regime.bull_thresh / regime.bear_thresh / regime.window / regime.mult.bull / regime.mult.bear / regime.mult.range / regime.indices`
+- **单个（5）**：`pool.maxloss / pool.blacklist_months / screen.maxboxage / screen.rsthreshold / tdx.root`
 
 ---
-
-## 7. 非功能需求（NFR）
 
 | # | 需求 | 目标 |
 |---|------|------|

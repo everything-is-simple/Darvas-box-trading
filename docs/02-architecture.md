@@ -206,9 +206,13 @@ TDX 日线 (H:\new_tdx64)
    │  ingest (复用生产代码路径)
    ▼
 源库 full_hist_10pct.db (只读，禁止改动)
-   │  darvas_e17.exe backtest --from <year> --to <year> --set scratch
+   │  darvas_b4.exe backtest --from <year> --to <year> --set ...（新基线用 b12_stop 参数族）
    ▼
-年度独立回测库 bt_e17_<year>.db (var/bt/, 每年一个, 串行不并发)
+新基线库 bt_base_<year>.db (var/bt/, 每年一个, 串行不并发)  ← 2026-10-28 起替代 bt_e17_<year>.db
+   │  参数 = b12_stop 原样 + max_hold=14 + equity_gate=off（组合全部已验证经验）
+   ▼
+（历史账本 bt_e17_<year>.db 保留作旧语义对照，不再作为后续实验的对照锚）
+
    │  position_leg.leg_no=1 JOIN plan_order.reason_json  (含 box_bottom/box_top/trigger/
    │      high_52w/newhigh_distance_pct/sizing_basis/units)
    ▼
@@ -217,16 +221,16 @@ e17_watch.py + e17_annual_tier_report.py  (Python 离线分析, 只读查 db)
    ▼
 var/bt/e17_metrics.csv             (年度汇总, append)
 var/bt/e17_watch_report.md         (摘要, 每次重建)
-var/bt/e17_annual_tier_report.html (逐年分层详细报告, 每年跑完自动补章节)var/bt/e17_annual_tier_report.html (逐年分层详细报告, 每年跑完自动补章节)
+var/bt/e17_annual_tier_report.html (逐年分层详细报告, 每年跑完自动补章节)
 
-e17_snowball.py                    (滚雪球复利, 只读 28 库 equity_snapshot)
+e17_snowball.py                    (滚雪球复利, 只读 equity_snapshot)
    │  逐年链式复利 level *= total_d/total_{d-1}（跨年直接衔接）
    ▼
 var/bt/snowball_stats.json         (复利统计: 终值/CAGR/MDD/夏普/Calmar)
 docs/experiments/e17_snowball_report.md + e17_snowball_curve.svg
 
 专项实验报告（独立链路，产物一律进 docs/experiments/，不落 var/bt/）
-   │  只读 var/bt/bt_e17_<year>.db × 14 + e17_metrics.csv（mode=ro）
+   │  只读年度库（mode=ro）
    ▼
 e17_box_height_report.py / e17_newhigh_distance_report.py / e17_regime_attribution_report.py
    │  先 --check-only 跑 HARD/WARN/INFO 校准（失败即 exit 2，不写文件），再正式生成三件套
