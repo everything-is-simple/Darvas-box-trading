@@ -236,7 +236,7 @@ func TestCloseVsMA(t *testing.T) {
 	last := dates[len(dates)-1]
 
 	// 历史足够：close=3000，MA20=3000（常数序列），ok=true，below=false
-	close, ma, ok := CloseVsMA(st, last, 20)
+	close, ma, ok := CloseVsMA(st, last, 20, DefaultIndex)
 	if !ok {
 		t.Fatalf("ok=false，期望 true（80 根历史足够）")
 	}
@@ -246,8 +246,13 @@ func TestCloseVsMA(t *testing.T) {
 
 	// 历史不足：窗口首日往前再无 K 线 → ok=false（闸门不触发的保守口径）
 	first := dates[0]
-	if _, _, ok := CloseVsMA(st, first, 60); ok {
+	if _, _, ok := CloseVsMA(st, first, 60, DefaultIndex); ok {
 		t.Errorf("首日 CloseVsMA ok=true，期望 false（历史不足 60 根）")
+	}
+
+	// 未播种的指数（中证500）→ 历史不足 → ok=false（保守放行，与 DefaultIndex 同口径）
+	if _, _, ok := CloseVsMA(st, last, 20, "sh000905"); ok {
+		t.Errorf("未播种 sh000905 应 ok=false，期望 true")
 	}
 
 	// 下跌序列：回填末 60 根为每日 −1%（时间正序递减）→ 末根 close < MA60
@@ -267,7 +272,7 @@ func TestCloseVsMA(t *testing.T) {
 	if _, err := st.BarRepo.UpsertBars(bars); err != nil {
 		t.Fatal(err)
 	}
-	close, ma, ok = CloseVsMA(st, last, 60)
+	close, ma, ok = CloseVsMA(st, last, 60, DefaultIndex)
 	if !ok {
 		t.Fatalf("下跌序列 ok=false，期望 true")
 	}

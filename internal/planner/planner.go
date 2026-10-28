@@ -82,9 +82,11 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	// 判断时点 = planDate（与 reason_json.regime 同口径）；零未来信息（date ≤ planDate）；
 	// 历史不足（CloseVsMA ok=false）保守放行，与 A 判据历史不足返 Range 同口径，并写入 reason_json 供审计。
 	gateMode := p.st.ParamRepo.GetString("gate.ma60.mode", "off")
+	// 2026-10-28 双镜对照：MA60 闸门镜子指数（默认 sh000001 向后兼容 B-2；双跑时 B 组传 sh000905）。
+	gateIndex := p.st.ParamRepo.GetString("gate.ma60.index", "sh000001")
 	gate := gateState{mode: gateMode}
 	if gateMode != "off" {
-		if close, ma, ok := regime.CloseVsMA(p.st, planDate, 60); ok {
+		if close, ma, ok := regime.CloseVsMA(p.st, planDate, 60, gateIndex); ok {
 			gate.ok, gate.close, gate.ma = true, close, ma
 			gate.below = close < ma
 		}
