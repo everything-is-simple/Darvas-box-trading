@@ -249,6 +249,8 @@ docs/experiments/<实验>_framework.md (零结果纯规则) + _report.{html,md} 
 | 逐年分层报告 | `var/bt/e17_annual_tier_report.html` | `e17_annual_tier_report.py` 每年完成后重建 | 每年一章，含 t1-t4 四项口径 + box 高度梯度分布 + 诚实标注 || 复利统计 | `var/bt/snowball_stats.json` + `docs/experiments/e17_snowball_report.md` | `e17_snowball.py` 手动重建 | baseline / baseline+ 的链式复利终值、CAGR、日频最大回撤、夏普、Calmar（口径见 docs/01 §10.6） |
 | 已汇报年份 | `var/bt/e17_reported_years.txt` | 自动汇报成功后 append | 避免重复汇报同一年份 |
 | 队列状态 | `var/bt/e17_years_status.json` | 队列脚本每次状态变化时写 | state=waiting/running/done/failed + 当前 year + detail |
+| **新基线库（双镜）** | `var/bt/base/bt_baseA_<year>.db`（上证）/ `bt_baseB_<year>.db`（中证500） | `scripts/base_run.py` 跑完该年该镜 | **2026-10-28 起唯一对照锚**；参数 38 项（docs/01 §6），逐镜仅差 `gate.ma60.index` |
+| 新基线执行日志 | `var/bt/base/base_run.log`（冒烟）/ `base_run_s2.log`（代表年） | 每跑 append | 含 `START/DONE <year> <mirror> 耗时`，报告生成器以 `DONE` 为收据 |
 
 ### 9.3 串行执行与并发防护
 
