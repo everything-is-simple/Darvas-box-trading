@@ -77,6 +77,9 @@ go test ./internal/box -run TestScan -v
 go test ./internal/planner -count=1
 ```
 
+> **测试环境路径**（原根目录 HANDOFF/PROMPT.md 记录，2026-10-29 沉淀于此）：
+> bash 下需 `export GOROOT=/d/go-sdk/go; export PATH=/d/go-sdk/go/bin:$PATH`（`D:\Go` 是坏安装，勿用）。
+
 ### 2.2 分布（178 个测试函数）
 
 | 包 | 测试文件 | 测试数 | 重点 |
@@ -232,6 +235,9 @@ v := st.ParamRepo.GetFloat("my.new_key", 1.0)
 | 非 A 股混入 | B 股/指数/北交所参与箱体 | `ActiveStockCodes` 只返回沪深主板/科创/创业 A 股，ST 按名称排除 |
 | 研究脚本写生产库 | 参数调优污染主库 | 只写 scratch；`backtest --set` 仅覆盖 scratch |
 | GUI 写库 | 只读原则被破坏 | 路由只注册 GET |
+| schtasks 黑名单 | agent 沙箱 bash 里 schtasks 被拦 | 用 PowerShell `Get/Stop/Start-ScheduledTask` |
+| VACUUM 备份耗时 | 生产库 VACUUM 需 10-15 分钟 | 低峰期执行，勿占交易时段 |
+| CatchUp 回放污染心跳 | 缺心跳会整链补跑 | 回放/测试一律用 scratch 库，勿指生产库 |
 
 ---
 
