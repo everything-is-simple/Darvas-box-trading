@@ -8,6 +8,12 @@
 单位定义：1 单位 = 建仓日账户权益的 2%（migration 0009 单位制）。
   每单位净利 = realized_pnl / (建仓金额 / 该单位金额)
 
+两套净利口径并列（docs/29 §2.5.2，2026-10-30 修正）：
+  **权益变动**（equity_snapshot 首末差，含年末浮盈）→ 账户层：收益/终值/MDD
+  **已实现**（Σ realized_pnl）→ 规则层：每单位净利、集中度、剔除前三
+  旧版本用「权益变动」算每单位与集中度，牛市年会被未平仓浮盈污染（2007 差 18 万）；
+  集中度旧算法 top3/net 在亏损年为 NaN，已按 docs/29 §2.5.1 第 4 条改为 top3/gross_win。
+
 用法：
   python scripts/base_year_summary.py            # 汇总 var/bt/base/bt_baseA_*.db 全部
   python scripts/base_year_summary.py --json     # 额外输出 JSON
@@ -15,8 +21,10 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import sqlite3
+import statistics
 import sys
 from pathlib import Path
 
@@ -52,7 +60,7 @@ def load_year(db: Path):
 
         # 成本必须取 Σ(position_leg.qty×price)：position.qty 平仓后清零（P2-5 踩坑）
         rows = c.execute(
-            """SELECT p.opened_date, p.realized_pnl, p.close_reason,
+            """SELECT p.opened_date, p.closed_date, p.realized_pnl, p.close_reason,
                       COALESCE(SUM(l.qty * l.price), 0) AS cost
                FROM position p
                LEFT JOIN position_leg l ON l.position_id = p.id
@@ -64,10 +72,17 @@ def load_year(db: Path):
         n = len(rows)
         if n == 0:
             return dict(year=db.stem.split("_")[-1], trades=0, first_equity=first_eq,
-                        last_equity=last_eq, net=last_eq - first_eq, mdd=mdd,
-                        mdd_date=mdd_date, days=len(eq))
+                        last_equity=last_eq, last_date=eq[-1][0], net=last_eq - first_eq,
+                        mdd=mdd, mdd_date=mdd_date, days=len(eq),
+                        complete=eq[-1][0] >= f"{db.stem.split('_')[-1]}-12-25",
+                        win_rate=0.0, breakeven=0.0, gap=0.0, pf=0.0,
+                        units=0.0, per_unit=0.0, realized=0.0, per_unit_realized=0.0,
+                        ret_pct=(last_eq - first_eq) / first_eq if first_eq else 0.0,
+                        top3=0.0, top3_share=float("nan"), top3_share_gw=float("nan"),
+                        net_ex_top3=last_eq - first_eq, realized_ex_top3=0.0,
+                        hold_median=None, gross_win=0.0, gross_loss=0.0)
 
-        pnls = [r[1] for r in rows]
+        pnls = [r[2] for r in rows]
         wins = [p for p in pnls if p > 0]
         losses = [p for p in pnls if p <= 0]
         gross_win = sum(wins)
@@ -76,7 +91,7 @@ def load_year(db: Path):
 
         # 每单位净利：建仓成本 / (建仓日权益 × 2%)
         units_total = 0.0
-        for od, pnl, _reason, cost in rows:
+        for od, _cd, _pnl, _reason, cost in rows:
             base_eq = eq_by_date.get(od) or first_eq
             unit_val = base_eq * 0.02
             units_total += cost / unit_val if unit_val > 0 else 0.0
@@ -85,6 +100,19 @@ def load_year(db: Path):
         avg_win = gross_win / len(wins) if wins else 0.0
         avg_loss = gross_loss / len(losses) if losses else 0.0
         breakeven = avg_loss / (avg_win + avg_loss) if (avg_win + avg_loss) > 0 else 0.0
+
+        # 持有时长（自然日）：opened_date → closed_date
+        holds = []
+        for od, cd, _p, _r, _c in rows:
+            if od and cd:
+                try:
+                    holds.append(
+                        (datetime.date.fromisoformat(cd[:10])
+                         - datetime.date.fromisoformat(od[:10])).days
+                    )
+                except ValueError:
+                    pass
+        hold_median = statistics.median(holds) if holds else None
 
         return dict(
             year=db.stem.split("_")[-1],
@@ -107,13 +135,21 @@ def load_year(db: Path):
             avg_win=avg_win,
             avg_loss=avg_loss,
             breakeven=breakeven,
+            gap=(len(wins) / n) - breakeven,
             mdd=mdd,
             mdd_date=mdd_date,
             units=units_total,
+            # 账户层（权益变动）与规则层（已实现）并列，禁止混用
             per_unit=(net / units_total) if units_total > 0 else 0.0,
+            realized=sum(pnls),
+            per_unit_realized=(sum(pnls) / units_total) if units_total > 0 else 0.0,
+            ret_pct=(last_eq - first_eq) / first_eq if first_eq else 0.0,
             top3=top3,
-            top3_share=(top3 / net) if net > 0 else float("nan"),
+            top3_share=(top3 / net) if net > 0 else float("nan"),  # 旧口径，仅供对照
+            top3_share_gw=(top3 / gross_win) if gross_win > 0 else float("nan"),
             net_ex_top3=net - top3,
+            realized_ex_top3=sum(pnls) - top3,
+            hold_median=hold_median,
         )
     except Exception as e:
         print(f"  [!] {db.name}: {type(e).__name__} {e}", file=sys.stderr)
@@ -146,20 +182,27 @@ def main():
         print("无可读库")
         return
 
-    print(f"\n{'年':<7}{'净利':>12}{'终值':>13}{'笔数':>6}{'胜率':>8}{'保本率':>8}{'PF':>7}{'MDD':>8}{'每单位':>9}{'前三占比':>10}{'剔前三':>12}")
-    print("-" * 108)
+    print(f"\n{'年':<6}{'收益':>9}{'权益变动':>12}{'已实现':>12}{'笔数':>6}"
+          f"{'胜率':>7}{'保本率':>7}{'缺口':>7}{'PF':>6}{'MDD':>8}"
+          f"{'每单位':>8}{'集中度':>8}{'剔前三':>11}{'持中位':>7}")
+    print("-" * 122)
     tot_net = 0
+    tot_real = 0
     for r in results:
         pf = "  ∞" if r["pf"] == float("inf") else f"{r['pf']:.2f}"
-        share = "—" if r["top3_share"] != r["top3_share"] else f"{r['top3_share']*100:.0f}%"
+        share = "—" if r["top3_share_gw"] != r["top3_share_gw"] else f"{r['top3_share_gw']*100:.0f}%"
+        hold = "—" if r["hold_median"] is None else f"{r['hold_median']:.0f}"
         yr = r["year"] + ("" if r["complete"] else "*")
-        print(f"{yr:<7}{fmt_money(r['net']):>12}{fmt_money(r['last_equity']):>13}"
-              f"{r['trades']:>6}{r['win_rate']*100:>7.1f}%{r['breakeven']*100:>7.1f}%{pf:>7}"
-              f"{r['mdd']*100:>7.2f}%{r['per_unit']:>9,.0f}{share:>10}{fmt_money(r['net_ex_top3']):>12}")
+        print(f"{yr:<6}{r['ret_pct']*100:>8.1f}%{fmt_money(r['net']):>12}{fmt_money(r['realized']):>12}"
+              f"{r['trades']:>6}{r['win_rate']*100:>6.1f}%{r['breakeven']*100:>6.1f}%"
+              f"{r['gap']*100:>+6.1f}{pf:>6}{r['mdd']*100:>7.2f}%"
+              f"{r['per_unit_realized']:>8,.0f}{share:>8}{fmt_money(r['realized_ex_top3']):>11}{hold:>7}")
         if r["complete"]:
             tot_net += r["net"]
-    print("-" * 108)
-    print(f"{'合计':<7}{fmt_money(tot_net):>12}   （仅计完整年，逐年净利直接相加=算术和，非复利）")
+            tot_real += r["realized"]
+    print("-" * 122)
+    print(f"{'合计':<6}{'':>9}{fmt_money(tot_net):>12}{fmt_money(tot_real):>12}"
+          f"  （仅计完整年；算术和≠复利；每单位/集中度/剔前三用已实现）")
     partial = [r for r in results if not r["complete"]]
     for r in partial:
         print(f"  * {r['year']} 未完成：数据截至 {r['last_date']}，仅 {r['days']} 个交易日 / {r['trades']} 笔，不计入合计")

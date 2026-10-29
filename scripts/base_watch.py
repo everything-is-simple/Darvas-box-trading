@@ -56,6 +56,23 @@ def db_path(year: int) -> Path:
     return BASE / f"bt_baseA_{year}.db"
 
 
+def run_done(year: int) -> bool:
+    """执行器是否已宣告该年结束（`DONE <年>` 标记）。
+
+    为什么需要这一层：日期判据（最后交易日 ≥ 12-25）会在**收尾前**就命中——
+    2026-10-30 实测 2006：01:30:17 判完成（净利 321,537 / 160 笔），
+    实际 01:30:38 才 DONE（351,036 / 161 笔）。差一笔，但足以让报告失真。
+    老机 5 个年库没有 log（未随包带来）→ 无 log 时退化为只看日期。
+    """
+    p = BASE / f"bt_baseA_{year}.log"
+    if not p.exists():
+        return True
+    try:
+        return f"DONE {year}" in p.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
+
+
 def load_state() -> dict:
     if STATE.exists():
         try:
@@ -115,7 +132,7 @@ def extra_stats(db: Path) -> dict:
 def render_block(r: dict, x: dict) -> str:
     y = r["year"]
     pf = "∞" if r["pf"] == float("inf") else f"{r['pf']:.2f}"
-    share = "—" if r["top3_share"] != r["top3_share"] else f"{r['top3_share']*100:.0f}%"
+    share = "—" if r["top3_share_gw"] != r["top3_share_gw"] else f"{r['top3_share_gw']*100:.0f}%"
     gap = (r["win_rate"] - r["breakeven"]) * 100
     verdict = "正 edge" if gap > 3 else ("边际" if gap > -3 else "**负 edge**")
     lines = [
@@ -123,13 +140,13 @@ def render_block(r: dict, x: dict) -> str:
         "",
         "| 指标 | 值 | 指标 | 值 |",
         "|---|---|---|---|",
-        f"| 净利 | **{r['net']:,.0f}** | 终值 | {r['last_equity']:,.0f} |",
+        f"| 权益变动(含浮盈) | **{r['net']:,.0f}** | 已实现净利 | {r['realized']:,.0f} |",
         f"| 笔数 | {r['trades']} | 胜/负 | {r['wins']} / {r['losses']} |",
         f"| 胜率 | {r['win_rate']*100:.1f}% | 保本胜率 | {r['breakeven']*100:.1f}% |",
         f"| 缺口(胜率−保本) | {gap:+.1f}pp → {verdict} | PF | {pf} |",
-        f"| 最大回撤 | {r['mdd']*100:.2f}% ({r['mdd_date']}) | 每单位净利 | {r['per_unit']:,.0f} |",
-        f"| 前三赢家占比 | {share} | 剔除前三净利 | **{r['net_ex_top3']:,.0f}** |",
-        f"| 笔均净利 | {r['net']/r['trades']:,.0f} | 均盈 / 均亏 | {r['avg_win']:,.0f} / {r['avg_loss']:,.0f} |",
+        f"| 最大回撤 | {r['mdd']*100:.2f}% ({r['mdd_date']}) | 每单位净利(已实现) | {r['per_unit_realized']:,.0f} |",
+        f"| 前三赢家占毛利润 | {share} | 剔除前三(已实现) | **{r['realized_ex_top3']:,.0f}** |",
+        f"| 笔均净利(已实现) | {r['realized']/r['trades']:,.0f} | 均盈 / 均亏 | {r['avg_win']:,.0f} / {r['avg_loss']:,.0f} |",
         f"| 持有时长(中位/最长/最短) | {x['hold_median']} / {x['hold_max']} / {x['hold_min']} 日 | 交易日数 | {r['days']} |",
         "",
     ]
@@ -177,7 +194,7 @@ def check_once(st: dict) -> bool:
         if not p.exists():
             continue
         stats = load_year(p)
-        if not stats or not stats.get("complete"):
+        if not stats or not stats.get("complete") or not run_done(y):
             continue
         x = extra_stats(p)
         block = render_block(stats, x)
@@ -228,7 +245,7 @@ def rebuild_all(st: dict) -> bool:
         if not p.exists():
             continue
         stats = load_year(p)
-        if not stats or not stats.get("complete"):
+        if not stats or not stats.get("complete") or not run_done(y):
             log(f".. {y} 未跑完或库不可读，跳过")
             continue
         x = extra_stats(p)
