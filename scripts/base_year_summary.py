@@ -91,7 +91,9 @@ def load_year(db: Path):
             first_equity=first_eq,
             last_equity=last_eq,
             last_date=eq[-1][0],
-            complete=eq[-1][0] >= f"{db.stem.split('_')[-1]}-12-15",
+            # 完成判据 12-25（2026-10-29 修正：原 12-15 太松，2005-12-16 就被误判为跑完，
+            # 而 A 股年度最后交易日恒在 12-28~12-31，故以 12-25 为安全下界）
+            complete=eq[-1][0] >= f"{db.stem.split('_')[-1]}-12-25",
             net=last_eq - first_eq,
             net_pnl_sum=net,
             days=len(eq),

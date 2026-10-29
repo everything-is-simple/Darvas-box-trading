@@ -2,7 +2,8 @@
 """新基线逐年监视器 —— 每完成一年，立即生成该年统计报告。
 
 独立于 base_run.py 运行（后者已在跑，不能改它）。只读年库，零写库。
-判定「完成」= equity_snapshot 最后日期 ≥ 当年 12-15（防半成品误判）。
+判定「完成」= equity_snapshot 最后日期 ≥ 当年 12-25（防半成品误判；
+  原用 12-15 太松，2005-12-16 即被误判为跑完，2026-10-29 修正）。
 
 产出：
   var/bt/base/base_yearly_reports.md      人类可读，逐年追加
@@ -31,6 +32,13 @@ OUT_JSON = BASE / "year_json"
 STATE = BASE / ".watch_state.json"
 LOG = BASE / "base_watch.log"
 YEARS = list(range(2005, 2019))
+
+HEADER = (
+    "# 新基线（单镜上证）逐年统计 · 跑完一年即出一年\n\n"
+    "> 参数：newhigh_ladder=on lookback=252 cutoff=40 units=3/2/1/0.5 "
+    "max_hold=14 equity_gate=off gate.ma60=stop@sh000001 staledays=2\n"
+    "> 生成：`scripts/base_watch.py`（只读年库，完成判据 = 数据到当年 12-25 之后）\n"
+)
 
 
 def log(msg: str):
@@ -205,23 +213,58 @@ def _run_finished() -> bool:
         return False
 
 
+def rebuild_all(st: dict) -> bool:
+    """从头重写报告（md + 全部 year_json），忽略历史状态。幂等，可反复跑。
+
+    用途：监视器跑过一段时间后口径/判据改过，或某年补跑完，需要把报告整体重出。
+    """
+    if OUT_MD.exists():
+        OUT_MD.unlink()
+    OUT_MD.write_text(HEADER, encoding="utf-8")
+    st["reported"] = []
+    found = False
+    for y in YEARS:
+        p = db_path(y)
+        if not p.exists():
+            continue
+        stats = load_year(p)
+        if not stats or not stats.get("complete"):
+            log(f".. {y} 未跑完或库不可读，跳过")
+            continue
+        x = extra_stats(p)
+        with OUT_MD.open("a", encoding="utf-8") as f:
+            f.write(render_block(stats, x))
+        OUT_JSON.mkdir(exist_ok=True)
+        (OUT_JSON / f"bt_baseA_{y}.json").write_text(
+            json.dumps({**stats, **x}, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        )
+        st["reported"].append(y)
+        log(f"✅ {y} 净利 {stats['net']:,.0f}，{stats['trades']} 笔，"
+            f"胜率 {stats['win_rate']*100:.1f}%，MDD {stats['mdd']*100:.2f}%")
+        found = True
+    save_state(st)
+    return found
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--interval", type=int, default=60)
     ap.add_argument("--once", action="store_true")
+    ap.add_argument("--rebuild", action="store_true", help="忽略状态，从头重写全部报告")
     a = ap.parse_args()
 
     if not OUT_MD.exists():
-        OUT_MD.write_text(
-            "# 新基线（单镜上证）逐年统计 · 跑完一年即出一年\n\n"
-            "> 参数：newhigh_ladder=on lookback=252 cutoff=40 units=3/2/1/0.5 "
-            "max_hold=14 equity_gate=off gate.ma60=stop@sh000001 staledays=2\n"
-            "> 生成：`scripts/base_watch.py`（只读年库，完成判据 = 数据到当年 12-15 之后）\n",
-            encoding="utf-8",
-        )
+        OUT_MD.write_text(HEADER, encoding="utf-8")
 
     st = load_state()
     log(f"监视器启动：已报告 {st['reported'] or '无'}，目标 {YEARS[0]}-{YEARS[-1]}")
+
+    if a.rebuild:
+        log("重写模式：清空报告，按年库重新生成")
+        n = len(st["reported"])
+        rebuild_all(st)
+        log(f"完成，共 {len(st['reported'])} 年（原 {n} 年）")
+        return
 
     if a.once:
         check_once(st)
