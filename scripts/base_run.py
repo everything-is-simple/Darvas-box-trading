@@ -68,13 +68,40 @@ def setargs(mirror):
     return ",".join(f"{k}={v}" for k, v in sorted(p.items()))
 
 
+def db_complete(path):
+    """库是否「完整可用」：存在 + 能正常读 + equity_snapshot 非空。
+
+    只看文件存在会把「被中断的半成品」误判为已完成（2026-10-29 踩过：
+    强杀进程留下 malformed 库，导致全量静默跳过该年）。
+    判据用 equity_snapshot（每个交易日一条，回放跑过就必有）——比
+    integrity_check 快得多（后者对 4.4GB 库要数十秒），损坏库在查询时
+    同样抛 malformed，判据等价。"""
+    if not path.exists():
+        return False
+    try:
+        import sqlite3
+        c = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            return c.execute("SELECT COUNT(*) FROM equity_snapshot").fetchone()[0] > 0
+        finally:
+            c.close()
+    except Exception:
+        return False
+
+
 def run_one(year, mirror, force=False):
     idx, name = MIRRORS[mirror]
     db = OUT / f"bt_base{mirror}_{year}.db"
     logp = OUT / f"bt_base{mirror}_{year}.log"
-    if db.exists() and not force:
-        log(f"跳过（已存在）：{db.name}", logp)
+    if not force and db_complete(db):
+        log(f"跳过（已完整）：{db.name}", logp)
         return 0
+    if db.exists() and not force:
+        log(f"发现不完整库（损坏或无 metrics），删除重跑：{db.name}", logp)
+        for ext in ("", "-wal", "-shm"):
+            p = Path(str(db) + ext)
+            if p.exists():
+                p.unlink()
     sa = setargs(mirror)
     cmd = [str(EXE), "backtest", "--src", str(SRC),
            "--from", f"{year}-01-01", "--to", f"{year}-12-31",
@@ -92,14 +119,30 @@ def run_one(year, mirror, force=False):
     return 0
 
 
+def parse_years(spec):
+    """解析年份参数：支持 "2007,2010" 与 "2005..2018" 两种写法（可混用）。"""
+    out = []
+    for tok in spec.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if ".." in tok:
+            a, b = tok.split("..", 1)
+            out.extend(range(int(a), int(b) + 1))
+        else:
+            out.append(int(tok))
+    return sorted(set(out))
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--years", default="2007", help="逗号分隔，如 2007,2010,2013,2018")
+    ap.add_argument("--years", default="2007",
+                    help="逗号分隔或区间，如 2007,2010,2013,2018 或 2005..2018")
     ap.add_argument("--mirrors", default="A", help="A=上证 B=中证500（B 已随换镜证伪搁置），逗号分隔")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    years = [int(x) for x in a.years.split(",")]
+    years = parse_years(a.years)
     mirrors = [m for m in a.mirrors.split(",")]
     for m in mirrors:
         if m not in MIRRORS:
