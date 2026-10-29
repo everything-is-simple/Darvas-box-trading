@@ -198,7 +198,18 @@ erDiagram
 | forming → confirmed | 上轨3日确认+下轨3日确认 | top>bottom，宽度≥5% |
 | confirmed → broken_up | 收盘>top×1.03且放量且非一字板 | 生成新箱体forming，prev指向本箱 |
 | confirmed → broken_down | 收盘<bottom | 触发stop信号 |
-| forming/confirmed → invalid | 下轨确立前创新高 / 横盘超参上限 | 保留记录不删除 |
+| forming → invalid | 下轨确立前创新高 / 宽度校验失败（top≤bottom 或 (top−bottom)/top<box.min_width） | 当根K线即重启新箱体（见下一行）；invalid 不计入阶梯（prev 锚点=最近 confirmed 箱体） |
+| invalid → forming | invalidateAndRestart：从触发作废的当根 K 线重启（docs/00 §3.2.4 / §3.5） | 每根 K 线必属且仅属一个箱体（2026-10-29 对照 engine.go 校正） |
+
+> **⚠️ 生命周期证据缺口（2026-10-29 生命周期审计登记；仅注记，不改 SQL）**：
+> `box` 表无 `start_date`（逻辑出生日——`created_at` 是行插入时间，二者不可混用）、
+> 无 `invalidated_date` / `invalid_reason`（invalid 无结构化失效时间与原因）、无 append-only 迁移事件账——
+> 持久层保存的是**重算后的状态投影**：`UpsertBoxes` 按上下轨价格对（6 位小数）复用数据库 ID，
+> 未被业务外键引用的陈旧行可被删除。因此「数据库 ID」不是受契约保证的逻辑 Box 身份。
+> 另：`signal` → `plan_order` 尚无 source signal id 外键，突破事件到成交的精确回溯依赖 reason_json 而非强引用。
+> **是否补 schema（start_date / invalidated_date / 事件表 / source id），须待 docs/29 §五 第 0 项
+> A0/A1 轨迹验证给出结论后，先写 migration 方案并同 commit 更新 03/04/06；禁止直接改已发布 migration。**
+> 详见 docs/00 §3.7 第 1.1/6 点与 docs/29 §七前置段。
 
 ### 2.2 `watch.stage`
 

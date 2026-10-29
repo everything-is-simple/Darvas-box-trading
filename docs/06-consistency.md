@@ -74,6 +74,20 @@ commit message约定：`feat(box): ...` / `feat(contract): ...`（contract前缀
 | 订单 trigger 与现价偏离上限 | `planner` 生成订单前校验 `abs(trigger/close - 1) < gap上限违反直接拒单 + `match` 成交后校验 `abs(fill/trigger - 1) ≤ max_entry_gap`（默认 1.05） | archive/18 P0-2 |
 | 同仓位同批次不产两张卖单 | `planner.pendingSell` 生成卖单后立即回写 `true`（修复后） | archive/18 P0-3/P0-5 |
 
+**Box 生命周期不变量（2026-10-29 生命周期审计登记；前四条为 A0 验证清单，见 docs/29 §五 第 0 项 / §七前置段，零策略变更）**：
+
+| 不变量 / 验证项 | 保障机制 | 状态 |
+|--------|---------|------|
+| 终态不可逆：broken_up / broken_down / invalid 不回到 confirmed 或 forming | 引擎规则（`invalidateAndRestart` 只前进，`internal/box/engine.go`）＋ A0① 边界单测待补 | A0 待验证 |
+| 每根 K 线必属且仅属一个箱体；终止/作废当根 K 线只开一个新 forming | `startBox` / `invalidateAndRestart` 单一路径 ＋ A0② 单测待补 | A0 待验证 |
+| 相同 K 线＋参数重复 `Scan` 逐字段幂等 | 引擎零 IO 纯函数 ＋ A0③ 回归测试待补 | A0 待验证 |
+| 全量重算 / 每日增量 / 最近 800 根窗口三路重建逐日一致 | A0④ 对照脚本待补；差异必须解释为窗口/输入语义，不得默认忽略 | A0 待验证 |
+| prev_box_id 无环（既有） | Upsert 应用层校验（链长≤100） | 已落地 |
+
+> 未来若为 `box` 表补生命周期证据（`start_date` / `invalidated_date` / `invalid_reason` / append-only
+> 迁移事件账），属 schema 变更：先写 migration 方案，**同 commit** 更新 docs/03 §2.1、docs/04 §4.1 与本文件；
+> 迁移 append-only，禁止修改已发布 migration（§2 防线三变更协议）。
+
 ### 3.2 接口一致性（编译期）
 
 - 模块构造函数签名统一：`NewXxx(deps...) Xxx`，deps全部是contract接口类型 → **mock天然可行，测试不碰真DB**
