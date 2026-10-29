@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""新基线 · 双镜对照执行器（docs/29 §六之二，2026-10-28 立项）。
+"""新基线执行器（docs/29 §六之二，2026-10-28 立项；2026-10-29 定案单镜上证）。
 
-跑两组：A = 上证 MA60 停买（B-2 擂主延续，能对账）；B = 中证500 MA60 停买（擂台挑战者）。
+MA60 闸门镜子 = 上证 sh000001（单镜；换镜已证伪，双镜擂台已由用户裁定终止）。
 三阶段：1 冒烟（单年）→ 2 代表年 → 3 全量 14 年。串行，失败即停。
 
 参数（跑前写死，docs/29 §六之二）：
   共同：pos.newhigh_ladder=on, lookback=252, cutoff=40, units.t1=3/t2=2/t3=1/t4=0.5
-        + pool.max_hold=14 + pos.equity_gate=off + gate.ma60.mode=stop
-  区别：A 组 gate.ma60.index=sh000001（默认）；B 组 gate.ma60.index=sh000905
+        + pool.max_hold=14 + pos.equity_gate=off + gate.ma60.mode=stop + gate.ma60.index=sh000001
+  （B 镜中证500 sh000905 仅历史对照保留，不再作为默认/主跑，见 MIRRORS）
 
 用法：
   python scripts/base_run.py --dry-run
-  python scripts/base_run.py --years 2007 --mirrors A           # 冒烟：仅上证
-  python scripts/base_run.py --years 2007 --mirrors A,B         # 冒烟：双镜
-  python scripts/base_run.py --years 2007,2010,2013,2018 --mirrors A,B   # 代表年
-  python scripts/base_run.py --years 2005..2018 --mirrors A,B   # 全量
+  python scripts/base_run.py --years 2007 --mirrors A           # 冒烟：上证
+  python scripts/base_run.py --years 2007,2010,2013,2018 --mirrors A   # 代表年
+  python scripts/base_run.py --years 2005..2018 --mirrors A     # 全量 14 年（单镜）
 """
 import argparse
 import subprocess
@@ -96,7 +95,7 @@ def run_one(year, mirror, force=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--years", default="2007", help="逗号分隔，如 2007,2010,2013,2018")
-    ap.add_argument("--mirrors", default="A,B", help="A=上证 B=中证500，逗号分隔")
+    ap.add_argument("--mirrors", default="A", help="A=上证 B=中证500（B 已随换镜证伪搁置），逗号分隔")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
