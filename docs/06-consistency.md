@@ -205,5 +205,13 @@ scripts/
   必须在报告中保留「勘误段」并同步修正所有引用它的文档；**不允许静默改正**。
 - 已发布数字若被修正，须在 commit message 中写明旧值、新值、影响范围。
 
-- **专项实验报告一律沉淀到 `docs/experiments/`**- **专项实验报告一律沉淀到 `docs/experiments/`**（`_framework.md` 零结果纯规则 + `_report.{html,md}` + `_data.json`），**不落 `var/bt/`**——`var/bt/` 只放回测过程产物（库 / `e17_metrics.csv` / 监控报告）。命名与两层分置规则见 `docs/experiments/README.md`。
+- **专项实验报告一律沉淀到 `docs/experiments/`**（`_framework.md` 零结果纯规则 + `_report.{html,md}` + `_data.json`），**不落 `var/bt/`**——`var/bt/` 只放回测过程产物（库 / `e17_metrics.csv` / 监控报告）。命名与两层分置规则见 `docs/experiments/README.md`。
+
+### 7.4 已知技术债（登记制，不阻塞主线）
+
+> 规则：发现但不立即修的问题登记在此，写明影响面与修法方向；**只有它能污染结论时才升级为阻塞项**。
+
+| # | 位置 | 症状 | 影响面 | 修法方向 | 登记 |
+|---|---|---|---|---|---|
+| TD-1 | `internal/backtest/backtest.go` `runVerify` progressive 路径 | 逐日 `RescanIncremental` 对池内全部股票「读 800 根 K 线 → 全量重扫」，池子随回放推进变大 → 单日 boxscan 从 ~1 分钟涨到数十分钟，2013 年 64 日窗口跑不完（实测 21/64 日即终止，CPU 886s、WAL 1.5GB）。另 `Bootstrap` 整库 4.4GB 拷贝 × 2 份 | **仅影响 `--mode verify` 工具的可用性**；不影响任何回测结论（verify 是冗余印证，主证据在 E17-A0 §三 box 层三路全等 + A0③ 引擎幂等） | ① 池内票复用前日 box 状态、只增量推进（与生产 `RescanIncremental` 同语义）；② Bootstrap 改 `VACUUM INTO` / `ATTACH`+`INSERT SELECT` 按窗口裁剪重建，避免整库拷贝 | 2026-10-29（E17-A0/A1 §六 终止时登记） |
 
