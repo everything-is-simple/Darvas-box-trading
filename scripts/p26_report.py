@@ -23,6 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BT = ROOT / "var" / "bt"
 P26 = BT / "p26"
+BASE = BT / "base"  # 新基线库（HARD① 的对照对象，2026-10-30 换源，见框架 §10）
 EXP = ROOT / "docs" / "experiments"
 OUT_HTML = EXP / "e17_staledays_report.html"
 OUT_MD = EXP / "e17_staledays_report.md"
@@ -177,10 +178,13 @@ def discover():
     """扫描 p26 目录，返回按 (stale, year) 索引的结果。"""
     out = {}
     for db in sorted(P26.glob("p26_sd*_*.db")):
-        stem = db.stem  # p26_sd2_2012
+        stem = db.stem  # p26_sd2_2012 / p26_sdoff_2012
         try:
             _, sd, yr = stem.split("_")
-            stale, year = int(sd[2:]), int(yr)
+            tag = sd[2:]
+            # off 档文件名为 p26_sdoff_<year>，对应数值上界 100000
+            stale = 100000 if tag == "off" else int(tag)
+            year = int(yr)
         except Exception:
             continue
         try:
@@ -194,14 +198,18 @@ def discover():
 
 # ---------------------------------------------------------------- HARD 校验
 def hard_baseline(bands):
-    """HARD①：sd2 档是否逐笔复现历史基线库。"""
+    """HARD①：sd2 档是否逐笔复现基线库。
+
+    2026-10-30 换源：对照对象由老机 `bt_e17_<year>.db` 改为新基线 `bt_baseA_<year>.db`
+    （老机 E17 库未随移植包带来，框架 §10 已登记）。
+    """
     res = []
     for (stale, year), m in sorted(bands.items()):
         if stale != 2:
             continue
-        base = BT / f"bt_e17_{year}.db"
+        base = BASE / f"bt_baseA_{year}.db"
         if not base.exists():
-            res.append({"year": year, "ok": False, "msg": "历史基线库不存在"})
+            res.append({"year": year, "ok": False, "msg": "基线库不存在"})
             continue
         a = open_ro(P26 / f"p26_sd2_{year}.db")
         b = open_ro(base)
@@ -258,7 +266,11 @@ def num(x, d=0):
 
 
 def compound(bands, years):
-    """代表年链接复利终值：Π(1+r_y)。"""
+    """代表年链接复利终值：Π(1+r_y)。
+
+    阶段 1（只跑 2012）时也能出数（= 1+r_2012），但 `full=False`，
+    此时 judge() 拒绝裁定 —— 主判据须代表年齐全才生效（框架 §4.1 / §5.2）。
+    """
     out = {}
     for stale in STALE_ORDER:
         rs = []
@@ -266,25 +278,30 @@ def compound(bands, years):
             m = bands.get((stale, y))
             if m:
                 rs.append(m["ret"])
-        out[stale] = {"years": len(rs), "terminal": None,
-                      "cagr": None, "worst_mdd": None}
-        if rs and len(rs) == len(years):
+        out[stale] = {"years": len(rs), "full": len(rs) == len(years),
+                      "terminal": None, "cagr": None, "worst_mdd": None}
+        if rs:
             t = 1.0
             for r in rs:
                 t *= (1 + r)
             out[stale]["terminal"] = t
             out[stale]["cagr"] = t ** (1 / len(rs)) - 1
-            out[stale]["worst_mdd"] = min(bands[(stale, y)]["maxdd"] for y in years)
+            out[stale]["worst_mdd"] = min(bands[(stale, y)]["maxdd"] for y in years
+                                          if (stale, y) in bands)
     return out
 
 
 def judge(bands, comp, years):
     """按框架 §5 预注册判据裁定。"""
-    full = [s for s in STALE_ORDER if comp[s]["terminal"] is not None]
+    full = [s for s in STALE_ORDER if (comp[s]["terminal"] is not None and comp[s]["full"])]
     base = comp.get(2, {}).get("terminal")
     verdict = {"h1": False, "h2": False, "h3": False, "note": "", "full_bands": full}
-    if not full or base is None:
-        verdict["note"] = "基线档或代表年不齐，无法裁定"
+    if len(full) < len([s for s in STALE_ORDER if comp[s]["terminal"] is not None]) or not full:
+        verdict["note"] = (f"代表年未跑齐（{len(years)} 年目标，逐档已覆盖年数见 §三），"
+                           f"阶段 1 只出梯度形状，**不作裁定**")
+        return verdict
+    if base is None:
+        verdict["note"] = "基线档缺失，无法裁定"
         return verdict
     best = max(full, key=lambda s: comp[s]["terminal"])
     verdict["best"] = best
