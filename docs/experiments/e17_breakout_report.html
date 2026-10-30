@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>P1-4 突破强度 / 量比 · A 类后验</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e5e5e5;--pos:#c0392b;--neg:#1e8449;--acc:#8e44ad;--warn:#b7791f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 28px 80px}
+h1{font-size:26px;margin:0 0 6px}
+.sub{color:var(--mut);font-size:13px;margin-bottom:28px}
+h2{font-size:19px;margin:38px 0 12px;padding-left:10px;border-left:4px solid var(--acc)}
+h3{font-size:15px;margin:24px 0 8px;color:#333}
+table{width:100%;border-collapse:collapse;margin:10px 0 6px;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{background:#fafafa;font-weight:600;color:#444;border-bottom:2px solid #ddd}
+td.lbl,th:first-child{text-align:left}
+.pos{color:var(--pos);font-weight:600} .neg{color:var(--neg);font-weight:600}
+.na{color:#bbb} tr.grp td{background:#f6f4fa;font-weight:600;color:#5b3a86;text-align:left}
+.warn{color:var(--warn);font-size:11px;border:1px solid var(--warn);border-radius:3px;padding:0 4px}
+.verdict{margin:10px 0;padding:12px 14px;border-radius:6px;font-size:13.5px}
+.verdict.ok{background:#fdf2f0;border-left:4px solid var(--pos)}
+.verdict.bad{background:#f1f8f4;border-left:4px solid var(--neg)}
+.note{background:#fafafa;border-left:3px solid #ccc;padding:12px 16px;font-size:13px;color:#444;margin:14px 0}
+.note b{color:#111}
+.kpi{display:flex;gap:14px;flex-wrap:wrap;margin:18px 0}
+.card{flex:1 1 190px;border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.card .k{font-size:12px;color:var(--mut)} .card .v{font-size:20px;font-weight:700;margin-top:2px}
+</style></head><body><div class="wrap">
+<h1>P1-4 · 突破强度 / 突破量比 · A 类后验报告</h1>
+<div class="sub">2005–2018 十四年基线库 · 三臂统计 · 生成于 2026-10-30 15:34 · 框架 e17_breakout_framework.md</div>
+
+<div class="kpi">
+  <div class="card"><div class="k">信号样本（filled）</div><div class="v">1560</div></div>
+  <div class="card"><div class="k">可计盈亏（已平仓）</div><div class="v">1481</div></div>
+  <div class="card"><div class="k">年末未平仓（无已实现）</div><div class="v">79</div></div>
+  <div class="card"><div class="k">被弃单（臂 C）</div><div class="v">118</div></div>
+</div>
+
+<h2>一、分带总表</h2>
+
+<div class="note"><b>先说清三件事，否则这张表会被误读：</b><br>
+① <b>0–3% 强度带、0–2× 量比带结构性无样本</b>——它们在 <code>isBreakout</code> 就被拦掉，不产生买入单。本表只覆盖「已过闸门」的样本，<b>回答不了「3% 该定在哪」</b>。<br>
+② <b>强度上限 8.15% = buy.premium(1.03) × match.max_entry_gap(1.05)</b>，是参数乘积，不是市场规律；实测最高 8.14%、≥10% 零笔。<br>
+③ 「每单位净利」用<b>已实现</b>口径（不是权益变动）；`n 平仓` 小于 `n 信号` 的那部分就是年末未平仓。</div>
+
+<h3>臂 A · 突破强度（1% 粒度）</h3>
+<table><thead><tr><th>强度带</th><th>n 信号</th><th>n 平仓</th><th>胜率</th><th>每单位净利</th>
+<th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔前三净利</th><th>持中位(日)</th>
+<th>正贡献年</th><th>2015</th><th>2018</th></tr></thead><tbody><tr><td class="lbl">3–4%</td><td>472</td><td>451</td><td>19.3%</td><td class="pos">172</td><td>16.4%</td><td>2.9%</td><td>1.22</td><td>31%</td><td class="neg">-68,025</td><td>6</td><td>6/13</td><td class="pos">489</td><td class="neg">-940</td></tr><tr><td class="lbl">4–5%</td><td>388</td><td>370</td><td>27.3%</td><td class="pos">1,626</td><td>9.4%</td><td>17.9%</td><td>3.64</td><td>41%</td><td class="pos">345,329</td><td>6</td><td>7/13</td><td class="pos">8,356</td><td class="neg">-550</td></tr><tr><td class="lbl">5–6%</td><td>329</td><td>310</td><td>25.5%</td><td class="pos">542</td><td>16.6%</td><td>8.9%</td><td>1.72</td><td>25%</td><td class="pos">92,508</td><td>6</td><td>6/12</td><td class="pos">3,244</td><td class="neg">-792</td></tr><tr><td class="lbl">6–7%</td><td>232</td><td>218</td><td>21.6%</td><td class="pos">399</td><td>15.8%</td><td>5.7%</td><td>1.46</td><td>59%</td><td class="neg">-99,777</td><td>6</td><td>5/12</td><td class="pos">406</td><td class="neg">-827</td></tr><tr><td class="lbl">7–8%</td><td>117</td><td>112</td><td>27.7%</td><td class="pos">1,258</td><td>11.0%</td><td>16.7%</td><td>3.09</td><td>45%</td><td class="pos">78,577</td><td>6</td><td>5/6</td><td class="pos">2,192</td><td class="pos">977</td></tr><tr><td class="lbl">8%+</td><td>22</td><td>20 <span class="warn">样本不足</span></td><td>10.0%</td><td class="neg">-291</td><td>18.0%</td><td>-8.0%</td><td>0.51</td><td>99%</td><td class="neg">-15,218</td><td>8</td><td>0/0</td><td class="neg">-142</td><td class="neg">-962</td></tr></tbody></table>
+<div class="verdict bad"><b>无稳定结论</b> — 形态反复（ρ=-0.26，反序 2 处）；跨度 1,454 元/单位；剔除前三有翻负</div>
+
+<h3>臂 B · 突破量比（后段加密）</h3>
+<table><thead><tr><th>量比带</th><th>n 信号</th><th>n 平仓</th><th>胜率</th><th>每单位净利</th>
+<th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔前三净利</th><th>持中位(日)</th>
+<th>正贡献年</th><th>2015</th><th>2018</th></tr></thead><tbody><tr><td class="lbl">2–2.5×</td><td>577</td><td>544</td><td>22.8%</td><td class="pos">1,080</td><td>10.8%</td><td>12.0%</td><td>2.43</td><td>32%</td><td class="pos">393,349</td><td>6</td><td>6/13</td><td class="pos">2,954</td><td class="neg">-816</td></tr><tr><td class="lbl">2.5–3×</td><td>347</td><td>330</td><td>25.2%</td><td class="pos">415</td><td>18.1%</td><td>7.1%</td><td>1.52</td><td>27%</td><td class="pos">39,956</td><td>6</td><td>7/13</td><td class="pos">1,886</td><td class="neg">-822</td></tr><tr><td class="lbl">3–4×</td><td>355</td><td>335</td><td>20.9%</td><td class="pos">541</td><td>13.0%</td><td>7.9%</td><td>1.76</td><td>32%</td><td class="pos">63,008</td><td>6</td><td>7/12</td><td class="pos">3,958</td><td class="neg">-825</td></tr><tr><td class="lbl">4–5×</td><td>149</td><td>144</td><td>27.1%</td><td class="pos">1,178</td><td>10.4%</td><td>16.6%</td><td>3.19</td><td>61%</td><td class="pos">20,880</td><td>6</td><td>2/7</td><td class="neg">-970</td><td class="neg">-39</td></tr><tr><td class="lbl">5–8×</td><td>111</td><td>107</td><td>23.4%</td><td class="neg">-7</td><td>23.6%</td><td>-0.2%</td><td>0.99</td><td>49%</td><td class="neg">-35,834</td><td>6</td><td>2/4</td><td class="pos">5,013</td><td class="neg">-177</td></tr><tr><td class="lbl">8×+</td><td>21</td><td>21 <span class="warn">样本不足</span></td><td>28.6%</td><td class="neg">-5</td><td>28.8%</td><td>-0.2%</td><td>0.99</td><td>70%</td><td class="neg">-5,103</td><td>6</td><td>0/0</td><td class="neg">-331</td><td class="neg">-1,483</td></tr></tbody></table>
+<div class="verdict bad"><b>无稳定结论</b> — 形态反复（ρ=-0.54，反序 2 处）；跨度 1,185 元/单位；剔除前三有翻负</div>
+
+<h3>附加 · 进场跳空（trade_fill.price / trigger − 1）</h3>
+<table><thead><tr><th>跳空带</th><th>n 信号</th><th>n 平仓</th><th>胜率</th><th>每单位净利</th>
+<th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔前三净利</th><th>持中位(日)</th>
+<th>正贡献年</th><th>2015</th><th>2018</th></tr></thead><tbody><tr><td class="lbl">0–1%</td><td>553</td><td>524</td><td>20.6%</td><td class="pos">372</td><td>14.8%</td><td>5.9%</td><td>1.50</td><td>22%</td><td class="pos">81,340</td><td>6</td><td>6/13</td><td class="pos">1,563</td><td class="neg">-1,059</td></tr><tr><td class="lbl">1–2%</td><td>375</td><td>357</td><td>22.7%</td><td class="pos">1,000</td><td>10.7%</td><td>12.0%</td><td>2.45</td><td>50%</td><td class="pos">67,905</td><td>6</td><td>5/12</td><td class="pos">14,389</td><td class="neg">-659</td></tr><tr><td class="lbl">2–3%</td><td>281</td><td>268</td><td>27.2%</td><td class="pos">1,266</td><td>11.4%</td><td>15.8%</td><td>2.90</td><td>44%</td><td class="pos">143,991</td><td>6</td><td>8/12</td><td class="pos">3,794</td><td class="pos">680</td></tr><tr><td class="lbl">3–5%</td><td>351</td><td>332</td><td>25.6%</td><td class="pos">644</td><td>15.8%</td><td>9.8%</td><td>1.83</td><td>31%</td><td class="pos">100,133</td><td>6</td><td>9/13</td><td class="pos">738</td><td class="neg">-823</td></tr></tbody></table>
+<div class="verdict bad"><b>无稳定结论</b> — 形态峰值/锯齿（ρ=0.40，反序 1 处）；跨度 893 元/单位；剔除前三全为正</div>
+
+<h2>二、跨年稳定性</h2>
+<div class="note">按框架 §5：<b>带-年 n≥10 才计入「正贡献年」</b>。`8%+` 强度带与 `8×+` 量比带样本极小，逐年基本 n&lt;5，其跨年列不可读，只作登记。</div>
+<table><thead><tr><th>带</th><th>可算年数</th><th>正贡献年</th><th>2015 每单位</th><th>2018 每单位</th></tr></thead><tbody>
+<tr><td class="lbl">3–4%</td><td>13</td><td>6</td><td class="pos">489</td><td class="neg">-940</td></tr><tr><td class="lbl">4–5%</td><td>13</td><td>7</td><td class="pos">8,356</td><td class="neg">-550</td></tr><tr><td class="lbl">5–6%</td><td>12</td><td>6</td><td class="pos">3,244</td><td class="neg">-792</td></tr><tr><td class="lbl">6–7%</td><td>12</td><td>5</td><td class="pos">406</td><td class="neg">-827</td></tr><tr><td class="lbl">7–8%</td><td>6</td><td>5</td><td class="pos">2,192</td><td class="pos">977</td></tr><tr><td class="lbl">8%+</td><td>0</td><td>0</td><td class="neg">-142</td><td class="neg">-962</td></tr><tr><td class="lbl">2–2.5×</td><td>13</td><td>6</td><td class="pos">2,954</td><td class="neg">-816</td></tr><tr><td class="lbl">2.5–3×</td><td>13</td><td>7</td><td class="pos">1,886</td><td class="neg">-822</td></tr><tr><td class="lbl">3–4×</td><td>12</td><td>7</td><td class="pos">3,958</td><td class="neg">-825</td></tr><tr><td class="lbl">4–5×</td><td>7</td><td>2</td><td class="neg">-970</td><td class="neg">-39</td></tr><tr><td class="lbl">5–8×</td><td>4</td><td>2</td><td class="pos">5,013</td><td class="neg">-177</td></tr><tr><td class="lbl">8×+</td><td>0</td><td>0</td><td class="neg">-331</td><td class="neg">-1,483</td></tr>
+</tbody></table>
+
+<h2>三、混淆与结构约束</h2>
+<table><thead><tr><th>项</th><th>值</th><th>处置</th></tr></thead><tbody>
+<tr><td class="lbl">Spearman(强度, 量比)</td><td>0.066</td><td>|ρ|&lt;0.3，按框架 §6 不做二维交叉表</td></tr>
+<tr><td class="lbl">强度 min / p50 / max</td><td>3.00% / 4.78% / 8.14%</td><td>上下界均贴参数闸门</td></tr>
+<tr><td class="lbl">量比 min / p50 / max</td><td>2.00× / 2.76× / 22.70×</td><td>长尾至 22.7×</td></tr>
+<tr><td class="lbl">强度 ≥10% 笔数</td><td>0</td><td>0 笔即为 8.15% 上限的直接证据</td></tr>
+</tbody></table>
+
+<h2>四、裁定与是否立 B 类</h2>
+<div class="verdict ok"><b>H4 成立 · 门槛之上无可用梯度，关闭这两个维度</b> — 强度 6 带 ρ=-0.26、反序 2 处；量比 6 带 ρ=-0.54、反序 2 处 → 两臂都不是单调梯度，最带差异（1,454 / 1,185 元/单位）来自带间跳跃而非趋势，且剔除前三后多条带翻负 → 不加严、不立 B 类。跳空臂形态为峰值而非单调（ρ=0.40），按同一标准判不成立。</div>
+<h3>臂 C 裁定（唯一可能推翻参数的证据）</h3>
+<div class="verdict bad"><b>中位更差、均值更好 → 高波动厚右尾，无一致方向</b> — 三时点中位（-0.5/-1.5/-3.3%）全部差于 filled 全体（-0.4/-0.5/-1.0%），但均值（0.9/0.5/1.0%）全部更好；胜率在 10/20 日更低。结论：弃单是「低胜率 + 厚右尾」的组合，不构成 max_entry_gap 砍掉利润的证据，也不构成它有害的证据；它确实挡掉了胜率更低的单子。</div>
+<h3>观察登记（不构成结论，供下一轮立项）</h3>
+<ul class="note"><li>强度 3–4% 是最大带（472 笔、占 30%），但剔除前三赢家后为 -68,025 元 → 最常见的强度不赚钱，靠少数几笔撑住。</li><li>量比 5×+ 两带 PF 均 0.99、缺口 -0.2%、剔除前三 -35,834 / -5,103 元 → 极高放量≈白干，「量比是否该设上限」登记为待验（属新变量，不是改 2× 门槛）。</li><li>进场跳空 2–3% 带每单位 1,266 元、正贡献年 8/12，为四带最高但形态是峰值不是单调 → 只登记为「跳空甜点在 2–3%」的假设，不采纳为结论。</li></ul>
+
+<h2>附 · 臂 C · 被弃单反事实（118 笔）</h2>
+<div class="note"><b>口径</b>：入场价照抄 <code>matchOrder</code>（跳空 <code>open≥trigger</code> 用开盘价；盘中上穿用 limit_price），再叠 <code>match.slippage=0.002</code>；收益 = 第 N 个交易日收盘 / 入场价 − 1；对照组用同一 N 日口径（入场价 = trade_fill.price）。<b>2015 占比 10%</b>（≤40%，可作为 14 年结论）。</div>
+<table><thead><tr><th>组</th><th>n</th><th>收益中位</th><th>均值</th><th>胜率</th></tr></thead><tbody>
+<tr class="grp"><td colspan="5">裸持有 5 交易日</td></tr><tr><td class="lbl">被弃单（反事实）</td><td>118</td><td class="neg">-0.5%</td><td>0.9%</td><td>46.6%</td></tr><tr><td class="lbl">对照 · filled 全体</td><td>1560</td><td class="neg">-0.4%</td><td>0.1%</td><td>46.0%</td></tr><tr><td class="lbl">对照 · filled 跳空 3–5%</td><td>351</td><td class="neg">-0.5%</td><td>0.5%</td><td>46.4%</td></tr><tr><td class="lbl">对照 · filled 强度 7%+</td><td>139</td><td class="neg">-0.3%</td><td>1.0%</td><td>49.6%</td></tr><tr class="grp"><td colspan="5">裸持有 10 交易日</td></tr><tr><td class="lbl">被弃单（反事实）</td><td>118</td><td class="neg">-1.5%</td><td>0.5%</td><td>42.4%</td></tr><tr><td class="lbl">对照 · filled 全体</td><td>1560</td><td class="neg">-0.5%</td><td>0.3%</td><td>47.5%</td></tr><tr><td class="lbl">对照 · filled 跳空 3–5%</td><td>351</td><td class="neg">-0.8%</td><td>0.9%</td><td>47.3%</td></tr><tr><td class="lbl">对照 · filled 强度 7%+</td><td>139</td><td class="neg">-0.3%</td><td>1.1%</td><td>47.5%</td></tr><tr class="grp"><td colspan="5">裸持有 20 交易日</td></tr><tr><td class="lbl">被弃单（反事实）</td><td>118</td><td class="neg">-3.3%</td><td>1.0%</td><td>41.5%</td></tr><tr><td class="lbl">对照 · filled 全体</td><td>1560</td><td class="neg">-1.0%</td><td>0.3%</td><td>46.0%</td></tr><tr><td class="lbl">对照 · filled 跳空 3–5%</td><td>351</td><td class="neg">-0.3%</td><td>0.7%</td><td>49.3%</td></tr><tr><td class="lbl">对照 · filled 强度 7%+</td><td>139</td><td class="neg">-0.5%</td><td>-0.2%</td><td>48.2%</td></tr>
+</tbody></table>
+<h3>止损版（套 reason_json.stop，先触先出）</h3>
+<table><thead><tr><th>组</th><th>n</th><th>收益中位</th><th>均值</th><th>胜率</th></tr></thead><tbody>
+<tr><td class="lbl">止损版 5 日</td><td>118</td><td class="neg">-0.8%</td><td>0.7%</td><td>44.9%</td></tr><tr><td class="lbl">止损版 10 日</td><td>118</td><td class="neg">-2.4%</td><td>0.2%</td><td>39.8%</td></tr><tr><td class="lbl">止损版 20 日</td><td>118</td><td class="neg">-4.5%</td><td>1.9%</td><td>39.0%</td></tr>
+</tbody></table>
+<table><thead><tr><th>切片</th><th>n</th><th>5 日中位</th><th>10 日中位</th><th>20 日中位</th></tr></thead><tbody>
+<tr><td class="lbl">2015 年内</td><td>12</td><td>-0.7%</td><td>0.9%</td><td>9.0%</td></tr>
+<tr><td class="lbl">2015 之外</td><td>106</td><td>-0.5%</td><td>-1.6%</td><td>-3.4%</td></tr>
+</tbody></table>
+
+<div class="note"><b>HARD 校验</b>：全部通过
+<br>
+<b>生成器</b>：scripts/e17_breakout.py ｜ <b>校验器</b>：scripts/e17_breakout_verify.py ｜ <b>数据</b>：e17_breakout_data.json</div>
+</div></body></html>
