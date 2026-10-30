@@ -24,7 +24,10 @@ ROOT = Path(__file__).resolve().parent.parent
 BT = ROOT / "var" / "bt"
 P26 = BT / "p26"
 # 归档后库可能已搬到冷存储盘：允许追加读目录（--p26-dir），首个为默认写入/查找根。
-P26_DIRS = [P26]
+# 归档盘若存在则默认一并扫描——否则归档后不带参数重跑报告会把已归档年份整年丢掉
+# （2026-10-30 事故：automation 不带参重跑，阶段 1 的 2012 五档从报告里消失）。
+ARCHIVE = Path("A:/Darvas-archive/p26")
+P26_DIRS = [P26] + ([ARCHIVE] if ARCHIVE.exists() else [])
 
 
 def find_db(name):

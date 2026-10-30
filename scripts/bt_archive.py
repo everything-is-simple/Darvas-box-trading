@@ -164,8 +164,14 @@ def main():
     a = ap.parse_args()
 
     if a.manifest:
-        m = DEFAULT_DST / "MANIFEST.tsv"
-        print(m.read_text(encoding="utf-8") if m.exists() else "台账为空")
+        root = Path(a.dst)
+        files = sorted(root.rglob("MANIFEST.tsv")) if root.exists() else []
+        if not files:
+            print(f"{root} 下没有台账")
+            return 0
+        for m in files:
+            print(f"\n=== {m.relative_to(root).parent} ===")
+            print(m.read_text(encoding="utf-8").rstrip())
         return 0
 
     if not a.files:
