@@ -134,12 +134,24 @@ def run_one(year, stale, force=False):
 
 
 def db_complete(path):
+    """完成判据：库里有 equity_snapshot，且最后交易日 ≥ 当年 12-25。
+
+    2026-10-30 修正：原判据只查 `COUNT(*) > 0`，任何跑了一两天的残缺库都会被判为
+    「已完整」→ 续跑时静默跳过，造成档位数据缺失却显示完成。
+    A 股年度最后交易日恒在 12-28~12-31，故以 12-25 为安全下界（同 base_year_summary）。
+    """
     if not path.exists():
         return False
     try:
         c = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         try:
-            return c.execute("SELECT COUNT(*) FROM equity_snapshot").fetchone()[0] > 0
+            n, mx = c.execute(
+                "SELECT COUNT(*), MAX(date) FROM equity_snapshot"
+            ).fetchone()
+            if not n or not mx:
+                return False
+            year = path.stem.rsplit("_", 1)[-1]
+            return mx >= f"{year}-12-25"
         finally:
             c.close()
     except Exception:
