@@ -370,57 +370,58 @@ def compound(bands, years):
 
 def judge(bands, comp, years):
     """按框架 §5 预注册判据裁定。"""
-    full = [s for s in STALE_ORDER if (comp[s]["terminal"] is not None and comp[s]["full"])]
-    base = comp.get(2, {}).get("terminal")
+    cov = {s: comp[s]["years"] for s in STALE_ORDER if comp[s].get("terminal")}
+    maxcov = max(cov.values()) if cov else 0
+    full = [s for s in STALE_ORDER if cov.get(s) == maxcov and comp[s]["terminal"] is not None]
     verdict = {"h1": False, "h2": False, "h3": False, "note": "", "full_bands": full}
-    if len(full) < len([s for s in STALE_ORDER if comp[s]["terminal"] is not None]) or not full:
+    # 两阶段设计（2026-10-30 定稿）：阶段 1 是「5 档 × 1 年」出梯度形状，
+    # 阶段 2 只补「基线 + 胜出档 × 3 年」。因此不存在「五档都覆盖全部年份」的时刻，
+    # 旧的「每档年数==目标年数」判据永远为假 → 报告会一直挂「暂不裁定」，
+    # 事实是结论早就出来了。改为：以**覆盖最全且含基线的档**在同集上的复利作主判据。
+    if maxcov < 2 or 2 not in full or len(full) < 2:
         verdict["note"] = (f"代表年未跑齐（{len(years)} 年目标，逐档已覆盖年数见 §三），"
                            f"阶段 1 只出梯度形状，**不作裁定**")
+        if maxcov == 1:  # 阶段 1 单年：仍出梯度形状供中期查看
+            got = [s for s in STALE_ORDER if comp[s].get("terminal")]
+            b = comp.get(2, {}).get("terminal")
+            if b:
+                best1 = max(got, key=lambda s: comp[s]["terminal"])
+                ladder = [s for s in (2, 5, 10, 100000) if comp.get(s, {}).get("terminal")]
+                seq = [comp[s]["terminal"] for s in ladder]
+                verdict.update({
+                    "stage1": True,
+                    "stage1_delta": (comp[best1]["terminal"] / b - 1) * 100,
+                    "stage1_within": abs(comp[best1]["terminal"] / b - 1) < 0.03,
+                    "stage1_monotonic": all(seq[i] < seq[i + 1] for i in range(len(seq) - 1)),
+                    "best": best1})
         return verdict
-    if base is None:
-        verdict["note"] = "基线档缺失，无法裁定"
-        return verdict
-    best = max(full, key=lambda s: comp[s]["terminal"])
-    verdict["best"] = best
-    verdict["best_terminal"] = comp[best]["terminal"]
-    verdict["base_terminal"] = base
-
-    # 阶段 1 保护（2026-10-30）：代表年只有 1 年时，"每档年数==目标年数"恒成立，
-    # 会让单年数据直接走完整裁定 —— 违反框架 §5.2「单年不外推」「差异 <3% 视为噪声」。
-    # 故强制只出梯度形状，不裁 H1/H2/H3。
-    if len(years) < 2:
-        d = (comp[best]["terminal"] / base - 1) * 100
-        # 单调性：放宽方向（2→5→10→off）是否单调递增
-        ladder = [s for s in (2, 5, 10, 100000) if comp.get(s, {}).get("terminal")]
-        seq = [comp[s]["terminal"] for s in ladder]
-        monotonic = all(seq[i] < seq[i + 1] for i in range(len(seq) - 1))
-        verdict["stage1"] = True
-        verdict["stage1_delta"] = d
-        verdict["stage1_within"] = abs(d) < 3.0
-        verdict["stage1_monotonic"] = monotonic
-        verdict["note"] = (
-            f"阶段 1（代表年 {len(years)} 年，仅出梯度形状，不作 H1/H2/H3 终裁）："
-            f"最优档 {best} 相对基线 {d:+.2f}%，"
-            f"{'落在噪声门槛 ±3% 内' if abs(d) < 3.0 else '超出噪声门槛'}；"
-            f"放宽方向{'单调' if monotonic else '**非单调**'}。"
-        )
-        return verdict
-    # 噪声门槛：复利终值差异 <3% 视为持平
-    material = abs(comp[best]["terminal"] / base - 1) >= 0.03
-    mdd_ok = comp[best]["worst_mdd"] >= comp[2]["worst_mdd"] - 1e-9
-    if best == 2 or not material:
-        verdict["h2"] = True
-        verdict["note"] = "基线档最优或差异在噪声内（<3%）" if best == 2 else \
-            f"最优档 {best} 优于基线但幅度 <3%，视为噪声"
-    elif best == 0:
-        verdict["h3"] = True
-        verdict["note"] = "收紧极限档（0）最优"
-    elif best in (5, 10, 100000) and mdd_ok:
+    base = comp[2]["terminal"]
+    yrs = comp[2]["years_list"]
+    rels = {s: comp[s]["terminal"] / base - 1 for s in full if s != 2}
+    cand = max(rels, key=lambda s: rels[s]) if rels else None
+    best_rel = rels[cand] if cand else 0.0
+    # 逐年方向：放宽档在**每一年**都优于基线才算「放宽有效」，方向不一致即判无稳定结论
+    per_year = {s: [bands[(s, y)]["ret"] - bands[(2, y)]["ret"] for y in yrs] for s in rels}
+    verdict.update({"best": cand, "best_terminal": comp[cand]["terminal"] if cand else None,
+                    "base_terminal": base, "best_rel": best_rel,
+                    "years_used": yrs, "per_year": per_year,
+                    "rel_all": rels})
+    tight = (comp.get(0) or {}).get("rel_vs_base")  # 收紧极限档（仅 2012 有）
+    if best_rel >= 0.03 and all(x > 0 for x in per_year[cand]):
         verdict["h1"] = True
-        verdict["note"] = f"放宽档 {best} 复利终值更高且 MDD 不劣化"
+        verdict["note"] = (f"放宽档 {cand} 在 {'+'.join(map(str, yrs))} 同集上复利高 {best_rel*100:+.2f}%，"
+                           f"且逐年同向 → 放宽有效")
+    elif tight is not None and tight >= 0.03:
+        verdict["h3"] = True
+        verdict["note"] = f"收紧极限档 0 优于基线 {tight*100:+.2f}% → 越严越好"
     else:
-        verdict["note"] = f"最优档 {best} 但 MDD 劣化，按 H2 处理（保持现状）"
         verdict["h2"] = True
+        signs = [f"{y}:{x*100:+.2f}pp" for y, x in zip(yrs, per_year.get(cand, []))] if cand else []
+        verdict["note"] = (
+            f"维持 `staledays=2`：覆盖最全的档 {cand} 在 {'+'.join(map(str, yrs))} 同集复利 "
+            f"{best_rel*100:+.2f}%（门槛 +3%）；逐年差 {' / '.join(signs) or '—'} → "
+            f"{'方向不一致' if signs and min(per_year[cand]) < 0 < max(per_year[cand]) else '幅度不足'}，"
+            f"按框架 §5.2 不采纳。")
     return verdict
 
 
@@ -841,9 +842,9 @@ def make_conclusion(data):
         return out
     if v["h2"]:
         out.append(f"<b>结论：维持 <code>position.staledays=2</code>。</b>"
-                   f"最优档为 {STALE_LABEL.get(best, best)}，相对基线 "
-                   f"{(v['best_terminal']/v['base_terminal']-1)*100:+.2f}%"
-                   f"（噪声门槛 ±3%），不构成改动依据。")
+                   f"放宽档 {STALE_LABEL.get(best, best)} 在 "
+                   f"{'+'.join(map(str, v.get('years_used') or years))} 同集复利 "
+                   f"{v.get('best_rel', 0)*100:+.2f}%（门槛 ±3%），逐年方向不一致，不构成改动依据。")
     elif v["h1"]:
         out.append(f"<b>结论：放宽到 <code>staledays={best}</code> 有证据支持。</b>"
                    f"链接终值 {v['best_terminal']:.4f} vs 基线 {v['base_terminal']:.4f}"

@@ -27,12 +27,14 @@ tr:hover td{background:#1b1f28}
 code{background:#1d222c;padding:1px 5px;border-radius:4px;font-size:12.5px}
 </style></head><body><div class=wrap>
 <h1>P2-6a · <code>position.staledays</code> 梯度实验</h1>
-<div class=sub>Darvas 箱体量化系统 · 十维 #9（移动 stop）· B 类单变量回测 · 生成于 2026-10-30 12:50</div>
+<div class=sub>Darvas 箱体量化系统 · 十维 #9（移动 stop）· B 类单变量回测 · 生成于 2026-10-30 14:11</div>
 <h2 id=s0>核心结论</h2>
-<div class=callout>代表年档位未跑齐，本报告暂无结论。</div>
+<div class=callout><b>结论：维持 <code>position.staledays=2</code>。</b>放宽档 5 在 2011+2012+2015+2017 同集复利 -3.71%（门槛 ±3%），逐年方向不一致，不构成改动依据。</div>
+<div class=callout>本报告仅覆盖代表年 2011/2012/2015/2017，<b>单年不外推</b>；改默认值前须走 migration（append-only）。</div>
 <h2 id=s1>一、假设裁定</h2>
-<div class=callout red><b>裁定</b>：代表年未跑齐（3 年目标，逐档已覆盖年数见 §三），阶段 1 只出梯度形状，**不作裁定**<br>
-H1（放宽有效）= <b>不成立</b> ｜ H2（现行最优）= <b>不成立</b> ｜ H3（越严越好）= <b>不成立</b></div>
+<div class=callout amber><b>裁定</b>：维持 `staledays=2`：覆盖最全的档 5 在 2011+2012+2015+2017 同集复利 -3.71%（门槛 +3%）；逐年差 2011:+0.92pp / 2012:+2.73pp / 2015:-6.69pp / 2017:-2.29pp → 方向不一致，按框架 §5.2 不采纳。<br>
+H1（放宽有效）= <b>不成立</b> ｜ H2（现行最优）= <b>成立</b> ｜ H3（越严越好）= <b>不成立</b></div>
+<p class=small>完整档位：[2, 5]；最优档 = <b>5</b>，链接终值 1.2173（基线 1.2642，差 -3.71%）。噪声门槛 ±3%。</p>
 <h2 id=s2>二、逐年逐档矩阵</h2>
 <p class=small>权益指标与 <code>p05_yearly_report.py</code> 同口径（equity_snapshot 首末 total、drawdown 最小值）。涨用红、跌用绿（A 股惯例）。</p>
 <h3>2011 年</h3><table><tr><th>档位</th><th>收益率</th><th>期末权益</th><th>最大回撤</th><th>夏普</th><th>平仓笔数</th><th>胜率</th><th>PF</th><th>净利</th><th>ts 笔数</th><th>ts 占比</th><th>ts 净利</th><th>持有中位</th></tr>
@@ -50,12 +52,16 @@ H1（放宽有效）= <b>不成立</b> ｜ H2（现行最优）= <b>不成立</b
 <tr><td>2（基线）</td><td class=pos>34.08%</td><td>1,340,801</td><td class=neg>-10.31%</td><td>2.45</td><td>69</td><td>37.7%</td><td>6.12</td><td class=pos>328,148</td><td>34</td><td>49.3%</td><td class=neg>-41,786</td><td>5</td></tr>
 <tr><td>5</td><td class=pos>27.39%</td><td>1,273,911</td><td class=neg>-11.22%</td><td>2.09</td><td>66</td><td>40.9%</td><td>5.33</td><td class=pos>263,362</td><td>23</td><td>34.8%</td><td class=neg>-28,145</td><td>8</td></tr>
 </table>
+<h3>2017 年</h3><table><tr><th>档位</th><th>收益率</th><th>期末权益</th><th>最大回撤</th><th>夏普</th><th>平仓笔数</th><th>胜率</th><th>PF</th><th>净利</th><th>ts 笔数</th><th>ts 占比</th><th>ts 净利</th><th>持有中位</th></tr>
+<tr><td>2（基线）</td><td class=pos>0.19%</td><td>1,001,936</td><td class=neg>-4.45%</td><td>0.06</td><td>163</td><td>13.5%</td><td>0.76</td><td class=neg>-29,449</td><td>127</td><td>77.9%</td><td class=neg>-91,232</td><td>5</td></tr>
+<tr><td>5</td><td class=neg>-2.09%</td><td>979,080</td><td class=neg>-4.90%</td><td>-0.44</td><td>140</td><td>14.3%</td><td>0.62</td><td class=neg>-44,824</td><td>91</td><td>65.0%</td><td class=neg>-76,180</td><td>8</td></tr>
+</table>
 <h2 id=s3>三、代表年链接复利终值（主判据）</h2>
-<p class=small>Π(1+r_y)，代表年：2011、2012、2015。单年视角会被好年/坏年主导，链接后才是可比口径。</p>
+<p class=small>Π(1+r_y)，代表年：2011、2012、2015、2017。单年视角会被好年/坏年主导，链接后才是可比口径。</p>
 <table><tr><th>档位</th><th>覆盖年</th><th>自身链接终值</th><th>CAGR</th><th>最差 MDD</th><th>与基线对比年集</th><th>相对基线</th></tr>
 <tr><td>0（收紧极限）</td><td>2012</td><td>1.0101</td><td>1.01%</td><td class=neg>-2.74%</td><td>2012</td><td class=neg>-0.33%</td></tr>
-<tr><td>2（基线）</td><td>2011+2012+2015</td><td>1.2618</td><td>8.06%</td><td class=neg>-10.31%</td><td>2011+2012+2015</td><td class=mut>+0.00%</td></tr>
-<tr><td>5</td><td>2011+2012+2015</td><td>1.2433</td><td>7.53%</td><td class=neg>-11.22%</td><td>2011+2012+2015</td><td class=neg>-1.46%</td></tr>
+<tr><td>2（基线）</td><td>2011+2012+2015+2017</td><td>1.2642</td><td>6.04%</td><td class=neg>-10.31%</td><td>2011+2012+2015+2017</td><td class=mut>+0.00%</td></tr>
+<tr><td>5</td><td>2011+2012+2015+2017</td><td>1.2173</td><td>5.04%</td><td class=neg>-11.22%</td><td>2011+2012+2015+2017</td><td class=neg>-3.71%</td></tr>
 <tr><td>10</td><td>2012</td><td>1.0360</td><td>3.60%</td><td class=neg>-2.54%</td><td>2012</td><td class=pos>+2.23%</td></tr>
 <tr><td>off（关闭）</td><td>2012</td><td>1.0375</td><td>3.75%</td><td class=neg>-3.15%</td><td>2012</td><td class=pos>+2.37%</td></tr>
 <p class=small>横比只看「相对基线」列：只在「该档与基线都有数据」的年份上复利，覆盖年数不同的档不会因多跑一年而虚高。</p>
@@ -77,6 +83,10 @@ H1（放宽有效）= <b>不成立</b> ｜ H2（现行最优）= <b>不成立</b
 <tr><td>2（基线）</td><td>49.3%</td><td class=neg>-7,455</td><td>45</td><td>12</td><td class=pos>280,954</td><td>7.5%</td><td>58%</td><td>27%</td><td>58</td></tr>
 <tr><td>5</td><td>34.8%</td><td class=neg>-25,761</td><td>36</td><td>12</td><td class=pos>216,230</td><td>7.6%</td><td>53%</td><td>24%</td><td>58</td></tr>
 </table>
+<h3>2017 年</h3><table><tr><th>档位</th><th>ts 退出占比</th><th>短持块(≤10日)净利</th><th>短持笔数</th><th>大赢家笔数</th><th>大赢家净利</th><th>MFE 中位</th><th>前三赢家占净利</th><th>日均暴露</th><th>持有 P90</th></tr>
+<tr><td>2（基线）</td><td>77.9%</td><td class=neg>-46,149</td><td>120</td><td>2</td><td class=pos>34,479</td><td>3.7%</td><td>—</td><td>17%</td><td>23</td></tr>
+<tr><td>5</td><td>65.0%</td><td class=neg>-52,240</td><td>84</td><td>1</td><td class=pos>13,043</td><td>4.2%</td><td>—</td><td>19%</td><td>27</td></tr>
+</table>
 <h2 id=s5>五、持有天数分布变化</h2>
 <p class=small>BarCount 口径。基线档在 6–10 日的尖峰是 time_stop 的机械后果（P2-5 §七）。</p>
 <h3>2011 年</h3><table><tr><th>档位</th><th>0 日</th><th>1-2 日</th><th>3-5 日</th><th>6-10 日</th><th>11-20 日</th><th>21-60 日</th><th>61+ 日</th></tr>
@@ -94,6 +104,10 @@ H1（放宽有效）= <b>不成立</b> ｜ H2（现行最优）= <b>不成立</b
 <tr><td>2（基线）</td><td>0</td><td>8</td><td>27</td><td>10</td><td>9</td><td>11</td><td>4</td></tr>
 <tr><td>5</td><td>0</td><td>6</td><td>12</td><td>18</td><td>14</td><td>11</td><td>5</td></tr>
 </table>
+<h3>2017 年</h3><table><tr><th>档位</th><th>0 日</th><th>1-2 日</th><th>3-5 日</th><th>6-10 日</th><th>11-20 日</th><th>21-60 日</th><th>61+ 日</th></tr>
+<tr><td>2（基线）</td><td>0</td><td>8</td><td>94</td><td>18</td><td>25</td><td>17</td><td>1</td></tr>
+<tr><td>5</td><td>0</td><td>10</td><td>17</td><td>57</td><td>36</td><td>20</td><td>0</td></tr>
+</table>
 <h2 id=s6>六、HARD 校验</h2>
 <h3>① 基线可复现（生死线）</h3>
 <p class=small>staledays=2 档必须与历史基线库逐笔一致，否则差异无法归因于 staledays。</p>
@@ -101,6 +115,7 @@ H1（放宽有效）= <b>不成立</b> ｜ H2（现行最优）= <b>不成立</b
 <tr><td>2011</td><td>91</td><td>91</td><td>-71,406</td><td>-71,406</td><td>0</td><td class=ok>通过</td></tr>
 <tr><td>2012</td><td>91</td><td>91</td><td>-24,554</td><td>-24,554</td><td>0</td><td class=ok>通过</td></tr>
 <tr><td>2015</td><td>69</td><td>69</td><td>328,148</td><td>328,148</td><td>0</td><td class=ok>通过</td></tr>
+<tr><td>2017</td><td>163</td><td>163</td><td>-29,449</td><td>-29,449</td><td>0</td><td class=ok>通过</td></tr>
 </table>
 <h3>② 参数生效</h3>
 <table><tr><th>年</th><th>目标档</th><th>库内 param</th><th>ts 笔数</th><th>结论</th></tr>
@@ -108,9 +123,11 @@ H1（放宽有效）= <b>不成立</b> ｜ H2（现行最优）= <b>不成立</b
 <tr><td>2011</td><td>2</td><td>2</td><td>71</td><td class=ok>通过</td></tr>
 <tr><td>2012</td><td>2</td><td>2</td><td>72</td><td class=ok>通过</td></tr>
 <tr><td>2015</td><td>2</td><td>2</td><td>34</td><td class=ok>通过</td></tr>
+<tr><td>2017</td><td>2</td><td>2</td><td>127</td><td class=ok>通过</td></tr>
 <tr><td>2011</td><td>5</td><td>5</td><td>49</td><td class=ok>通过</td></tr>
 <tr><td>2012</td><td>5</td><td>5</td><td>42</td><td class=ok>通过</td></tr>
 <tr><td>2015</td><td>5</td><td>5</td><td>23</td><td class=ok>通过</td></tr>
+<tr><td>2017</td><td>5</td><td>5</td><td>91</td><td class=ok>通过</td></tr>
 <tr><td>2012</td><td>10</td><td>10</td><td>28</td><td class=ok>通过</td></tr>
 <tr><td>2012</td><td>100000</td><td>100000</td><td>0</td><td class=ok>通过</td></tr>
 </table>
@@ -121,9 +138,11 @@ H1（放宽有效）= <b>不成立</b> ｜ H2（现行最优）= <b>不成立</b
 <tr><td>2011</td><td>2（基线）</td><td>38</td><td>无</td><td>0</td><td class=ok>通过</td></tr>
 <tr><td>2012</td><td>2（基线）</td><td>38</td><td>无</td><td>0</td><td class=ok>通过</td></tr>
 <tr><td>2015</td><td>2（基线）</td><td>38</td><td>无</td><td>0</td><td class=ok>通过</td></tr>
+<tr><td>2017</td><td>2（基线）</td><td>38</td><td>无</td><td>0</td><td class=ok>通过</td></tr>
 <tr><td>2011</td><td>5</td><td>38</td><td>position.staledays</td><td>0</td><td class=ok>通过</td></tr>
 <tr><td>2012</td><td>5</td><td>38</td><td>position.staledays</td><td>0</td><td class=ok>通过</td></tr>
 <tr><td>2015</td><td>5</td><td>38</td><td>position.staledays</td><td>0</td><td class=ok>通过</td></tr>
+<tr><td>2017</td><td>5</td><td>38</td><td>position.staledays</td><td>0</td><td class=ok>通过</td></tr>
 <tr><td>2012</td><td>10</td><td>38</td><td>position.staledays</td><td>0</td><td class=ok>通过</td></tr>
 <tr><td>2012</td><td>off（关闭）</td><td>38</td><td>position.staledays</td><td>0</td><td class=ok>通过</td></tr>
 </table>
@@ -139,6 +158,8 @@ H1（放宽有效）= <b>不成立</b> ｜ H2（现行最优）= <b>不成立</b
 <tr><td>2012</td><td>off（关闭）</td><td>60</td><td>60</td><td class=ok>通过</td></tr>
 <tr><td>2015</td><td>2（基线）</td><td>69</td><td>69</td><td class=ok>通过</td></tr>
 <tr><td>2015</td><td>5</td><td>66</td><td>66</td><td class=ok>通过</td></tr>
+<tr><td>2017</td><td>2（基线）</td><td>163</td><td>163</td><td class=ok>通过</td></tr>
+<tr><td>2017</td><td>5</td><td>140</td><td>140</td><td class=ok>通过</td></tr>
 </table>
 <div class=callout blue><b>复现命令</b>：<code>python scripts/p26_report.py</code>（只读 var/bt/p26/*.db 与历史基线库）；回测执行器 <code>scripts/p26_run.py</code>。</div>
 </div></body></html>
