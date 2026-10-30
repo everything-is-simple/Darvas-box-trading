@@ -290,7 +290,7 @@ erDiagram
 |------|------|------|-------------|
 | `box_bottom` | number | 被突破箱体下轨价 | 第 2 维（box 高度）后验原料 |
 | `box_top` | number | 被突破箱体上轨价 | 第 2 维 + 第 6 维后验原料 |
-| `trigger` | number | 触发价 = `box_top × buy.premium` | 第 6 维（突破强度）—— ⚠️ 当前全部=box_top×1.03，无梯度 |
+| `trigger` | number | 触发价 = `box_top × buy.premium` | 第 6 维（突破强度）—— 强度= `close(plan_date)/box_top−1` 可复算；**P1-4 A 类已收官（2026-10-30）**：3–8.14% 内无梯度 |
 | `high_52w` | number | 截至突破日的 52 周最高价 | 第 5 维 + 第 4 维后验原料 |
 | `newhigh_distance_pct` | number | `(high_52w - close) / high_52w × 100` | 第 5 维（box 位置）—— E17 阶梯分档依据 |
 | `sizing_basis` | string | `newhigh_t1`/`t2`/`t3`/`t4` 之一 | 第 5 维档位标记 |

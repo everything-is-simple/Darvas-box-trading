@@ -78,10 +78,10 @@ commit message约定：`feat(box): ...` / `feat(contract): ...`（contract前缀
 
 | 不变量 / 验证项 | 保障机制 | 状态 |
 |--------|---------|------|
-| 终态不可逆：broken_up / broken_down / invalid 不回到 confirmed 或 forming | 引擎规则（`invalidateAndRestart` 只前进，`internal/box/engine.go`）＋ A0① 边界单测待补 | A0 待验证 |
-| 每根 K 线必属且仅属一个箱体；终止/作废当根 K 线只开一个新 forming | `startBox` / `invalidateAndRestart` 单一路径 ＋ A0② 单测待补 | A0 待验证 |
-| 相同 K 线＋参数重复 `Scan` 逐字段幂等 | 引擎零 IO 纯函数 ＋ A0③ 回归测试待补 | A0 待验证 |
-| 全量重算 / 每日增量 / 最近 800 根窗口三路重建逐日一致 | A0④ 对照脚本待补；差异必须解释为窗口/输入语义，不得默认忽略 | A0 待验证 |
+| 终态不可逆：broken_up / broken_down / invalid 不回到 confirmed 或 forming | 引擎规则（`invalidateAndRestart` 只前进，`internal/box/engine.go`）＋ A0① 边界单测 | ✅ **A0 PASS（2026-10-29）** |
+| 每根 K 线必属且仅属一个箱体；终止/作废当根 K 线只开一个新 forming | `startBox` / `invalidateAndRestart` 单一路径 ＋ A0② 单测 | ✅ **A0 PASS（2026-10-29）** |
+| 相同 K 线＋参数重复 `Scan` 逐字段幂等 | 引擎零 IO 纯函数 ＋ A0③ 回归测试 | ✅ **A0 PASS（2026-10-29）** |
+| 全量重算 / 每日增量 / 最近 800 根窗口三路重建逐日一致 | A0④ 对照脚本（180,642 票日 100% 全等、C 路恒等式 50/50） | ✅ **A0 PASS（2026-10-29）**；A1 对账恒等式闭合 |
 | prev_box_id 无环（既有） | Upsert 应用层校验（链长≤100） | 已落地 |
 
 > 未来若为 `box` 表补生命周期证据（`start_date` / `invalidated_date` / `invalid_reason` / append-only
