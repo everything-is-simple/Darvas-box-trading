@@ -351,6 +351,20 @@ def compound(bands, years):
                 tc *= (1 + bands[(stale, y)]["ret"])
             out[stale]["terminal_common"] = tc
             out[stale]["cagr_common"] = tc ** (1 / len(common)) - 1
+        # 与基线（staledays=2）可比的年集：只取两边都有数据的年份。
+        # 这才是决策口径——sd0 只有 2012，就跟基线比 2012；sd5 有三年，就跟基线比三年，
+        # 而不是把所有档位压到公共交集（那样会把 sd5 三年证据丢成一年）。
+        vs_years = [y for y in covered if (2, y) in bands]
+        if vs_years and stale != 2:
+            ts_vs = 1.0
+            tb_vs = 1.0
+            for y in vs_years:
+                ts_vs *= (1 + bands[(stale, y)]["ret"])
+                tb_vs *= (1 + bands[(2, y)]["ret"])
+            out[stale]["vs_years"] = vs_years
+            out[stale]["terminal_vs_base"] = ts_vs
+            out[stale]["base_terminal_vs"] = tb_vs
+            out[stale]["rel_vs_base"] = ts_vs / tb_vs - 1
     return out
 
 
@@ -503,7 +517,7 @@ def render_html(data):
     A("<p class=small>Π(1+r_y)，代表年：%s。单年视角会被好年/坏年主导，链接后才是可比口径。</p>"
       % "、".join(str(y) for y in years))
     A("<table><tr><th>档位</th><th>覆盖年</th><th>自身链接终值</th><th>CAGR</th><th>最差 MDD</th>"
-      "<th>同年可比终值</th><th>相对基线</th></tr>")
+      "<th>与基线对比年集</th><th>相对基线</th></tr>")
     for s in STALE_ORDER:
         c = comp.get(s) or comp.get(str(s)) or {}
         yrs = "+".join(str(y) for y in (c.get("years_list") or []))
@@ -511,19 +525,17 @@ def render_html(data):
             A(f"<tr><td>{E(STALE_LABEL.get(s, str(s)))}</td><td>—</td>"
               f"<td colspan=5 class=mut>未完跑</td></tr>")
             continue
-        base_t = (comp.get(2) or comp.get("2") or {}).get("terminal_common")
-        tc = c.get("terminal_common")
-        rel = (tc / base_t - 1) if (tc and base_t) else None
+        rel = c.get("rel_vs_base")
+        vy = "+".join(str(y) for y in (c.get("vs_years") or []))
+        if s == 2:
+            vy, rel = yrs, 0.0
         rc = "pos" if (rel or 0) > 0 else ("neg" if (rel or 0) < 0 else "mut")
         A(f"<tr><td>{E(STALE_LABEL.get(s, str(s)))}</td><td>{yrs or '—'}</td>"
           f"<td>{c['terminal']:.4f}</td><td>{pct(c['cagr'], 2)}</td>"
-          f"<td class=neg>{pct(c['worst_mdd'], 2)}</td>"
-          f"<td>{'—' if tc is None else f'{tc:.4f}'}</td>"
+          f"<td class=neg>{pct(c['worst_mdd'], 2)}</td><td>{vy or '—'}</td>"
           f"<td class={rc}>{'—' if rel is None else f'{rel*100:+.2f}%'}</td></tr>")
-    cy = (comp.get(2) or {}).get("common_years") or []
-    if cy:
-        A(f"<p class=small>横比只能看「同年可比终值」：交集年 = {'+'.join(str(y) for y in cy)}。"
-          f"「自身链接终值」按各档自己覆盖的年数复利，年数不同不可比（多一年就多乘一次）。</p>")
+    A("<p class=small>横比只看「相对基线」列：只在「该档与基线都有数据」的年份上复利，"
+      "覆盖年数不同的档不会因多跑一年而虚高。</p>")
     A("</table>")
     # ---- 结构指标
     A("<h2 id=s4>四、结构指标（判「怎么变的」，不给分）</h2>")
@@ -665,26 +677,25 @@ def render_md(data):
     else:
         A("## 三、代表年链接复利终值（主判据）")
     A("")
-    A("| 档位 | 覆盖年 | 自身链接终值 | CAGR | 最差 MDD | 同年可比终值 | 相对基线 |")
-    A("|---|---|---:|---:|---:|---:|---:|")
+    A("| 档位 | 覆盖年 | 自身链接终值 | CAGR | 最差 MDD | 与基线对比年集 | 相对基线 |")
+    A("|---|---|---:|---:|---:|---|---:|")
     for s in STALE_ORDER:
         c = comp.get(s) or comp.get(str(s)) or {}
         if not c.get("terminal"):
             A(f"| {STALE_LABEL.get(s, s)} | — | — | — | — | — | 未完跑 |")
             continue
         yrs = "+".join(str(y) for y in c.get("years_list") or [])
-        base_t = (comp.get(2) or comp.get("2") or {}).get("terminal_common")
-        tc = c.get("terminal_common")
-        rel = (tc / base_t - 1) if (tc and base_t) else None
+        rel = c.get("rel_vs_base")
+        vy = "+".join(str(y) for y in c.get("vs_years") or [])
+        if s == 2:
+            vy, rel = yrs, 0.0
         A(f"| {STALE_LABEL.get(s, s)} | {yrs} | {c['terminal']:.4f} | {pct(c['cagr'],2)} | "
-          f"{pct(c['worst_mdd'],2)} | {'—' if tc is None else f'{tc:.4f}'} | "
+          f"{pct(c['worst_mdd'],2)} | {vy or '—'} | "
           f"{'—' if rel is None else f'{rel*100:+.2f}%'} |")
-    cy = (comp.get(2) or {}).get("common_years") or []
-    if cy:
-        A("")
-        A(f"> **横比只能看「同年可比终值」列**：交集年 = {'+'.join(str(y) for y in cy)}。"
-          "「自身链接终值」按各档自己覆盖的年数复利，年数不同不可比"
-          "（多一年就多乘一次，与参数优劣无关）。")
+    A("")
+    A("> **横比只看「相对基线」列**：只在「该档与基线都有数据」的年份上复利，"
+      "覆盖年数不同的档不会因为多跑一年而虚高。"
+      "「自身链接终值」是按各档自己覆盖年数算的绝对收益，只作参考、不与别档横比。")
     A("")
     A("## 四、结构指标")
     A("")
