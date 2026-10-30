@@ -237,13 +237,46 @@ def hard_baseline(bands):
 
 
 def hard_params(bands):
-    """HARD②③：参数生效 + 单变量。"""
+    """HARD②：参数生效（含 off 档 ts 必须为 0）。"""
     res = []
     for (stale, year), m in sorted(bands.items()):
         ok_val = (str(m["stale_param"]) == str(stale))
         res.append({"year": year, "stale": stale, "param": m["stale_param"], "ok": ok_val,
                     "ts_n": m["ts_n"],
                     "off_ok": (m["ts_n"] == 0) if stale == 100000 else None})
+    return res
+
+
+def hard_single_var(bands):
+    """HARD③：单变量 —— 除 position.staledays 外，其余 param 必须与基线库逐项相同。
+
+    基线库 = var/bt/base/bt_baseA_<year>.db（同源新基线）。
+    任何额外差异都意味着引入第二个变量，本档的差异就不能归因于 staledays。
+    """
+    res = []
+    for (stale, year) in sorted(bands):
+        base_db = BASE / f"bt_baseA_{year}.db"
+        tag = "off" if stale == 100000 else str(stale)  # off 档库名是 p26_sdoff_<年>.db
+        db = P26 / f"p26_sd{tag}_{year}.db"
+        if not base_db.exists() or not db.exists():
+            continue
+        a, b = open_ro(db), open_ro(base_db)
+        try:
+            pa = dict(a.execute("SELECT key, value FROM param").fetchall())
+            pb = dict(b.execute("SELECT key, value FROM param").fetchall())
+        except sqlite3.OperationalError:
+            a.close()
+            b.close()
+            continue
+        a.close()
+        b.close()
+        diff = {k: (pb.get(k), v) for k, v in pa.items() if pb.get(k) != v}
+        miss = [k for k in pb if k not in pa]
+        extra = [k for k in pa if k not in pb]
+        only_sd = (set(diff) == {"position.staledays"} or (not diff and stale == 2))
+        res.append({"year": year, "stale": stale, "ok": only_sd and not miss,
+                    "n_param": len(pa), "diff": diff, "miss": len(miss),
+                    "only": ", ".join(diff) or "无"})
     return res
 
 
@@ -307,6 +340,27 @@ def judge(bands, comp, years):
     verdict["best"] = best
     verdict["best_terminal"] = comp[best]["terminal"]
     verdict["base_terminal"] = base
+
+    # 阶段 1 保护（2026-10-30）：代表年只有 1 年时，"每档年数==目标年数"恒成立，
+    # 会让单年数据直接走完整裁定 —— 违反框架 §5.2「单年不外推」「差异 <3% 视为噪声」。
+    # 故强制只出梯度形状，不裁 H1/H2/H3。
+    if len(years) < 2:
+        d = (comp[best]["terminal"] / base - 1) * 100
+        # 单调性：放宽方向（2→5→10→off）是否单调递增
+        ladder = [s for s in (2, 5, 10, 100000) if comp.get(s, {}).get("terminal")]
+        seq = [comp[s]["terminal"] for s in ladder]
+        monotonic = all(seq[i] < seq[i + 1] for i in range(len(seq) - 1))
+        verdict["stage1"] = True
+        verdict["stage1_delta"] = d
+        verdict["stage1_within"] = abs(d) < 3.0
+        verdict["stage1_monotonic"] = monotonic
+        verdict["note"] = (
+            f"阶段 1（代表年 {len(years)} 年，仅出梯度形状，不作 H1/H2/H3 终裁）："
+            f"最优档 {best} 相对基线 {d:+.2f}%，"
+            f"{'落在噪声门槛 ±3% 内' if abs(d) < 3.0 else '超出噪声门槛'}；"
+            f"放宽方向{'单调' if monotonic else '**非单调**'}。"
+        )
+        return verdict
     # 噪声门槛：复利终值差异 <3% 视为持平
     material = abs(comp[best]["terminal"] / base - 1) >= 0.03
     mdd_ok = comp[best]["worst_mdd"] >= comp[2]["worst_mdd"] - 1e-9
@@ -372,11 +426,16 @@ def render_html(data):
         A(f"<div class=callout>{para}</div>")
     # ---- 裁定
     A("<h2 id=s1>一、假设裁定</h2>")
-    cls = "green" if v["h1"] else ("amber" if v["h2"] else "red")
-    A(f"<div class=callout {cls}><b>裁定</b>：{E(v['note'])}<br>")
-    A(f"H1（放宽有效）= <b>{'成立' if v['h1'] else '不成立'}</b> ｜ "
-      f"H2（现行最优）= <b>{'成立' if v['h2'] else '不成立'}</b> ｜ "
-      f"H3（越严越好）= <b>{'成立' if v['h3'] else '不成立'}</b></div>")
+    if v.get("stage1"):
+        A(f"<div class=callout amber><b>阶段 1 裁定</b>：{v['note']}<br>"
+          "H1 / H2 / H3 <b>均不裁定</b>（代表年仅 1 年，单年不外推）；"
+          "<b>可采纳档位：无</b>。</div>")
+    else:
+        cls = "green" if v["h1"] else ("amber" if v["h2"] else "red")
+        A(f"<div class=callout {cls}><b>裁定</b>：{E(v['note'])}<br>")
+        A(f"H1（放宽有效）= <b>{'成立' if v['h1'] else '不成立'}</b> ｜ "
+          f"H2（现行最优）= <b>{'成立' if v['h2'] else '不成立'}</b> ｜ "
+          f"H3（越严越好）= <b>{'成立' if v['h3'] else '不成立'}</b></div>")
     if v.get("best") is not None:
         A(f"<p class=small>完整档位：{v['full_bands']}；最优档 = <b>{E(STALE_LABEL.get(v['best'], str(v['best'])))}</b>，"
           f"链接终值 {v['best_terminal']:.4f}（基线 {v['base_terminal']:.4f}，"
@@ -404,18 +463,24 @@ def render_html(data):
               f"<td>{num(m['hold_med'])}</td></tr>")
         A("</table>")
     # ---- 复利链接
-    A("<h2 id=s3>三、代表年链接复利终值（主判据）</h2>")
+    if len(years) < 2:
+        A("<h2 id=s3>三、单年收益率（尚不构成链接终值）</h2>")
+        A(f"<div class=callout amber>阶段 1 只有 1 个代表年（{years[0]}），"
+          f"<code>Π(1+r_y)</code> 退化为 <code>1+r</code>，<b>不构成跨年链接复利终值</b>；"
+          f"主判据（框架 §4.1）在本阶段不生效，下表「链接终值」仅为占位。跨年判定须等阶段 2。</div>")
+    else:
+        A("<h2 id=s3>三、代表年链接复利终值（主判据）</h2>")
     A("<p class=small>Π(1+r_y)，代表年：%s。单年视角会被好年/坏年主导，链接后才是可比口径。</p>"
       % "、".join(str(y) for y in years))
     A("<table><tr><th>档位</th><th>覆盖年数</th><th>链接终值</th><th>CAGR</th><th>最差 MDD</th>"
       "<th>相对基线</th></tr>")
     for s in STALE_ORDER:
-        c = comp.get(s) or {}
+        c = comp.get(s) or comp.get(str(s)) or {}
         if not c.get("terminal"):
             A(f"<tr><td>{E(STALE_LABEL.get(s, str(s)))}</td><td>{c.get('years', 0)}</td>"
               f"<td colspan=4 class=mut>未完跑</td></tr>")
             continue
-        base_t = (comp.get(2) or {}).get("terminal")
+        base_t = (comp.get(2) or comp.get("2") or {}).get("terminal")
         rel = (c["terminal"] / base_t - 1) if base_t else None
         rc = "pos" if rel > 0 else ("neg" if rel < 0 else "mut")
         A(f"<tr><td>{E(STALE_LABEL.get(s, str(s)))}</td><td>{c['years']}</td>"
@@ -473,7 +538,7 @@ def render_html(data):
             if not r["ok"] and r.get("first_diff"):
                 A(f"<div class=callout red>首个差异：新库 <code>{E(str(r['first_diff']))}</code>；"
                   f"基线 <code>{E(str(r['first_diff_base']))}</code></div>")
-    A("<h3>② 参数生效 + 单变量</h3>")
+    A("<h3>② 参数生效</h3>")
     A("<table><tr><th>年</th><th>目标档</th><th>库内 param</th><th>ts 笔数</th><th>结论</th></tr>")
     for r in data["hard_params"]:
         st = "通过" if r["ok"] else "不通过"
@@ -481,6 +546,15 @@ def render_html(data):
             st = "不通过（off 档 ts 应为 0）"
         A(f"<tr><td>{r['year']}</td><td>{r['stale']}</td><td>{r['param']}</td>"
           f"<td>{r['ts_n']}</td><td class={'ok' if r['ok'] and r.get('off_ok') is not False else 'fail'}>{st}</td></tr>")
+    A("</table>")
+    A("<h3>③ 单变量（除 staledays 外 param 与基线库逐项相同）</h3>")
+    A("<p class=small>基线库 = <code>var/bt/base/bt_baseA_&lt;年&gt;.db</code>（同源新基线）。"
+      "任何额外差异都意味着引入第二个变量，本档与前档的差异就不能归因于 staledays。</p>")
+    A("<table><tr><th>年</th><th>档位</th><th>param 项数</th><th>与基线不同的键</th><th>缺键</th><th>结论</th></tr>")
+    for r in data.get("hard_single", []):
+        A(f"<tr><td>{r['year']}</td><td>{E(STALE_LABEL.get(r['stale'], str(r['stale'])))}</td>"
+          f"<td>{r['n_param']}</td><td>{E(r['only'])}</td><td>{r['miss']}</td>"
+          f"<td class={'ok' if r['ok'] else 'fail'}>{'通过' if r['ok'] else '不通过'}</td></tr>")
     A("</table>")
     A("<h3>④ 持有分布合计闭合</h3>")
     A("<p class=small>各档各年「持有天数分布」合计必须等于已平仓笔数，不得静默丢弃。"
@@ -518,9 +592,15 @@ def render_md(data):
     A(f"**{v['note']}**")
     A("")
     A(f"| 假设 | 裁定 |\n|---|---|")
-    A(f"| H1 放宽有效 | {'成立' if v['h1'] else '不成立'} |")
-    A(f"| H2 现行最优 | {'成立' if v['h2'] else '不成立'} |")
-    A(f"| H3 越严越好 | {'成立' if v['h3'] else '不成立'} |")
+    if v.get("stage1"):
+        A("| H1 放宽有效 | — 阶段 1 不裁定（代表年仅 1 年） |")
+        A("| H2 现行最优 | — 阶段 1 不裁定（代表年仅 1 年） |")
+        A("| H3 越严越好 | — 阶段 1 不裁定（代表年仅 1 年） |")
+        A("| **可采纳档位** | **无**（最优档差异落在噪声门槛内，且放宽方向非单调） |")
+    else:
+        A(f"| H1 放宽有效 | {'成立' if v['h1'] else '不成立'} |")
+        A(f"| H2 现行最优 | {'成立' if v['h2'] else '不成立'} |")
+        A(f"| H3 越严越好 | {'成立' if v['h3'] else '不成立'} |")
     A("")
     A("## 二、逐年逐档矩阵")
     A("")
@@ -538,16 +618,23 @@ def render_md(data):
               f"{num(m['pf'], 2)} | {money(m['pnl'])} | {m['ts_n']} | {pct(m['ts_share'])} | "
               f"{money(m['ts_pnl'])} | {num(m['hold_med'])} |")
         A("")
-    A("## 三、代表年链接复利终值")
+    if len(years) < 2:
+        A("## 三、单年收益率（尚不构成链接终值）")
+        A("")
+        A(f"> 阶段 1 只有 1 个代表年（{years[0]}），`Π(1+r_y)` 退化为 `1+r`，"
+          "**不构成跨年链接复利终值**，主判据（框架 §4.1）在本阶段不生效，"
+          "下表「链接终值」仅为占位。跨年判定须等阶段 2。")
+    else:
+        A("## 三、代表年链接复利终值（主判据）")
     A("")
     A("| 档位 | 覆盖年 | 链接终值 | CAGR | 最差 MDD | 相对基线 |")
     A("|---|---:|---:|---:|---:|---:|")
     for s in STALE_ORDER:
-        c = comp.get(s) or {}
+        c = comp.get(s) or comp.get(str(s)) or {}
         if not c.get("terminal"):
             A(f"| {STALE_LABEL.get(s, s)} | {c.get('years',0)} | — | — | — | 未完跑 |")
             continue
-        base_t = (comp.get(2) or {}).get("terminal")
+        base_t = (comp.get(2) or comp.get("2") or {}).get("terminal")
         rel = (c["terminal"] / base_t - 1) if base_t else None
         A(f"| {STALE_LABEL.get(s, s)} | {c['years']} | {c['terminal']:.4f} | {pct(c['cagr'],2)} | "
           f"{pct(c['worst_mdd'],2)} | {'—' if rel is None else f'{rel*100:+.2f}%'} |")
@@ -603,6 +690,14 @@ def render_md(data):
             st = "不通过（off 档 ts 应为 0）"
         A(f"| {r['year']} | {r['stale']} | {r['param']} | {r['ts_n']} | {st} |")
     A("")
+    A("### ③ 单变量（除 staledays 外 param 与基线库逐项相同）")
+    A("")
+    A("| 年 | 档位 | 库内 param 项数 | 与基线不同的键 | 缺键 | 结论 |")
+    A("|---|---|---:|---|---:|---|")
+    for r in data.get("hard_single", []):
+        A(f"| {r['year']} | {STALE_LABEL.get(r['stale'], r['stale'])} | {r['n_param']} | "
+          f"{r['only']} | {r['miss']} | {'通过' if r['ok'] else '**不通过**'} |")
+    A("")
     A("### ④ 持有分布合计闭合")
     A("")
     A("| 年 | 档位 | 已平仓 | 分布合计 | 结论 |")
@@ -638,6 +733,7 @@ def build():
         "verdict": v,
         "hard_baseline": hard_baseline(bands_raw),
         "hard_params": hard_params(bands_raw),
+        "hard_single": hard_single_var(bands_raw),
     }
     data["conclusion"] = make_conclusion(data)
     return data
@@ -661,6 +757,30 @@ def make_conclusion(data):
         return out
     best = v["best"]
     b = comp.get(2) or {}
+    if v.get("stage1"):
+        d = v["stage1_delta"]
+        mono = v.get("stage1_monotonic")
+        out.append(
+            f"<b>阶段 1 结论：无档位达到可采纳标准，维持 "
+            f"<code>position.staledays=2</code>。</b>"
+            f"最优档 {STALE_LABEL.get(best, best)} 相对基线 {d:+.2f}%，"
+            f"{'落在噪声门槛 ±3% 内' if v.get('stage1_within') else '超出噪声门槛但需阶段 2 复核'}；"
+            f"放宽方向{'单调' if mono else '**非单调**（5 优于 10）'}，"
+            f"按框架 §5.1「无稳定最优、保持现状」处理，不得挑单点最优档采纳。"
+        )
+        out.append(
+            "单年不外推：本年 MFE&gt;50% 的大赢家只有 1~2 笔（远低于 §八 n≥30 门槛），"
+            "「防切碎大赢家」这条判据在本年<b>不可检验</b>，须靠阶段 2 的 2015（杠杆牛）验证。"
+        )
+        out.append(
+            "结构发现：放宽使短持块亏损单调收窄（−36k → −12k），但 off 档长持块由正转负"
+            "（+13k → −8.8k）、建仓数掉 42% —— <b>time_stop 不只在砍亏损，它同时在腾仓位</b>。"
+        )
+        out.append(
+            f"本报告仅覆盖代表年 {'/'.join(map(str, years))}；"
+            f"改默认值前须走 migration（append-only）。"
+        )
+        return out
     if v["h2"]:
         out.append(f"<b>结论：维持 <code>position.staledays=2</code>。</b>"
                    f"最优档为 {STALE_LABEL.get(best, best)}，相对基线 "

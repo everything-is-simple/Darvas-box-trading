@@ -1,0 +1,109 @@
+<!doctype html><html lang=zh><head><meta charset=utf-8><title>P2-6a staledays 梯度</title><style>
+:root{--bg:#0f1115;--fg:#e6e8eb;--muted:#8b929c;--card:#171a21;--line:#262b35;
+--good:#e0524d;--bad:#3fa96a;--warn:#d9a441;--acc:#5b8def}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+font:15px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:36px 22px 80px}
+h1{font-size:25px;margin:0 0 6px;letter-spacing:.4px}
+h2{font-size:18px;margin:38px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+h3{font-size:15px;margin:22px 0 8px;color:#c9ced6}
+.sub{color:var(--muted);font-size:13px;margin-bottom:22px}
+table{border-collapse:collapse;width:100%;margin:10px 0 6px;font-size:13px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:600;background:#141821;text-align:right}
+th:first-child,td:first-child{text-align:left}
+tr:hover td{background:#1b1f28}
+.pos{color:var(--good)}.neg{color:var(--bad)}.mut{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+.callout{border-left:3px solid var(--acc);background:#15192499;padding:13px 16px;margin:14px 0;border-radius:0 8px 8px 0}
+.callout.red{border-color:var(--good)}.callout.green{border-color:var(--bad)}
+.callout.amber{border-color:var(--warn)}
+.tag{display:inline-block;padding:1px 7px;border-radius:5px;font-size:12px;background:#222836;color:#aeb6c2}
+.ok{color:var(--bad);font-weight:600}.fail{color:var(--good);font-weight:600}
+.small{font-size:12.5px;color:var(--muted)}
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 8px}
+.toc a{color:var(--acc);text-decoration:none;font-size:13px;padding:3px 9px;border:1px solid var(--line);border-radius:6px}
+code{background:#1d222c;padding:1px 5px;border-radius:4px;font-size:12.5px}
+</style></head><body><div class=wrap>
+<h1>P2-6a · <code>position.staledays</code> 梯度实验</h1>
+<div class=sub>Darvas 箱体量化系统 · 十维 #9（移动 stop）· B 类单变量回测 · 生成于 2026-10-30 10:22</div>
+<h2 id=s0>核心结论</h2>
+<div class=callout><b>阶段 1 结论：无档位达到可采纳标准，维持 <code>position.staledays=2</code>。</b>最优档 5 相对基线 +2.69%，落在噪声门槛 ±3% 内；放宽方向**非单调**（5 优于 10），按框架 §5.1「无稳定最优、保持现状」处理，不得挑单点最优档采纳。</div>
+<div class=callout>单年不外推：本年 MFE&gt;50% 的大赢家只有 1~2 笔（远低于 §八 n≥30 门槛），「防切碎大赢家」这条判据在本年<b>不可检验</b>，须靠阶段 2 的 2015（杠杆牛）验证。</div>
+<div class=callout>结构发现：放宽使短持块亏损单调收窄（−36k → −12k），但 off 档长持块由正转负（+13k → −8.8k）、建仓数掉 42% —— <b>time_stop 不只在砍亏损，它同时在腾仓位</b>。</div>
+<div class=callout>本报告仅覆盖代表年 2012；改默认值前须走 migration（append-only）。</div>
+<h2 id=s1>一、假设裁定</h2>
+<div class=callout amber><b>阶段 1 裁定</b>：阶段 1（代表年 1 年，仅出梯度形状，不作 H1/H2/H3 终裁）：最优档 5 相对基线 +2.69%，落在噪声门槛 ±3% 内；放宽方向**非单调**。<br>H1 / H2 / H3 <b>均不裁定</b>（代表年仅 1 年，单年不外推）；<b>可采纳档位：无</b>。</div>
+<p class=small>完整档位：[0, 2, 5, 10, 100000]；最优档 = <b>5</b>，链接终值 1.0407（基线 1.0134，差 +2.69%）。噪声门槛 ±3%。</p>
+<h2 id=s2>二、逐年逐档矩阵</h2>
+<p class=small>权益指标与 <code>p05_yearly_report.py</code> 同口径（equity_snapshot 首末 total、drawdown 最小值）。涨用红、跌用绿（A 股惯例）。</p>
+<h3>2012 年</h3><table><tr><th>档位</th><th>收益率</th><th>期末权益</th><th>最大回撤</th><th>夏普</th><th>平仓笔数</th><th>胜率</th><th>PF</th><th>净利</th><th>ts 笔数</th><th>ts 占比</th><th>ts 净利</th><th>持有中位</th></tr>
+<tr><td>0（收紧极限）</td><td class=pos>1.01%</td><td>1,010,093</td><td class=neg>-2.74%</td><td>0.45</td><td>114</td><td>12.3%</td><td>0.48</td><td class=neg>-22,931</td><td>95</td><td>83.3%</td><td class=neg>-41,589</td><td>2</td></tr>
+<tr><td>2（基线）</td><td class=pos>1.34%</td><td>1,013,430</td><td class=neg>-3.26%</td><td>0.50</td><td>91</td><td>14.3%</td><td>0.47</td><td class=neg>-24,554</td><td>72</td><td>79.1%</td><td class=neg>-41,474</td><td>5</td></tr>
+<tr><td>5</td><td class=pos>4.07%</td><td>1,040,737</td><td class=neg>-2.28%</td><td>1.30</td><td>72</td><td>20.8%</td><td>0.71</td><td class=neg>-10,755</td><td>42</td><td>58.3%</td><td class=neg>-21,506</td><td>8</td></tr>
+<tr><td>10</td><td class=pos>3.60%</td><td>1,036,001</td><td class=neg>-2.54%</td><td>1.14</td><td>70</td><td>21.4%</td><td>0.62</td><td class=neg>-15,492</td><td>28</td><td>40.0%</td><td class=neg>-15,191</td><td>11</td></tr>
+<tr><td>off（关闭）</td><td class=pos>3.75%</td><td>1,037,454</td><td class=neg>-3.15%</td><td>1.08</td><td>60</td><td>21.7%</td><td>0.53</td><td class=neg>-21,025</td><td>0</td><td>0.0%</td><td class=neg>0</td><td>14</td></tr>
+</table>
+<h2 id=s3>三、单年收益率（尚不构成链接终值）</h2>
+<div class=callout amber>阶段 1 只有 1 个代表年（2012），<code>Π(1+r_y)</code> 退化为 <code>1+r</code>，<b>不构成跨年链接复利终值</b>；主判据（框架 §4.1）在本阶段不生效，下表「链接终值」仅为占位。跨年判定须等阶段 2。</div>
+<p class=small>Π(1+r_y)，代表年：2012。单年视角会被好年/坏年主导，链接后才是可比口径。</p>
+<table><tr><th>档位</th><th>覆盖年数</th><th>链接终值</th><th>CAGR</th><th>最差 MDD</th><th>相对基线</th></tr>
+<tr><td>0（收紧极限）</td><td>1</td><td>1.0101</td><td>1.01%</td><td class=neg>-2.74%</td><td class=neg>-0.33%</td></tr>
+<tr><td>2（基线）</td><td>1</td><td>1.0134</td><td>1.34%</td><td class=neg>-3.26%</td><td class=mut>+0.00%</td></tr>
+<tr><td>5</td><td>1</td><td>1.0407</td><td>4.07%</td><td class=neg>-2.28%</td><td class=pos>+2.69%</td></tr>
+<tr><td>10</td><td>1</td><td>1.0360</td><td>3.60%</td><td class=neg>-2.54%</td><td class=pos>+2.23%</td></tr>
+<tr><td>off（关闭）</td><td>1</td><td>1.0375</td><td>3.75%</td><td class=neg>-3.15%</td><td class=pos>+2.37%</td></tr>
+</table>
+<h2 id=s4>四、结构指标（判「怎么变的」，不给分）</h2>
+<p class=small>P2-5 已证：46 笔大赢家（MFE&gt;50%）贡献 +1,133,049，是系统全部利润。放宽容量的第一风险是<b>切碎大赢家</b>或<b>让亏损单长期占仓</b>。</p>
+<h3>2012 年</h3><table><tr><th>档位</th><th>ts 退出占比</th><th>短持块(≤10日)净利</th><th>短持笔数</th><th>大赢家笔数</th><th>大赢家净利</th><th>MFE 中位</th><th>前三赢家占净利</th><th>日均暴露</th><th>持有 P90</th></tr>
+<tr><td>0（收紧极限）</td><td>83.3%</td><td class=neg>-36,065</td><td>96</td><td>1</td><td class=pos>3,242</td><td>2.2%</td><td>—</td><td>8%</td><td>17</td></tr>
+<tr><td>2（基线）</td><td>79.1%</td><td class=neg>-36,331</td><td>69</td><td>1</td><td class=pos>3,242</td><td>3.6%</td><td>—</td><td>9%</td><td>22</td></tr>
+<tr><td>5</td><td>58.3%</td><td class=neg>-24,248</td><td>43</td><td>2</td><td class=pos>6,267</td><td>4.6%</td><td>—</td><td>11%</td><td>26</td></tr>
+<tr><td>10</td><td>40.0%</td><td class=neg>-20,366</td><td>27</td><td>2</td><td class=pos>6,267</td><td>4.6%</td><td>—</td><td>11%</td><td>26</td></tr>
+<tr><td>off（关闭）</td><td>0.0%</td><td class=neg>-12,217</td><td>20</td><td>2</td><td class=pos>6,267</td><td>5.2%</td><td>—</td><td>11%</td><td>38</td></tr>
+</table>
+<h2 id=s5>五、持有天数分布变化</h2>
+<p class=small>BarCount 口径。基线档在 6–10 日的尖峰是 time_stop 的机械后果（P2-5 §七）。</p>
+<h3>2012 年</h3><table><tr><th>档位</th><th>0 日</th><th>1-2 日</th><th>3-5 日</th><th>6-10 日</th><th>11-20 日</th><th>21-60 日</th><th>61+ 日</th></tr>
+<tr><td>0（收紧极限）</td><td>0</td><td>72</td><td>21</td><td>3</td><td>10</td><td>4</td><td>4</td></tr>
+<tr><td>2（基线）</td><td>0</td><td>3</td><td>60</td><td>6</td><td>12</td><td>5</td><td>5</td></tr>
+<tr><td>5</td><td>0</td><td>1</td><td>13</td><td>29</td><td>19</td><td>4</td><td>6</td></tr>
+<tr><td>10</td><td>0</td><td>3</td><td>13</td><td>11</td><td>33</td><td>5</td><td>5</td></tr>
+<tr><td>off（关闭）</td><td>0</td><td>0</td><td>10</td><td>10</td><td>20</td><td>16</td><td>4</td></tr>
+</table>
+<h2 id=s6>六、HARD 校验</h2>
+<h3>① 基线可复现（生死线）</h3>
+<p class=small>staledays=2 档必须与历史基线库逐笔一致，否则差异无法归因于 staledays。</p>
+<table><tr><th>年</th><th>新库笔数</th><th>基线笔数</th><th>新库净利</th><th>基线净利</th><th>逐笔差异</th><th>结论</th></tr>
+<tr><td>2012</td><td>91</td><td>91</td><td>-24,554</td><td>-24,554</td><td>0</td><td class=ok>通过</td></tr>
+</table>
+<h3>② 参数生效</h3>
+<table><tr><th>年</th><th>目标档</th><th>库内 param</th><th>ts 笔数</th><th>结论</th></tr>
+<tr><td>2012</td><td>0</td><td>0</td><td>95</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>2</td><td>2</td><td>72</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>5</td><td>5</td><td>42</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>10</td><td>10</td><td>28</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>100000</td><td>100000</td><td>0</td><td class=ok>通过</td></tr>
+</table>
+<h3>③ 单变量（除 staledays 外 param 与基线库逐项相同）</h3>
+<p class=small>基线库 = <code>var/bt/base/bt_baseA_&lt;年&gt;.db</code>（同源新基线）。任何额外差异都意味着引入第二个变量，本档与前档的差异就不能归因于 staledays。</p>
+<table><tr><th>年</th><th>档位</th><th>param 项数</th><th>与基线不同的键</th><th>缺键</th><th>结论</th></tr>
+<tr><td>2012</td><td>0（收紧极限）</td><td>38</td><td>position.staledays</td><td>0</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>2（基线）</td><td>38</td><td>无</td><td>0</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>5</td><td>38</td><td>position.staledays</td><td>0</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>10</td><td>38</td><td>position.staledays</td><td>0</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>off（关闭）</td><td>38</td><td>position.staledays</td><td>0</td><td class=ok>通过</td></tr>
+</table>
+<h3>④ 持有分布合计闭合</h3>
+<p class=small>各档各年「持有天数分布」合计必须等于已平仓笔数，不得静默丢弃。持有天数取 <code>BarCount</code> 口径（<code>date &gt; opened_date</code>，不含开仓日），故中位 5 对应 P2-5 报告（含开仓日）的 6。</p>
+<table><tr><th>年</th><th>档位</th><th>已平仓</th><th>分布合计</th><th>结论</th></tr>
+<tr><td>2012</td><td>0（收紧极限）</td><td>114</td><td>114</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>2（基线）</td><td>91</td><td>91</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>5</td><td>72</td><td>72</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>10</td><td>70</td><td>70</td><td class=ok>通过</td></tr>
+<tr><td>2012</td><td>off（关闭）</td><td>60</td><td>60</td><td class=ok>通过</td></tr>
+</table>
+<div class=callout blue><b>复现命令</b>：<code>python scripts/p26_report.py</code>（只读 var/bt/p26/*.db 与历史基线库）；回测执行器 <code>scripts/p26_run.py</code>。</div>
+</div></body></html>
