@@ -72,60 +72,73 @@ def human(n):
 def archive_one(src, dst_dir, do_delete, check_hash=True):
     src = Path(src)
     dst = dst_dir / src.name
+    manifest = dst_dir / "MANIFEST.tsv"
     if not src.exists():
         print(f"  ✗ 源不存在: {src}")
         return False
-    if dst.exists():
-        print(f"  ✗ 目标已存在（拒绝覆盖）: {dst}")
-        return False
 
     size = src.stat().st_size
-    t0 = time.time()
     src_stat = biz_stats(src)
 
-    print(f"  → 复制 {src.name}  {human(size)} ...", flush=True)
-    shutil.copy2(src, dst)
-    with open(dst, "rb+") as f:  # 强制落盘
-        os.fsync(f.fileno())
-    dt = time.time() - t0
-    speed = size / dt / 1024 / 1024 if dt else 0
-    print(f"    复制完成 {dt:.1f}s  ({speed:.0f} MB/s)")
-
-    # 校验
-    ok = True
-    if dst.stat().st_size != size:
-        print(f"    ✗ 大小不符 {dst.stat().st_size} != {size}")
-        ok = False
-    dst_stat = biz_stats(dst) if ok else None
-    if ok and dst_stat != src_stat:
-        print(f"    ✗ 业务统计不符\n      源  : {src_stat}\n      目标: {dst_stat}")
-        ok = False
-    elif ok:
-        print(f"    业务统计一致 position={dst_stat[0]} Σpnl={dst_stat[1]:,.2f} eq={dst_stat[2]} sd={dst_stat[3]}")
-
-    if ok and check_hash:
-        t1 = time.time()
-        hs, hd = sha256_of(src), sha256_of(dst)
-        if hs != hd:
-            print(f"    ✗ sha256 不符\n      源  : {hs}\n      目标: {hd}")
-            ok = False
+    if dst.exists():
+        # 幂等重跑：上次复制完成但台账/删源中断 → 校验一致就补台账、不再复制
+        if dst.stat().st_size == size and biz_stats(dst) == src_stat:
+            print("  ↺ 目标已存在且业务统计一致，跳过复制，补台账")
+            dst_stat, hs = src_stat, "-"
+            if check_hash:
+                hs, hd = sha256_of(src), sha256_of(dst)
+                if hs != hd:
+                    print(f"  ✗ sha256 不符: 源 {hs} / 目标 {hd}")
+                    return False
+                print(f"    sha256 一致 {hs[:16]}…")
         else:
-            print(f"    sha256 一致 {hs[:16]}…  ({(time.time()-t1):.0f}s)")
+            print(f"  ✗ 目标已存在但校验不符（拒绝覆盖）: {dst}")
+            return False
     else:
-        hs = "-"
+        t0 = time.time()
+        print(f"  → 复制 {src.name}  {human(size)} ...", flush=True)
+        shutil.copy2(src, dst)
+        with open(dst, "rb+") as f:  # 强制落盘
+            os.fsync(f.fileno())
+        dt = time.time() - t0
+        speed = size / dt / 1024 / 1024 if dt else 0
+        print(f"    复制完成 {dt:.1f}s  ({speed:.0f} MB/s)")
 
-    if not ok:
-        print("    → 删除目标半成品，保留源")
-        try:
-            dst.unlink()
-        except OSError:
-            pass
-        return False
+        # 校验
+        ok = True
+        if dst.stat().st_size != size:
+            print(f"    ✗ 大小不符 {dst.stat().st_size} != {size}")
+            ok = False
+        dst_stat = biz_stats(dst) if ok else None
+        if ok and dst_stat != src_stat:
+            print(f"    ✗ 业务统计不符\n      源  : {src_stat}\n      目标: {dst_stat}")
+            ok = False
+        elif ok:
+            print(f"    业务统计一致 position={dst_stat[0]} Σpnl={dst_stat[1]:,.2f} eq={dst_stat[2]} sd={dst_stat[3]}")
 
-    # 台账
-    MANIFEST.parent.mkdir(parents=True, exist_ok=True)
-    new = not MANIFEST.exists()
-    with open(MANIFEST, "a", encoding="utf-8") as f:
+        if ok and check_hash:
+            t1 = time.time()
+            hs, hd = sha256_of(src), sha256_of(dst)
+            if hs != hd:
+                print(f"    ✗ sha256 不符\n      源  : {hs}\n      目标: {hd}")
+                ok = False
+            else:
+                print(f"    sha256 一致 {hs[:16]}…  ({(time.time()-t1):.0f}s)")
+        else:
+            hs = "-"
+
+        if not ok:
+            print("    → 删除目标半成品，保留源")
+            try:
+                dst.unlink()
+            except OSError:
+                pass
+            return False
+
+    # 台账（跟 --dst 走，不写死）
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    new = not manifest.exists()
+    with open(manifest, "a", encoding="utf-8") as f:
         if new:
             f.write(MANIFEST_HEADER)
         f.write(

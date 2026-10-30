@@ -23,6 +23,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BT = ROOT / "var" / "bt"
 P26 = BT / "p26"
+# 归档后库可能已搬到冷存储盘：允许追加读目录（--p26-dir），首个为默认写入/查找根。
+P26_DIRS = [P26]
+
+
+def find_db(name):
+    """在 P26_DIRS 里按文件名找库（先本地后归档盘）。"""
+    for d in P26_DIRS:
+        p = d / name
+        if p.exists():
+            return p
+    return P26_DIRS[0] / name
 BASE = BT / "base"  # 新基线库（HARD① 的对照对象，2026-10-30 换源，见框架 §10）
 EXP = ROOT / "docs" / "experiments"
 OUT_HTML = EXP / "e17_staledays_report.html"
@@ -177,7 +188,10 @@ def load_band(db, year, stale):
 def discover():
     """扫描 p26 目录，返回按 (stale, year) 索引的结果。"""
     out = {}
-    for db in sorted(P26.glob("p26_sd*_*.db")):
+    dbs = []
+    for d in P26_DIRS:
+        dbs.extend(sorted(d.glob("p26_sd*_*.db")))
+    for db in dbs:
         stem = db.stem  # p26_sd2_2012 / p26_sdoff_2012
         try:
             _, sd, yr = stem.split("_")
@@ -211,7 +225,7 @@ def hard_baseline(bands):
         if not base.exists():
             res.append({"year": year, "ok": False, "msg": "基线库不存在"})
             continue
-        a = open_ro(P26 / f"p26_sd2_{year}.db")
+        a = open_ro(find_db(f"p26_sd2_{year}.db"))
         b = open_ro(base)
         try:
             qa = a.execute("""SELECT code, opened_date, closed_date, ROUND(realized_pnl,2)
@@ -257,7 +271,7 @@ def hard_single_var(bands):
     for (stale, year) in sorted(bands):
         base_db = BASE / f"bt_baseA_{year}.db"
         tag = "off" if stale == 100000 else str(stale)  # off 档库名是 p26_sdoff_<年>.db
-        db = P26 / f"p26_sd{tag}_{year}.db"
+        db = find_db(f"p26_sd{tag}_{year}.db")
         if not base_db.exists() or not db.exists():
             continue
         a, b = open_ro(db), open_ro(base_db)
@@ -799,9 +813,15 @@ def make_conclusion(data):
 
 
 def main():
+    global P26_DIRS
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--p26-dir", action="append", default=None,
+                    help="追加读取目录（如归档盘 A:/Darvas-archive/p26），可重复；"
+                         "本地 var/bt/p26 始终优先")
     a = ap.parse_args()
+    if a.p26_dir:
+        P26_DIRS = [P26] + [Path(x) for x in a.p26_dir]
     data = build()
     if a.check:
         for r in data["hard_baseline"]:
