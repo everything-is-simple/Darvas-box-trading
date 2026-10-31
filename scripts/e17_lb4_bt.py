@@ -67,11 +67,17 @@ def median(v):
 
 
 def parse_dbname(name):
-    # bt_lb4_off_2018.db -> (tier, year)
-    stem = Path(name).stem  # bt_lb4_off_2018
-    parts = stem.split("_")
-    tier = parts[2]
-    year = int(parts[3])
+    # bt_lb4_off_2018.db -> (tier, year)；bt_baseA_2018.db -> (off, year)
+    stem = Path(name).stem
+    if stem.startswith("bt_lb4_"):
+        parts = stem.split("_")
+        tier = parts[2]
+        year = int(parts[3])
+    elif stem.startswith("bt_baseA_"):
+        tier = "off"
+        year = int(stem.split("_")[2])
+    else:
+        return None, None
     return tier, year
 
 
@@ -113,11 +119,23 @@ def load_db(db: Path):
 
 def load_all():
     by_db = OrderedDict()
-    for db in sorted(LB4_DIR.glob("bt_lb4_*.db")):
+    # off 档 = 旧基线库（等价性已验证，不重跑）；5/6/7/8/10 档 = lb4_bt 库
+    db_files = list(LB4_DIR.glob("bt_lb4_*.db"))
+    db_files += list((ROOT / "var" / "bt" / "base").glob("bt_baseA_*.db"))
+    for db in sorted(db_files):
         if "-wal" in db.name or "-shm" in db.name:
             continue
-        tier, year, trades, first_eq, last_eq = load_db(db)
+        tier, year = parse_dbname(db.name)
+        if tier is None:
+            continue
+        if tier not in TIERS:
+            continue
+        trades, first_eq, last_eq = load_db(db)[2:]
+        # 同一 (tier, year) 若 lb4_bt 库存在（如 off 也在 lb4_bt 下跑过），优先用 lb4_bt 库；
+        # 否则用 base 库作 off 档
         key = f"{tier}_{year}"
+        if key in by_db:
+            continue  # 已存在（lb4_bt 库优先，先遍历）
         by_db[key] = dict(tier=tier, year=year, trades=trades,
                           first_eq=first_eq, last_eq=last_eq)
     return by_db
