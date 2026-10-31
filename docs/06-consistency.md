@@ -130,7 +130,7 @@ scripts/
 
 ## 6. 研究数据一致性规则（2026-10-25 立项）
 
-> box 十维迭代实验（理论框架见 docs/00 §3.6）在一致性侧的额外规则。研究层叠加在生产层之上，不得破坏生产层的一致性防线（§1-§5）。
+> box 十一维迭代实验（理论框架见 docs/00 §3.6）在一致性侧的额外规则。研究层叠加在生产层之上，不得破坏生产层的一致性防线（§1-§5）。
 
 ### 6.1 研究事实源（SSoT）补充
 
@@ -164,7 +164,7 @@ scripts/
 
 月末「文档对账」追加以下检查：
 
-- docs/00 §3.6 十维总表的"当前实现状态"列与实际代码一致（`internal/box` 是否加了 box.period 参数化、`reason_json` 是否加了 volume_ratio 等）。
+- docs/00 §3.6 十一维总表的"当前实现状态"列与实际代码一致（`internal/box` 是否加了 box.period 参数化、`reason_json` 是否加了 volume_ratio 等）。
 - docs/01 §10.3 档位定义与 `internal/planner` 的 sizing_basis 分档逻辑一致。
 - docs/03 §6.1 已落地字段清单与**实际 `reason_json` 键集合**一致（2026-10-26 已补入 `regime` 缺项；对账方法：任取一年库 `SELECT reason_json FROM plan_order WHERE leg_no=1 LIMIT 100`，求键的并集与清单比对）。
 - docs/05 M9/M10 各子里程碑状态与 `var/bt/e17_years_status.json` + `e17_metrics.csv` 一致。
