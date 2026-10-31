@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LB-2 Box 阶梯速度梯度 · 2005–2018</title>
+<style>
+:root{--bg:#f5f6f8;--surface:#fff;--ink:#1e2430;--muted:#697386;--line:#e3e6eb;
+--soft:#f0f2f5;--red:#c0392b;--red2:#faece9;--green:#1b7a4b;--green2:#e9f5ef;
+--gold:#a66a12;--gold2:#fbf3e4;--blue:#2d5b8e;--blue2:#ecf2f9}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Microsoft YaHei","PingFang SC","Noto Sans SC",Arial,sans-serif;font-size:15px;line-height:1.7}
+.page{max-width:1220px;margin:0 auto;padding:42px 28px 64px}
+header{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:26px}
+.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--blue);font-weight:700;margin-bottom:10px}
+h1{font-size:32px;line-height:1.28;margin:0 0 10px;letter-spacing:-.02em}
+h2{font-size:23px;margin:38px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+h3{font-size:17px;margin:20px 0 9px}
+p{margin:9px 0}.sub{color:var(--muted);max-width:960px;margin:0}
+.muted{color:var(--muted)}.small{font-size:12.5px}
+.up{color:var(--red)}.down{color:var(--green)}.neutral{color:var(--gold)}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:22px 0}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:17px 18px}
+.kpi .label{font-size:12px;color:var(--muted)}
+.kpi .value{font-size:25px;font-weight:700;line-height:1.25;margin-top:4px}
+.kpi .note{font-size:12px;color:var(--muted);margin-top:3px}
+.summary{background:var(--surface);border-left:4px solid var(--blue);border-radius:8px;padding:18px 22px;margin:22px 0}
+.summary h2{border:0;margin:0 0 8px;padding:0;font-size:20px}
+.summary ul{margin:8px 0 0 19px;padding:0}.summary li{margin:6px 0}
+.callout{border-radius:8px;padding:14px 17px;margin:15px 0;font-size:14px}
+.callout.gold{background:var(--gold2);border:1px solid #ead9b8}
+.callout.red{background:var(--red2);border:1px solid #efd0ca}
+.callout.blue{background:var(--blue2);border:1px solid #d4e0ee}
+.table-wrap{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow-x:auto;margin:13px 0}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+th{background:#fafbfc;color:#4b5565;font-size:12px;font-weight:600}
+th:first-child,td:first-child{text-align:left}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#fcfcfd}
+tr.empty td{background:#f4f5f7;color:#9aa1ad;font-style:italic}
+tr.subset td{background:#f8f9fb;font-style:italic;color:#5a6472}
+.vd{font-size:11.5px;padding:1px 7px;border-radius:999px;white-space:nowrap}
+.vd-edge{background:var(--red2);color:var(--red);font-weight:700}
+.vd-fake{background:var(--gold2);color:var(--gold);font-weight:700}
+.vd-neg{background:var(--green2);color:var(--green);font-weight:700}
+.vd-unstable{background:var(--soft);color:#5a6472}
+.vd-small{background:#f1f3f6;color:#8b93a0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:17px 19px;margin:14px 0}
+.hist-row{display:grid;grid-template-columns:118px 1fr 132px;align-items:center;gap:10px;margin:7px 0}
+.hist-label{font-size:12.5px}
+.hist-track{position:relative;height:20px;background:var(--soft);border-radius:4px;overflow:hidden}
+.hist-track b{position:absolute;left:0;top:3px;bottom:3px;border-radius:2px}
+.hist-val{text-align:right;font-size:12.5px;font-variant-numeric:tabular-nums}
+.matrix td{font-size:12px}
+.hyp{display:grid;grid-template-columns:1fr;gap:10px}
+.hyp-card{background:var(--surface);border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:14px 17px}
+.hyp-card.ok{border-left-color:var(--red)}
+.hyp-card.no{border-left-color:var(--green)}
+.hyp-card .t{font-weight:700;font-size:15.5px}
+.hyp-card .d{font-size:13px;color:var(--muted);margin-top:4px}
+.foot{margin-top:38px;padding-top:17px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+code{background:var(--soft);border-radius:3px;padding:1px 5px;font-size:12.5px}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.page{padding:28px 16px 48px}h1{font-size:26px}}
+</style></head><body><div class="page">
+<header>
+<div class="eyebrow">DARVAS · E17 · 实验报告 · 十一维 #11 Box 生命体征 · LB-2 阶梯速度</div>
+<h1>LB-2 Box 阶梯速度梯度</h1>
+<p class="sub">2005–2018 全 14 年已平仓交易的「入场 Box 相对前驱 Box 的台阶时间间隔（阶梯速度）」与突破后交易质量的关系。A 类后验、零回测，
+只读 <code>var/bt/base/bt_baseA_&lt;year&gt;.db</code>。框架先于跑数定稿：<code>docs/experiments/e17_lb2_ladderspeed_framework.md</code>。</p>
+</header>
+
+<div class="kpis"><div class="kpi"><div class="label">已平仓样本</div><div class="value">1481</div><div class="note">2005–2018 · 新基线单镜上证</div></div><div class="kpi"><div class="label">可复算阶梯速度</div><div class="value">1481</div><div class="note">首级 9 / 不可复算 -9</div></div><div class="kpi"><div class="label">阶梯间隔中位数</div><div class="value">35.0 日</div><div class="note">P25 23.0 / P75 51.0</div></div><div class="kpi"><div class="label">总净利</div><div class="value">¥1,461,228</div><div class="note">已实现口径</div></div><div class="kpi"><div class="label">总每单位净利</div><div class="value">+723</div><div class="note">2022 单位</div></div></div>
+
+<div class="summary" id="s0"><h2>核心结论</h2>
+<ul><li>2005–2018 共 <b>1481</b> 笔已平仓交易，其中可复算阶梯速度 <b>1481</b> 笔、首级箱体 <b>9</b> 笔、不可复算 <b>-9</b> 笔。</li><li>阶梯速度四带每单位净利：<b>+2,634</b>（1–14 日） / <b>+654</b>（15–29 日） / <b>+694</b>（30–59 日） / <b>+191</b>（60 日+）。</li><li>阶梯速度四带胜率：<b>28.4%</b> / <b>22.4%</b> / <b>25.3%</b> / <b>18.1%</b>。</li><li>H1（阶梯速度与突破质量单调相关）<b>不成立</b>（递减相邻对 2/3）；H2（快梯突破质量差）<b>不成立</b>。</li></ul>
+<p class="small muted" style="margin-top:10px">读法：阶梯速度是「从上一级箱体突破到本级箱体突破隔了多少交易日」，<b>不是</b>寿命（box 自身存续）、
+也<b>不是</b>持仓持有天数。本实验只报相关性分布，不下因果结论（框架 §1.2）。</p>
+</div>
+
+<h2 id="s1">一、口径与样本</h2>
+<div class="table-wrap"><table><thead><tr><th>口径</th><th style="text-align:left">定义</th></tr></thead><tbody>
+<tr><td><code>ladder_gap</code></td><td style="text-align:left">该 code 的 daily_bar 在 [前驱 broken_date, 当前 broken_date] 的行数（含两端）——前驱 = 沿 prev_box_id 的上一级箱体</td></tr>
+<tr><td><code>关联链</code></td><td style="text-align:left">position → leg1 → plan_order → reason_json(box_top, box_bottom) → box 反向匹配 → prev_box_id → 前驱 broken_date（entry_box_id 全 NULL）</td></tr>
+<tr><td><code>每单位净利</code></td><td style="text-align:left">realized_pnl / units（units 取自 reason_json.units）</td></tr>
+<tr><td>分带</td><td style="text-align:left">&lt;15 / 15–30 / 30–60 / &gt;60 交易日（预设固定值，未按结果调整）</td></tr>
+</tbody></table></div>
+
+<div class="callout blue"><b>样本漏斗</b>：14 库 closed <b>1481</b> 笔 →
+反向匹配 box 成功 <b>1481</b> 笔（其中首级箱体 9 笔）→ 缺 box 字段 0 /
+匹配失败 0 / 前驱断链 0 / 阶梯异常 0 → <b>可复算阶梯速度 1481 笔</b>
+（多命中 1 笔按 broken_date 最新取一）。</div>
+
+<div class="callout gold"><b>已知数据偏差（结论必须携带）</b>：① <b>800 根窗口左截断</b>（docs/36 缺口 L4）——
+前驱落在窗口左边界外 → 被误判「首级」或断链，阶梯链长度被低估；② 未复权（adj_factor≡1.0）；
+③ 幸存者偏差。</div>
+
+<h2 id="s2">二、阶梯速度分布</h2>
+<div class="panel"><h3>阶梯速度分布（可复算样本）</h3><div class="hist-row"><div class="hist-label">1–14 日</div><div class="hist-track"><b style="width:13.52%;background:var(--blue)"></b></div><div class="hist-val">88 笔 · 6.0%</div></div><div class="hist-row"><div class="hist-label">15–29 日</div><div class="hist-track"><b style="width:72.66%;background:var(--blue)"></b></div><div class="hist-val">473 笔 · 32.1%</div></div><div class="hist-row"><div class="hist-label">30–59 日</div><div class="hist-track"><b style="width:100.00%;background:var(--blue)"></b></div><div class="hist-val">651 笔 · 44.2%</div></div><div class="hist-row"><div class="hist-label">60 日+</div><div class="hist-track"><b style="width:39.94%;background:var(--blue)"></b></div><div class="hist-val">260 笔 · 17.7%</div></div><p class="small muted" style="margin-bottom:0">800 根窗口左截断会低估阶梯链长度、高估首级箱体（框架 §3.5）。</p></div>
+
+<h2 id="s3">三、阶梯速度主表（四带）</h2>
+<p>四项固定口径 + PF + 缺口 + 剔除前三。Σ 四带 = 1472 笔；加「首级箱体」「不可复算」子集行（<b>非加总行</b>）
+= 1481 笔。</p>
+<div class="table-wrap"><table><thead><tr><th>阶梯速度（交易日）</th><th>笔数</th><th>胜率</th><th>每单位净利</th><th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔除前三净利</th><th>间隔中位</th><th>净利</th><th>裁定</th></tr></thead><tbody><tr><td><strong>1–14 日</strong></td><td>88</td><td>28.4%</td><td class="up">+2,634</td><td>8.1%</td><td class="up">+20.3pp</td><td>4.52</td><td>70.7%</td><td class="up">+31,827</td><td class="muted">13.0</td><td class="up">+346,372</td><td><span class="vd vd-unstable">不稳定（正但非跨年）</span></td></tr><tr><td><strong>15–29 日</strong></td><td>473</td><td>22.4%</td><td class="up">+654</td><td>13.2%</td><td class="up">+9.2pp</td><td>1.89</td><td>34.3%</td><td class="up">+107,660</td><td class="muted">22.0</td><td class="up">+394,957</td><td><span class="vd vd-unstable">不稳定（正但非跨年）</span></td></tr><tr><td><strong>30–59 日</strong></td><td>651</td><td>25.3%</td><td class="up">+694</td><td>14.3%</td><td class="up">+11.0pp</td><td>2.03</td><td>26.0%</td><td class="up">+295,721</td><td class="muted">40.0</td><td class="up">+605,289</td><td><span class="vd vd-unstable">不稳定（正但非跨年）</span></td></tr><tr><td><strong>60 日+</strong></td><td>260</td><td>18.1%</td><td class="up">+191</td><td>14.9%</td><td class="up">+3.2pp</td><td>1.26</td><td>44.5%</td><td class="down">-85,342</td><td class="muted">76.0</td><td class="up">+74,737</td><td><span class="vd vd-fake">假 edge（前三撑起）</span></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>阶梯速度</th><th>笔数</th><th>胜率</th>
+<th>每单位净利</th><th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔除前三净利</th><th>净利</th></tr></thead><tbody>
+<tr class="subset"><td><strong>首级箱体（无前驱，不可算阶梯速度）</strong>
+<br><span class="small">（子集标记，非加总行）</span></td>
+<td>9</td><td>44.4%</td>
+<td class="up">+1,661</td>
+<td>18.3%</td>
+<td class="up">+26.1pp</td>
+<td>3.56</td>
+<td>—</td>
+<td class="down">-10,043</td>
+<td class="up">+39,873</td></tr>
+<tr class="subset"><td><strong>不可复算（缺 box 字段 / 匹配失败 / 前驱断链）</strong>
+<br><span class="small">（子集标记，非加总行）</span></td>
+<td>0</td><td>—</td>
+<td class="neutral">—</td>
+<td>—</td>
+<td class="neutral">—</td>
+<td>—</td>
+<td>—</td>
+<td class="neutral">+0</td>
+<td class="neutral">+0</td></tr>
+</tbody></table></div>
+
+<h2 id="s4">四、逐年矩阵</h2>
+<p>逐格「净利（笔数）」，用于区分「某一年全市场普遍现象」与「长期结构」。</p>
+<div class="table-wrap"><table class="matrix"><thead><tr><th>年份</th><th>全年净利</th><th>1–14 日</th><th>15–29 日</th><th>30–59 日</th><th>60 日+</th></tr></thead><tbody><tr><td><strong>2005</strong></td><td class="down">-7,381</td><td class="down">-4,823<span class="muted small">(6)</span></td><td class="down">-3,225<span class="muted small">(36)</span></td><td class="up">+1,850<span class="muted small">(27)</span></td><td class="down">-1,183<span class="muted small">(5)</span></td></tr><tr><td><strong>2006</strong></td><td class="up">+237,681</td><td class="up">+7,823<span class="muted small">(12)</span></td><td class="up">+101,339<span class="muted small">(53)</span></td><td class="up">+101,689<span class="muted small">(61)</span></td><td class="up">+26,831<span class="muted small">(35)</span></td></tr><tr><td><strong>2007</strong></td><td class="up">+963,551</td><td class="up">+323,136<span class="muted small">(11)</span></td><td class="up">+270,481<span class="muted small">(41)</span></td><td class="up">+217,839<span class="muted small">(42)</span></td><td class="up">+136,624<span class="muted small">(20)</span></td></tr><tr><td><strong>2008</strong></td><td class="down">-12,841</td><td class="down">-1,353<span class="muted small">(1)</span></td><td class="down">-1,263<span class="muted small">(2)</span></td><td class="down">-1,931<span class="muted small">(2)</span></td><td class="down">-8,294<span class="muted small">(9)</span></td></tr><tr><td><strong>2009</strong></td><td class="up">+66,791</td><td class="up">+1,315<span class="muted small">(5)</span></td><td class="up">+14,315<span class="muted small">(33)</span></td><td class="up">+49,254<span class="muted small">(56)</span></td><td class="up">+1,907<span class="muted small">(21)</span></td></tr><tr><td><strong>2010</strong></td><td class="down">-33,254</td><td class="up">+5,283<span class="muted small">(10)</span></td><td class="down">-11,957<span class="muted small">(43)</span></td><td class="up">+17,035<span class="muted small">(39)</span></td><td class="down">-43,615<span class="muted small">(24)</span></td></tr><tr><td><strong>2011</strong></td><td class="down">-71,406</td><td class="down">-3,483<span class="muted small">(5)</span></td><td class="down">-16,622<span class="muted small">(33)</span></td><td class="down">-44,925<span class="muted small">(46)</span></td><td class="down">-6,376<span class="muted small">(7)</span></td></tr><tr><td><strong>2012</strong></td><td class="down">-24,554</td><td class="up">+5,818<span class="muted small">(6)</span></td><td class="down">-9,756<span class="muted small">(38)</span></td><td class="down">-14,462<span class="muted small">(42)</span></td><td class="down">-6,155<span class="muted small">(5)</span></td></tr><tr><td><strong>2013</strong></td><td class="down">-7,703</td><td class="down">-9,818<span class="muted small">(4)</span></td><td class="up">+11,731<span class="muted small">(42)</span></td><td class="up">+18,935<span class="muted small">(86)</span></td><td class="down">-28,551<span class="muted small">(34)</span></td></tr><tr><td><strong>2014</strong></td><td class="up">+124,865</td><td class="up">+13,703<span class="muted small">(6)</span></td><td class="up">+72,556<span class="muted small">(42)</span></td><td class="up">+13,417<span class="muted small">(68)</span></td><td class="up">+17,235<span class="muted small">(21)</span></td></tr><tr><td><strong>2015</strong></td><td class="up">+328,148</td><td class="up">+25,791<span class="muted small">(4)</span></td><td class="down">-6,581<span class="muted small">(21)</span></td><td class="up">+285,663<span class="muted small">(37)</span></td><td class="up">+23,275<span class="muted small">(7)</span></td></tr><tr><td><strong>2016</strong></td><td class="down">-23,520</td><td class="down">-6,921<span class="muted small">(8)</span></td><td class="up">+5,668<span class="muted small">(23)</span></td><td class="down">-22,179<span class="muted small">(45)</span></td><td class="up">+517<span class="muted small">(22)</span></td></tr><tr><td><strong>2017</strong></td><td class="down">-29,449</td><td class="down">-9,433<span class="muted small">(6)</span></td><td class="down">-6,776<span class="muted small">(39)</span></td><td class="down">-11,017<span class="muted small">(80)</span></td><td class="down">-19,278<span class="muted small">(35)</span></td></tr><tr><td><strong>2018</strong></td><td class="down">-49,698</td><td class="down">-668<span class="muted small">(4)</span></td><td class="down">-24,951<span class="muted small">(27)</span></td><td class="down">-5,880<span class="muted small">(20)</span></td><td class="down">-18,200<span class="muted small">(15)</span></td></tr></tbody></table></div>
+
+<h2 id="s5">五、与第 5 维（距 52 周新高）交叉切片</h2>
+<div class="table-wrap"><table><thead><tr><th>切片</th><th>笔数</th><th>胜率</th>
+<th>每单位净利</th><th>集中度</th><th>剔除前三净利</th><th>间隔中位</th><th>净利</th></tr></thead><tbody>
+<tr><td><strong>距 52 周新高 ≤15%（甜区）</strong></td><td>661</td><td>29.0%</td><td class="up">+967</td><td>18.3%</td><td class="up">+1,002,274</td><td class="muted">38.0</td><td class="up">+1,470,533</td></tr><tr><td><strong>距 52 周新高 >15%</strong></td><td>811</td><td>18.6%</td><td class="down">-103</td><td>13.0%</td><td class="down">-85,623</td><td class="muted">33.0</td><td class="down">-49,178</td></tr>
+</tbody></table></div>
+<p class="small muted">阶梯速度（第 11 维）与距新高（第 5 维）是两个维度，交叉只作附录观察，<b>不得据此下因果结论</b>。</p>
+
+<h2 id="s6">六、判定</h2>
+<div class="hyp"><div class="hyp-card no"><div class="t">H1 阶梯速度单调相关 —— 不成立 <span class="vd vd-neg">不成立</span></div><div class="d">四带每单位净利：1–14 日 +2,634｜15–29 日 +654｜30–59 日 +694｜60 日+ +191｜递减相邻对 <b>2/3</b>（需≥3）</div></div><div class="hyp-card no"><div class="t">H2 快梯 box 质量差 —— 不成立 <span class="vd vd-neg">不成立</span></div><div class="d">&lt;15 日带每单位净利 <b>+2,634</b>（需&lt;0）、n=<b>88</b>（需≥30）、剔除前三 <b>+31,827</b>（需&lt;0）</div></div></div>
+<h3>6.1 逐带裁定</h3>
+<div class="table-wrap"><table><thead><tr><th>阶梯速度</th><th>n</th><th>Mf</th><th>P′/M′</th>
+<th>最长连续同号年</th><th>正号年净利占比</th><th>裁定</th></tr></thead><tbody>
+<tr><td><strong>1–14 日</strong></td><td>88</td><td>13</td><td>7/13<span class="muted small">（53.8%）</span></td><td>4</td><td>110.5%</td><td><span class="vd vd-unstable">不稳定（正但非跨年）</span></td></tr><tr><td><strong>15–29 日</strong></td><td>473</td><td>13</td><td>6/13<span class="muted small">（46.2%）</span></td><td>3</td><td>120.5%</td><td><span class="vd vd-unstable">不稳定（正但非跨年）</span></td></tr><tr><td><strong>30–59 日</strong></td><td>651</td><td>13</td><td>8/13<span class="muted small">（61.5%）</span></td><td>5</td><td>116.6%</td><td><span class="vd vd-unstable">不稳定（正但非跨年）</span></td></tr><tr><td><strong>60 日+</strong></td><td>260</td><td>14</td><td>6/14<span class="muted small">（42.9%）</span></td><td>4</td><td>276.2%</td><td><span class="vd vd-fake">假 edge（前三撑起）</span></td></tr>
+</tbody></table></div>
+
+<h2 id="s7">七、附录</h2>
+<h3>7.1 HARD 校验</h3>
+<div class="table-wrap"><table><thead><tr><th>级别</th><th>校验项</th><th>期望</th><th>实际</th><th>结果</th><th>备注</th></tr></thead><tbody><tr><td>HARD</td><td style="text-align:left">年份连续 2005–2018</td><td class="muted">14 年连续</td><td>14 年 2005–2018</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">缺年或乱序</td></tr><tr><td>HARD</td><td style="text-align:left">①样本总对账 vs 基线 1481</td><td class="muted">1481</td><td>1481</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left"></td></tr><tr><td>HARD</td><td style="text-align:left">②加总恒等式 Σ四带 + 首级 + 不可复算 = 1481</td><td class="muted">1481</td><td>1481</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">不静默丢弃</td></tr><tr><td>HARD</td><td style="text-align:left">④反向匹配唯一性（多命中已按规则消解，失败=0）</td><td class="muted">失败 0</td><td>匹配 1481 / 失败 0 / 多命中 1</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">多命中按 broken_date 最新取一</td></tr><tr><td>HARD</td><td style="text-align:left">⑤前驱链完整（断链=0）</td><td class="muted">0 笔</td><td>0 笔</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left"></td></tr><tr><td>HARD</td><td style="text-align:left">⑥阶梯速度非负（无 前驱晚于当前）</td><td class="muted">0 笔</td><td>0 笔</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left"></td></tr><tr><td>HARD</td><td style="text-align:left">⑦成本口径齐备（可复算样本 cost_basis>0 且 qty>0）</td><td class="muted">1472/1472</td><td>1472/1472</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">成本来自 position_leg 求和（仅可复算样本）</td></tr><tr><td>HARD</td><td style="text-align:left">⑧逐年净利对账 Σrealized_pnl ≈ +1,461,228.2</td><td class="muted">1,461,228.2</td><td>1,461,228.2</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">新基线口径</td></tr><tr><td>HARD</td><td style="text-align:left">③逐年符号表齐备 2005–2018</td><td class="muted">14 行</td><td>14 行</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">缺年须登记原因</td></tr><tr><td>WARN</td><td style="text-align:left">首级箱体笔数（结构性锚点 ≈9）</td><td class="muted">9（±5）</td><td>9 笔</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">prev_box_id 为 NULL 的入场 box</td></tr><tr><td>WARN</td><td style="text-align:left">不可复算样本占比</td><td class="muted">登记</td><td>0 笔</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">缺 box 字段 / 匹配失败 / 前驱断链 / 阶梯异常</td></tr><tr><td>WARN</td><td style="text-align:left">多命中 box 笔数</td><td class="muted">登记</td><td>1 笔</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">同票相近价位反复成箱</td></tr></tbody></table></div>
+<h3>7.2 复现</h3>
+<div class="panel"><p class="small">生成器：<code>python scripts/e17_lb2_ladderspeed.py</code>（先 <code>--check-only</code> 校准）<br>
+独立校验：<code>python scripts/e17_lb2_ladderspeed_verify.py</code><br>
+sha256（前 16 位）：<code>334b9dfb05e58a80</code><br>
+数据源 mtime：bt_baseA_2005.db 2026-10-29 22:45, bt_baseA_2006.db 2026-10-30 01:30, bt_baseA_2007.db 2026-10-29 22:45 …</p></div>
+
+<div class="foot">
+<p><b>结论边界</b>：只量化「阶梯速度与突破质量的相关性分布」，不预测「阶梯速度该定多少阈值」。任何阈值规则须走 B 类回测。</p>
+<p>单因子轮换：本实验只动「阶梯速度」一个分组变量，其余十维固定（docs/29 §2.3）。样本外（2019+）未参与。</p>
+<p>生成于 2026-10-31 20:37:45 · 1 单位 = 2% 权益；E17 阶梯 t1=3 / t2=2 / t3=1 / t4=0.5</p>
+</div>
+</div></body></html>
