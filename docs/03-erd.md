@@ -282,7 +282,7 @@ erDiagram
 
 ## 6. 研究字段：plan_order.reason_json（2026-10-25 立项）
 
-> box 十维迭代实验（理论框架见 docs/00 §3.6）的核心数据载体是 `plan_order.reason_json`（JSON 文本字段）。回测器在生成每笔买入订单时，把信号触发时的 box 几何与 52 周新高上下文写入该字段；离线分析脚本（`e17_watch.py` / `e17_annual_tier_report.py` / `e17_*_report.py`）只读查询该字段做梯度分布统计。**允许**用 `daily_bar` 重算指数侧特征（MA / 回撤 / regime 标签），但**不得重算 box 几何与信号**——那是回测器的职责，重算会造成口径漂移。
+> box 十一维迭代实验（理论框架见 docs/00 §3.6）的核心数据载体是 `plan_order.reason_json`（JSON 文本字段）。回测器在生成每笔买入订单时，把信号触发时的 box 几何与 52 周新高上下文写入该字段；离线分析脚本（`e17_watch.py` / `e17_annual_tier_report.py` / `e17_*_report.py`）只读查询该字段做梯度分布统计。**允许**用 `daily_bar` 重算指数侧特征（MA / 回撤 / regime 标签），但**不得重算 box 几何与信号**——那是回测器的职责，重算会造成口径漂移。
 
 ### 6.1 已落地字段清单（当前 darvas_e17.exe 产出）
 
