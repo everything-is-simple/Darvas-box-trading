@@ -258,13 +258,16 @@ def main():
     # 次新占比诊断
     print("\n=== 各带次新占比（n_closed）===")
     for b in arm:
+        if b["n_closed"] == 0:
+            print(f"  {b['band']}: 无样本")
+            continue
         print(f"  {b['band']}: {pct(b['new_pct'],1)}（{b['new_n']}/{b['n_closed']}）")
 
     # 组数据并写 json
     data = dict(
         generated=datetime.now().strftime("%Y-%m-%d %H:%M"),
         bands=[{k: b[k] for k in b if k not in ("lo", "hi")} for b in arm],
-        per_year={lab: {str(y): {k: v[k] for k in ("n_signal", "n_closed", "per_unit", "win_rate", "ex_top3")} for y, v in d.items()} for lab, d in pyt.items()},
+        per_year={lab: {str(y): {k: v.get(k) for k in ("n_signal", "n_closed", "per_unit", "win_rate", "ex_top3")} for y, v in d.items()} for lab, d in pyt.items()},
     )
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "e17_volmult_data.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -273,6 +276,9 @@ def main():
     hdr = f"{'带':<7}{'n信号':>6}{'n平仓':>6}{'胜率':>7}{'每单位':>9}{'PF':>6}{'集中度':>7}{'剔前三':>11}{'次新%':>6}"
     print(hdr)
     for b in arm:
+        if b["n_closed"] == 0:
+            print(f"{b['band']:<7}{b['n_signal']:>6}{0:>6}   (无样本)")
+            continue
         pf = "inf" if b["pf"] == float("inf") else (f"{b['pf']:.2f}" if b["pf"] is not None else "—")
         print(f"{b['band']:<7}{b['n_signal']:>6}{b['n_closed']:>6}"
               f"{pct(b['win_rate'],1) if b['win_rate'] is not None else '—':>7}"

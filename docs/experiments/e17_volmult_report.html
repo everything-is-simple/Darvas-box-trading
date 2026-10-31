@@ -1,0 +1,152 @@
+<!doctype html><html lang=zh><head><meta charset=utf-8><title>P1-4 B 类 · 量比门槛梯度扫描</title><style>
+:root{--bg:#0f1115;--fg:#e6e8eb;--muted:#8b929c;--card:#171a21;--line:#262b35;
+--good:#e0524d;--bad:#3fa96a;--warn:#d9a441;--acc:#5b8def}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+font:15px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:36px 22px 80px}
+h1{font-size:25px;margin:0 0 6px;letter-spacing:.4px}
+h2{font-size:18px;margin:38px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+h3{font-size:15px;margin:22px 0 8px;color:#c9ced6}
+.sub{color:var(--muted);font-size:13px;margin-bottom:22px}
+table{border-collapse:collapse;width:100%;margin:10px 0 6px;font-size:13px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:600;background:#141821;text-align:right}
+th:first-child,td:first-child{text-align:left}
+tr:hover td{background:#1b1f28}
+.pos{color:var(--good)}.neg{color:var(--bad)}.mut{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+.callout{border-left:3px solid var(--acc);background:#15192499;padding:13px 16px;margin:14px 0;border-radius:0 8px 8px 0}
+.callout.red{border-color:var(--good)}.callout.green{border-color:var(--bad)}
+.callout.amber{border-color:var(--warn)}
+.tag{display:inline-block;padding:1px 7px;border-radius:5px;font-size:12px;background:#222836;color:#aeb6c2}
+.small{font-size:12.5px;color:var(--muted)}
+code{background:#1d222c;padding:1px 5px;border-radius:4px;font-size:12.5px}
+table.win td:first-child{font-weight:600}
+</style></head><body><div class=wrap>
+<h1>P1-4 B 类 · 量比门槛梯度扫描</h1>
+<div class=sub>Darvas 箱体量化系统 · 十维 #7（量比）· B 类单变量回测 · 12 库（3 档 × 4 年）· 生成于 2026-10-31</div>
+
+<h2>核心结论</h2>
+<div class=callout red><b>2× 量比门槛不是一个固定值最优，而是「牛松熊紧」：</b>牛市/结构市/震荡 → 1.5（抓机会）；熊市 → 2.0 甚至更紧（躲烂单）；<b>1.0 任何市况都别用。</b></div>
+<div class=callout>四年总账（已实现）：<b>1.5 档 +518,093</b>（最优）｜ 2.0 基线 +224,446 ｜ 1.0 仅 +134,526（淘汰）。<br>
+但 1.5 的优势由 2015 牛市一年扛起（相对基线 +269,715），<b>2018 熊市里 2.0 反而最优</b>。</div>
+
+<h2>一、实验设计</h2>
+<div class=card>
+<ul>
+<li><b>单变量 OFAT</b>：只动 <code>box.volmult</code>（1.0 / 1.5 / 2.0 基线），<code>buy.premium</code> 钉 1.03，其余参数全冻结。</li>
+<li><b>12 库</b>：3 档 × 4 年（2012 震荡 / 2015 牛市 / 2017 结构市 / 2018 熊市），总回测 18h31m。</li>
+<li><b>观测分带</b>（带界固定）：0–1× / 1–2× / 2–5× / 5×+。</li>
+<li><b>验收口径</b>：以<b>已实现</b>为主（讨论入场规则必须用已实现）；账户净利（权益变动，含年末浮盈）仅作对照。</li>
+<li><b>硬校验</b>：volmult=2.0 档与账本基线逐年零差异（HARD①，四年全部复现）。</li>
+</ul>
+<p class=small>为什么只能靠 B 类：A 类已证量比 2× 之上无梯度，但 0–2× 带在基线下结构性无样本（被 2× 闸门拦在信号阶段）——「2× 准入值本身对不对」只能改参数重跑。</p>
+</div>
+
+<h2>二、终判主表（已实现口径，元）</h2>
+<table class=win>
+<tr><th>年份</th><th>市况</th><th>1.0</th><th>1.5</th><th>2.0 基线</th><th>最优</th></tr>
+<tr><td>2012</td><td>震荡</td><td class=neg>−22,456</td><td class="neg" style="font-weight:700">−8,176</td><td class=neg>−24,554</td><td>1.5</td></tr>
+<tr><td>2015</td><td>牛市</td><td class=pos>+292,315</td><td class="pos" style="font-weight:700">+597,863</td><td class=pos>+328,148</td><td>1.5</td></tr>
+<tr><td>2017</td><td>结构市</td><td class=neg>−56,900</td><td class="neg" style="font-weight:700">−1,301</td><td class=neg>−29,449</td><td>1.5</td></tr>
+<tr><td>2018</td><td>熊市</td><td class=neg>−78,432</td><td class=neg>−70,293</td><td class="neg" style="font-weight:700">−49,698</td><td><b>2.0</b></td></tr>
+<tr style="border-top:2px solid var(--line)"><td><b>四年合计</b></td><td></td><td class=pos><b>+134,526</b></td><td class=pos><b>+518,093</b></td><td class=pos><b>+224,446</b></td><td><b>1.5</b></td></tr>
+</table>
+
+<h3>各档相对基线的年度增量（已实现）</h3>
+<table>
+<tr><th>年份</th><th>1.0 − 2.0</th><th>1.5 − 2.0</th></tr>
+<tr><td>2012 震荡</td><td class=pos>+2,097</td><td class=pos><b>+16,378</b></td></tr>
+<tr><td>2015 牛市</td><td class=neg>−35,833</td><td class=pos><b>+269,715</b></td></tr>
+<tr><td>2017 结构市</td><td class=neg>−27,451</td><td class=pos><b>+28,148</b></td></tr>
+<tr><td>2018 熊市</td><td class=neg>−28,733</td><td class=neg><b>−20,595</b></td></tr>
+</table>
+<p class=small>读法：1.5 在前面三市况全为正增量（2015 一年就 +27 万）；唯独 2018 熊市转负（−2.06 万）。1.0 只有 2012 微弱为正，其余三年全负。</p>
+
+<h3>2018 熊市三档详解（最干净的反例）</h3>
+<table>
+<tr><th>档位</th><th>账户净利</th><th>已实现</th><th>剔前三</th><th>笔数</th></tr>
+<tr><td>1.0</td><td class=neg>−76,895</td><td class=neg>−78,432</td><td class=neg>−87,387</td><td>80</td></tr>
+<tr><td>1.5</td><td class=neg>−68,756</td><td class=neg>−70,293</td><td class=neg>−78,594</td><td>76</td></tr>
+<tr><td><b>2.0</b></td><td class=neg><b>−49,698</b></td><td class=neg><b>−49,698</b></td><td class=neg><b>−59,201</b></td><td>66</td></tr>
+</table>
+<p class=small>熊市里越紧越少亏：2.0（−5.0 万）&lt; 1.5（−7.0 万）&lt; 1.0（−7.8 万）。2018 的账户净利 ≈ 已实现（无浮盈掩盖），是最干净的亏损样本。</p>
+
+<h2>三、三条硬结论</h2>
+<div class=callout amber><b>① 「1.5 四年全最优」不成立——熊市必须收紧。</b>2018 里 2.0 亏得最少（−49,698），1.5 反而多亏 2 万。熊市里「少交易」比「抓机会」重要。</div>
+<div class=callout green><b>② 四年总账 1.5 最优（+51.8 万，比基线多 29.4 万）。</b>但它是 2015 一年扛起来的（相对基线 +27 万），并非每年都赢。</div>
+<div class=callout red><b>③ 1.0（完全放开）淘汰。</b>四年 +13.5 万，三档最低；2015/2017/2018 三年都劣于基线。缩量突破放太松，稀释资金、拉低质量。</div>
+
+<h2>四、分带观察</h2>
+<h3>4.1 12 库合并分带（描述性，注意内生性）</h3>
+<table>
+<tr><th>带</th><th>n平仓</th><th>胜率</th><th>每单位</th><th>PF</th><th>集中度</th><th>剔前三</th></tr>
+<tr><td>0–1×</td><td class=mut>0</td><td class=mut>—</td><td class=mut>—</td><td class=mut>—</td><td class=mut>—</td><td>结构性无样本</td></tr>
+<tr><td>1–2×</td><td>327</td><td>24.2%</td><td class=pos><b>+1,242</b></td><td>2.52</td><td>25%</td><td class=pos><b>+330,985</b></td></tr>
+<tr><td>2–5×</td><td>804</td><td>18.9%</td><td class=pos>+340</td><td>1.49</td><td>23%</td><td class=pos>+94,705</td></tr>
+<tr><td>5×+</td><td>106</td><td>18.9%</td><td class=pos>+25</td><td>1.04</td><td>59%</td><td class=neg><b>−26,927</b></td></tr>
+</table>
+<p class=small>1–2× 带整体最优且剔除前三后仍 +330,985（成片）；5×+ 巨量带集中度 59%、剔除前三 −26,927 → <b>假 edge</b>（靠少数几笔撑）。<br>
+<b>⚠️ 警示 1</b>：12 库合并分带有重复样本（同一笔交易在不同档位库以不同仓位出现），不能当作「某个量比区间本身好坏」的干净证据。</p>
+
+<h3>4.2 警示 2：不能跨库比「带」（本轮最重要的方法论教训）</h3>
+<div class=card>
+<p>同一量比区间在不同档位库里表现可能相反，<b>因为档位改变了资金分配</b>（系统持仓上限 14 只，单子之间争预算）：</p>
+<table>
+<tr><th>2015 量比区间</th><th>1.0 档库</th><th>1.5 档库</th></tr>
+<tr><td>1.0–1.5×</td><td class=pos>+4,541（最肥）</td><td class=mut>无样本（被门槛挡住）</td></tr>
+<tr><td>1.5–2.0×</td><td class=pos>+1,122</td><td class=pos>+5,665</td></tr>
+</table>
+<p class=small>1.5 档的「1-2× 带」实际是纯 1.5–2.0× 区间，它每单位 +5,665；而 1.0 档混入 1.0–1.5× 后均值掉到 +2,801。<b>但这不是「1.0–1.5× 单子本身坏」——用 1.0 档库内部切，1.0–1.5× 反而是 2015 最肥的一段（+4,541）。</b></p>
+<p class=small>真相：1.5 门槛挡掉缩量单后，腾出的资金集中到更好的单子上，整体多赚。<b>门槛的最优值是「资金集中度」的最优，不是「某量比区间单子本身的好坏」。</b></p>
+</div>
+<div class=callout amber><b>纪律</b>：分带只能同库内部看，或比端到端（账户净利/已实现）；<b>禁止跨库横比同一带的每单位净利</b>。</div>
+
+<h3>4.3 量比甜点随市况漂移（四年四模式）</h3>
+<p class=small>用 1.0 档库（样本最全）按实际量比切，每单位净利：</p>
+<table>
+<tr><th>量比区间</th><th>2012 震荡</th><th>2015 牛市</th><th>2017 结构市</th><th>2018 熊市</th></tr>
+<tr><td>1.0–1.5×</td><td class=neg>−531</td><td class=pos><b>+4,541</b></td><td class=neg>−556</td><td class=neg><b>−1,119</b></td></tr>
+<tr><td>1.5–2.0×</td><td class=neg>−113</td><td class=pos>+1,122</td><td class=neg>−385</td><td class=neg>−927</td></tr>
+<tr><td>2.0–3.0×</td><td class=neg>−300</td><td class=neg>−950</td><td class=pos><b>+118</b></td><td class=neg>−847</td></tr>
+<tr><td>3.0–5.0×</td><td class=neg>−612</td><td class=pos>+1,931</td><td class=neg>−430</td><td class=neg>−594</td></tr>
+<tr><td>5.0×+</td><td class=pos>+1,009</td><td class=pos>+952</td><td class=neg>−136</td><td class=neg>−306</td></tr>
+</table>
+<div class=card>
+<ul>
+<li><b>牛市</b>：缩量最肥（1.0–1.5× +4,541）——「缩量=主力无分歧」只在牛市成立；</li>
+<li><b>结构市</b>：中量相对好（2.0–3.0× +118，唯一正）；</li>
+<li><b>震荡</b>：巨量好（5.0×+ +1,009，样本小、剔前三多负=假 edge）；</li>
+<li><b>熊市</b>：全亏，且越缩量越差（1.0–1.5× −1,119 是四年最毒）。</li>
+</ul>
+</div>
+<div class=callout>这坐实 <code>docs/35</code> 那句「<b>量重要与否必须与所处位置关联</b>」——位置就是市况，量比门槛该跟着市况走。</div>
+
+<h2>五、数据可靠性</h2>
+<table>
+<tr><th>项</th><th>值</th><th>说明</th></tr>
+<tr><td>HARD① 零差异</td><td class=pos>四年全部复现</td><td>volmult=2.0 与账本基线逐笔一致</td></tr>
+<tr><td>0–1× 带</td><td>0 笔（12 库合计）</td><td>结构性无样本：突破本身是量能事件，缩量突破天然罕见 → 不可检验</td></tr>
+<tr><td>次新占比</td><td>1–2× 1.2% / 2–5× 0.5% / 5×+ 0%</td><td>次新样本几乎为 0（box 信号需 50 日均量+历史），「低量比更好」不是次新效应</td></tr>
+<tr><td>样本量</td><td>各库 n=66~165，四年合计 1330+ 笔</td><td>2018 的 2.0 档 n=66 最小，剔前三后仍 −59,201，方向可靠</td></tr>
+<tr><td>口径</td><td>已实现（realized_pnl）</td><td>账户净利对照：2012/2017 的 1.5 档账户净利为正但已实现为负（年末浮盈）</td></tr>
+</table>
+
+<h2>六、结论与后续</h2>
+<div class=card>
+<ol>
+<li><b>2× 门槛该动</b>，但不是改成一个固定值，而是<b>按市况切换</b>：牛/结构/震荡 → 1.5，熊市 → 2.0 或更紧。</li>
+<li><b>1.0 淘汰</b>（四年总账最低，3/4 年份劣于基线）。</li>
+<li><b>1.5 是「四年总账最优 + 牛市放大器 + 弱市减损器」</b>，不是弱市翻正药。</li>
+</ol>
+</div>
+<h3>后续（进 docs/29 队列）</h3>
+<ul>
+<li><b>市况自适应门槛</b>是否值得立项：需要一个市况判别器（MA60/52 周口径已有），再验证「判别切换」的收益是否 &gt; 「固定 1.5」。<b>这是本报告最直接的下一步。</b></li>
+<li>熊市门槛继续上探（2.5 / 3.0）是否更少亏——同维度加密，样本量需评估（2018 的 2.0 已 n=66）。</li>
+<li>与 LB 系列（box 生命周期）交叉：量比门槛的最优选可能由「box 生命阶段」解释（新生 box vs 老 box 的量比含义不同）——待 LB 立项后联验。</li>
+</ul>
+
+<p class=small style="margin-top:40px">数据：<code>docs/experiments/e17_volmult_data.json</code> · 生成器：<code>scripts/e17_volmult.py</code> · 回测库：<code>var/bt/volmult/</code>（12 库）</p>
+</div></body></html>
