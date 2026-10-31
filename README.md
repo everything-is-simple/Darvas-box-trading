@@ -117,8 +117,11 @@ darvas version
 | [docs/02-architecture.md](docs/02-architecture.md) | 项目设计：分层架构、技术选型、数据流 |
 | [docs/03-erd.md](docs/03-erd.md) | 数据库ERD（事实源：`internal/store/migrations/`） |
 | [docs/04-api-contract.md](docs/04-api-contract.md) | 模块API契约（事实源：`internal/contract/contract.go`） |
-| [docs/05-task-breakdown.md](docs/05-task-breakdown.md) | 任务划分：M0-M7里程碑 |
+| [docs/05-task-breakdown.md](docs/05-task-breakdown.md) | 任务划分：M0-M10里程碑 |
 | [docs/06-consistency.md](docs/06-consistency.md) | ERD/API一致性维护机制（三道防线） |
+| [docs/29-box-gradient-experiment-plan.md](docs/29-box-gradient-experiment-plan.md) | **唯一实验纲领**：基线四层、结论登记、待做队列 |
+| [docs/36-algorithm-brain-charter.md](docs/36-algorithm-brain-charter.md) | **算法大脑法令**：算法层权威总纲（七法，状态机/链路/数学边界/5.83% 口径） |
+| [docs/35-box-second-buy-point-and-volume-divergence.md](docs/35-box-second-buy-point-and-volume-divergence.md) | 研究前瞻：第二买点 pinbar + 量=分歧（未立项） |
 
 ---
 
@@ -150,7 +153,7 @@ internal/
   pipeline/            # 盘后流水线编排 + 备份轮转
   reporter/            # HTML日报
   gui/                 # 本地HTTP UI（embed静态+JSON API）
-docs/                  # 00-06七份文档
+docs/                  # 00-06 SSoT + 29 实验纲领 + 36 算法法令 + 35 研究前瞻 + experiments 陈列馆
 scripts/               # 一致性检查脚本
 var/                   # 运行时（db/备份/报告）
 ```
