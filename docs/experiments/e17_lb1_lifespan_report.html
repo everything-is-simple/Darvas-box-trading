@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LB-1 Box 寿命梯度 · 2005–2018</title>
+<style>
+:root{--bg:#f5f6f8;--surface:#fff;--ink:#1e2430;--muted:#697386;--line:#e3e6eb;
+--soft:#f0f2f5;--red:#c0392b;--red2:#faece9;--green:#1b7a4b;--green2:#e9f5ef;
+--gold:#a66a12;--gold2:#fbf3e4;--blue:#2d5b8e;--blue2:#ecf2f9}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Microsoft YaHei","PingFang SC","Noto Sans SC",Arial,sans-serif;font-size:15px;line-height:1.7}
+.page{max-width:1220px;margin:0 auto;padding:42px 28px 64px}
+header{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:26px}
+.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--blue);font-weight:700;margin-bottom:10px}
+h1{font-size:32px;line-height:1.28;margin:0 0 10px;letter-spacing:-.02em}
+h2{font-size:23px;margin:38px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+h3{font-size:17px;margin:20px 0 9px}
+p{margin:9px 0}.sub{color:var(--muted);max-width:960px;margin:0}
+.muted{color:var(--muted)}.small{font-size:12.5px}
+.up{color:var(--red)}.down{color:var(--green)}.neutral{color:var(--gold)}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:22px 0}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:17px 18px}
+.kpi .label{font-size:12px;color:var(--muted)}
+.kpi .value{font-size:25px;font-weight:700;line-height:1.25;margin-top:4px}
+.kpi .note{font-size:12px;color:var(--muted);margin-top:3px}
+.summary{background:var(--surface);border-left:4px solid var(--blue);border-radius:8px;padding:18px 22px;margin:22px 0}
+.summary h2{border:0;margin:0 0 8px;padding:0;font-size:20px}
+.summary ul{margin:8px 0 0 19px;padding:0}.summary li{margin:6px 0}
+.callout{border-radius:8px;padding:14px 17px;margin:15px 0;font-size:14px}
+.callout.gold{background:var(--gold2);border:1px solid #ead9b8}
+.callout.red{background:var(--red2);border:1px solid #efd0ca}
+.callout.blue{background:var(--blue2);border:1px solid #d4e0ee}
+.table-wrap{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow-x:auto;margin:13px 0}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+th{background:#fafbfc;color:#4b5565;font-size:12px;font-weight:600}
+th:first-child,td:first-child{text-align:left}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#fcfcfd}
+tr.empty td{background:#f4f5f7;color:#9aa1ad;font-style:italic}
+tr.subset td{background:#f8f9fb;font-style:italic;color:#5a6472}
+.vd{font-size:11.5px;padding:1px 7px;border-radius:999px;white-space:nowrap}
+.vd-edge{background:var(--red2);color:var(--red);font-weight:700}
+.vd-fake{background:var(--gold2);color:var(--gold);font-weight:700}
+.vd-neg{background:var(--green2);color:var(--green);font-weight:700}
+.vd-unstable{background:var(--soft);color:#5a6472}
+.vd-small{background:#f1f3f6;color:#8b93a0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:17px 19px;margin:14px 0}
+.hist-row{display:grid;grid-template-columns:118px 1fr 132px;align-items:center;gap:10px;margin:7px 0}
+.hist-label{font-size:12.5px}
+.hist-track{position:relative;height:20px;background:var(--soft);border-radius:4px;overflow:hidden}
+.hist-track b{position:absolute;left:0;top:3px;bottom:3px;border-radius:2px}
+.hist-val{text-align:right;font-size:12.5px;font-variant-numeric:tabular-nums}
+.matrix td{font-size:12px}
+.hyp{display:grid;grid-template-columns:1fr;gap:10px}
+.hyp-card{background:var(--surface);border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:14px 17px}
+.hyp-card.ok{border-left-color:var(--red)}
+.hyp-card.no{border-left-color:var(--green)}
+.hyp-card .t{font-weight:700;font-size:15.5px}
+.hyp-card .d{font-size:13px;color:var(--muted);margin-top:4px}
+.foot{margin-top:38px;padding-top:17px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+code{background:var(--soft);border-radius:3px;padding:1px 5px;font-size:12.5px}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.page{padding:28px 16px 48px}h1{font-size:26px}}
+</style></head><body><div class="page">
+<header>
+<div class="eyebrow">DARVAS · E17 · 实验报告 · 十一维 #11 Box 生命体征 · LB-1 寿命</div>
+<h1>LB-1 Box 寿命梯度</h1>
+<p class="sub">2005–2018 全 14 年已平仓交易的「入场 Box 存续交易日（寿命）」与突破后交易质量的关系。A 类后验、零回测，
+只读 <code>var/bt/base/bt_baseA_&lt;year&gt;.db</code>。框架先于跑数定稿：<code>docs/experiments/e17_lb1_lifespan_framework.md</code>。</p>
+</header>
+
+<div class="kpis"><div class="kpi"><div class="label">已平仓样本</div><div class="value">1481</div><div class="note">2005–2018 · 新基线单镜上证</div></div><div class="kpi"><div class="label">可复算寿命</div><div class="value">1481</div><div class="note">不可复算 0 笔</div></div><div class="kpi"><div class="label">寿命中位数</div><div class="value">18.0 日</div><div class="note">P25 10.0 / P75 34.0</div></div><div class="kpi"><div class="label">总净利</div><div class="value">¥1,461,228</div><div class="note">已实现口径</div></div><div class="kpi"><div class="label">总每单位净利</div><div class="value">+723</div><div class="note">2022 单位</div></div></div>
+
+<div class="summary" id="s0"><h2>核心结论</h2>
+<ul><li>2005–2018 共 <b>1481</b> 笔已平仓交易，其中可复算寿命 <b>1481</b> 笔、不可复算 <b>0</b> 笔。</li><li>寿命四带每单位净利：<b>+2,127</b>（1–2 日） / <b>+1,060</b>（3–10 日） / <b>+605</b>（11–30 日） / <b>+488</b>（30 日+）。</li><li>寿命四带胜率：<b>33.3%</b> / <b>24.4%</b> / <b>23.8%</b> / <b>21.6%</b>。</li><li>H1（寿命与突破质量单调相关）<b>不成立</b>（递增相邻对 0/3）；H2（短寿命 box 突破质量差）<b>不成立</b>。</li></ul>
+<p class="small muted" style="margin-top:10px">读法：寿命是「box 从下轨确认到突破的存续交易日」，<b>不是</b>持仓持有天数。
+本实验只报相关性分布，不下因果结论（框架 §1.2）。</p>
+</div>
+
+<h2 id="s1">一、口径与样本</h2>
+<div class="table-wrap"><table><thead><tr><th>口径</th><th style="text-align:left">定义</th></tr></thead><tbody>
+<tr><td><code>lifespan_days</code></td><td style="text-align:left">该 code 的 daily_bar 在 [bottom_confirmed, broken_date] 的行数（含两端）——bottom_confirmed 即 confirmed 语义（下轨 3 日确认完成日，引擎无独立 confirmed_date 字段）</td></tr>
+<tr><td><code>关联链</code></td><td style="text-align:left">position → leg1 → plan_order → trade_plan.execute_date + reason_json(box_top, box_bottom) → box 表反向精确匹配（entry_box_id 全 NULL）</td></tr>
+<tr><td><code>每单位净利</code></td><td style="text-align:left">realized_pnl / units（units 取自 reason_json.units）</td></tr>
+<tr><td>分带</td><td style="text-align:left">&lt;3 / 3–10 / 10–30 / &gt;30 交易日（照抄任务书预设，未按结果调整）</td></tr>
+</tbody></table></div>
+
+<div class="callout blue"><b>样本漏斗</b>：14 库 closed <b>1481</b> 笔 →
+反向匹配 box 成功 <b>1481</b> 笔 → 缺 box 字段 0 / 匹配失败 0 /
+寿命异常 0 → <b>可复算 1481 笔</b>（多命中 1 笔按 execute_date 最近取一）。</div>
+
+<div class="callout gold"><b>已知数据偏差（结论必须携带）</b>：① <b>800 根窗口左截断</b>（docs/36 缺口 L4）——
+bottom_confirmed 落在窗口左边界外的 box，寿命被截短，长寿命带样本被低估；② 未复权（adj_factor≡1.0），
+跨除权日的 box 边界有语义噪声；③ 幸存者偏差。</div>
+
+<h2 id="s2">二、寿命分布</h2>
+<div class="panel"><h3>寿命分布（可复算样本）</h3><div class="hist-row"><div class="hist-label">1–2 日</div><div class="hist-track"><b style="width:3.21%;background:var(--blue)"></b></div><div class="hist-val">21 笔 · 1.4%</div></div><div class="hist-row"><div class="hist-label">3–10 日</div><div class="hist-track"><b style="width:56.34%;background:var(--blue)"></b></div><div class="hist-val">369 笔 · 24.9%</div></div><div class="hist-row"><div class="hist-label">11–30 日</div><div class="hist-track"><b style="width:100.00%;background:var(--blue)"></b></div><div class="hist-val">655 笔 · 44.2%</div></div><div class="hist-row"><div class="hist-label">30 日+</div><div class="hist-track"><b style="width:66.56%;background:var(--blue)"></b></div><div class="hist-val">436 笔 · 29.4%</div></div><p class="small muted" style="margin-bottom:0">800 根窗口左截断会低估长寿命 box 的数量（框架 §3.5）。</p></div>
+
+<h2 id="s3">三、寿命主表（四带）</h2>
+<p>四项固定口径 + PF + 缺口 + 剔除前三。Σ 四带 = 1481 笔；加「不可复算」子集行（<b>非加总行</b>）
+= 1481 笔。</p>
+<div class="table-wrap"><table><thead><tr><th>寿命（交易日）</th><th>笔数</th><th>胜率</th><th>每单位净利</th><th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔除前三净利</th><th>寿命中位</th><th>净利</th><th>裁定</th></tr></thead><tbody><tr><td><strong>1–2 日</strong></td><td>21 ⚠</td><td>33.3%</td><td class="up">+2,127</td><td>8.6%</td><td class="up">+24.8pp</td><td>5.33</td><td>83.0%</td><td class="down">-1,824</td><td class="muted">2.0</td><td class="up">+82,968</td><td><span class="vd vd-small">样本不足</span></td></tr><tr><td><strong>3–10 日</strong></td><td>369</td><td>24.4%</td><td class="up">+1,060</td><td>11.6%</td><td class="up">+12.8pp</td><td>2.46</td><td>39.5%</td><td class="up">+195,010</td><td class="muted">7.0</td><td class="up">+581,152</td><td><span class="vd vd-unstable">不稳定（正但非跨年）</span></td></tr><tr><td><strong>11–30 日</strong></td><td>655</td><td>23.8%</td><td class="up">+605</td><td>14.2%</td><td class="up">+9.6pp</td><td>1.88</td><td>23.0%</td><td class="up">+256,303</td><td class="muted">17.0</td><td class="up">+503,343</td><td><span class="vd vd-unstable">不稳定（正但非跨年）</span></td></tr><tr><td><strong>30 日+</strong></td><td>436</td><td>21.6%</td><td class="up">+488</td><td>14.2%</td><td class="up">+7.4pp</td><td>1.66</td><td>41.3%</td><td class="down">-10,357</td><td class="muted">45.0</td><td class="up">+293,766</td><td><span class="vd vd-fake">假 edge（前三撑起）</span></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>寿命</th><th>笔数</th><th>胜率</th>
+<th>每单位净利</th><th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔除前三净利</th><th>净利</th></tr></thead><tbody>
+<tr class="subset"><td><strong>不可复算（缺 box 字段 / 匹配失败）</strong>
+<br><span class="small">（子集标记，非加总行）</span></td>
+<td>0</td><td>—</td>
+<td class="neutral">—</td>
+<td>—</td>
+<td class="neutral">—</td>
+<td>—</td>
+<td>—</td>
+<td class="neutral">+0</td>
+<td class="neutral">+0</td></tr>
+</tbody></table></div>
+
+<h2 id="s4">四、逐年矩阵</h2>
+<p>逐格「净利（笔数）」，用于区分「某一年全市场普遍现象」与「长期结构」。</p>
+<div class="table-wrap"><table class="matrix"><thead><tr><th>年份</th><th>全年净利</th><th>1–2 日</th><th>3–10 日</th><th>11–30 日</th><th>30 日+</th></tr></thead><tbody><tr><td><strong>2005</strong></td><td class="down">-7,381</td><td class="muted">—</td><td class="down">-8,449<span class="muted small">(26)</span></td><td class="up">+4,597<span class="muted small">(38)</span></td><td class="down">-3,529<span class="muted small">(10)</span></td></tr><tr><td><strong>2006</strong></td><td class="up">+237,681</td><td class="down">-306<span class="muted small">(1)</span></td><td class="up">+21,720<span class="muted small">(41)</span></td><td class="up">+180,478<span class="muted small">(68)</span></td><td class="up">+35,789<span class="muted small">(51)</span></td></tr><tr><td><strong>2007</strong></td><td class="up">+963,551</td><td class="up">+62,541<span class="muted small">(3)</span></td><td class="up">+444,716<span class="muted small">(37)</span></td><td class="up">+242,184<span class="muted small">(48)</span></td><td class="up">+214,110<span class="muted small">(28)</span></td></tr><tr><td><strong>2008</strong></td><td class="down">-12,841</td><td class="down">-2,149<span class="muted small">(2)</span></td><td class="down">-816<span class="muted small">(1)</span></td><td class="down">-1,582<span class="muted small">(2)</span></td><td class="down">-8,294<span class="muted small">(9)</span></td></tr><tr><td><strong>2009</strong></td><td class="up">+66,791</td><td class="up">+6,304<span class="muted small">(2)</span></td><td class="down">-11,977<span class="muted small">(29)</span></td><td class="up">+38,007<span class="muted small">(45)</span></td><td class="up">+34,456<span class="muted small">(39)</span></td></tr><tr><td><strong>2010</strong></td><td class="down">-33,254</td><td class="up">+3,290<span class="muted small">(4)</span></td><td class="up">+6,759<span class="muted small">(31)</span></td><td class="up">+13,732<span class="muted small">(46)</span></td><td class="down">-57,034<span class="muted small">(35)</span></td></tr><tr><td><strong>2011</strong></td><td class="down">-71,406</td><td class="muted">—</td><td class="down">-13,321<span class="muted small">(18)</span></td><td class="down">-31,054<span class="muted small">(52)</span></td><td class="down">-27,031<span class="muted small">(21)</span></td></tr><tr><td><strong>2012</strong></td><td class="down">-24,554</td><td class="muted">—</td><td class="down">-2,763<span class="muted small">(32)</span></td><td class="down">-16,894<span class="muted small">(45)</span></td><td class="down">-4,897<span class="muted small">(14)</span></td></tr><tr><td><strong>2013</strong></td><td class="down">-7,703</td><td class="down">-668<span class="muted small">(1)</span></td><td class="up">+46,113<span class="muted small">(33)</span></td><td class="down">-29,724<span class="muted small">(77)</span></td><td class="down">-23,424<span class="muted small">(55)</span></td></tr><tr><td><strong>2014</strong></td><td class="up">+124,865</td><td class="up">+25,297<span class="muted small">(2)</span></td><td class="up">+29,962<span class="muted small">(36)</span></td><td class="up">+25,348<span class="muted small">(68)</span></td><td class="up">+44,258<span class="muted small">(32)</span></td></tr><tr><td><strong>2015</strong></td><td class="up">+328,148</td><td class="up">+274<span class="muted small">(1)</span></td><td class="up">+60,062<span class="muted small">(18)</span></td><td class="up">+124,005<span class="muted small">(29)</span></td><td class="up">+143,807<span class="muted small">(21)</span></td></tr><tr><td><strong>2016</strong></td><td class="down">-23,520</td><td class="down">-5,589<span class="muted small">(2)</span></td><td class="up">+12,268<span class="muted small">(19)</span></td><td class="down">-21,115<span class="muted small">(46)</span></td><td class="down">-9,084<span class="muted small">(34)</span></td></tr><tr><td><strong>2017</strong></td><td class="down">-29,449</td><td class="down">-2,226<span class="muted small">(2)</span></td><td class="up">+4,931<span class="muted small">(32)</span></td><td class="down">-7,496<span class="muted small">(64)</span></td><td class="down">-24,658<span class="muted small">(65)</span></td></tr><tr><td><strong>2018</strong></td><td class="down">-49,698</td><td class="down">-3,799<span class="muted small">(1)</span></td><td class="down">-8,055<span class="muted small">(16)</span></td><td class="down">-17,144<span class="muted small">(27)</span></td><td class="down">-20,701<span class="muted small">(22)</span></td></tr></tbody></table></div>
+
+<h2 id="s5">五、与第 5 维（距 52 周新高）交叉切片</h2>
+<div class="table-wrap"><table><thead><tr><th>切片</th><th>笔数</th><th>胜率</th>
+<th>每单位净利</th><th>集中度</th><th>剔除前三净利</th><th>寿命中位</th><th>净利</th></tr></thead><tbody>
+<tr><td><strong>距 52 周新高 ≤15%（甜区）</strong></td><td>669</td><td>29.3%</td><td class="up">+979</td><td>17.9%</td><td class="up">+1,042,835</td><td class="muted">18.0</td><td class="up">+1,511,094</td></tr><tr><td><strong>距 52 周新高 >15%</strong></td><td>812</td><td>18.6%</td><td class="down">-104</td><td>13.0%</td><td class="down">-86,311</td><td class="muted">18.0</td><td class="down">-49,865</td></tr>
+</tbody></table></div>
+<p class="small muted">寿命（第 11 维）与距新高（第 5 维）是两个维度，交叉只作附录观察，<b>不得据此下因果结论</b>。</p>
+
+<h2 id="s6">六、判定</h2>
+<div class="hyp"><div class="hyp-card no"><div class="t">H1 寿命单调相关 —— 不成立 <span class="vd vd-neg">不成立</span></div><div class="d">四带每单位净利：1–2 日 +2,127｜3–10 日 +1,060｜11–30 日 +605｜30 日+ +488｜递增相邻对 <b>0/3</b>（需≥3）</div></div><div class="hyp-card no"><div class="t">H2 短寿命 box 质量差 —— 不成立 <span class="vd vd-neg">不成立</span></div><div class="d">&lt;3 日带每单位净利 <b>+2,127</b>（需&lt;0）、n=<b>21</b>（需≥30）、剔除前三 <b>-1,824</b>（需&lt;0）</div></div></div>
+<h3>6.1 逐带裁定</h3>
+<div class="table-wrap"><table><thead><tr><th>寿命</th><th>n</th><th>Mf</th><th>P′/M′</th>
+<th>最长连续同号年</th><th>正号年净利占比</th><th>裁定</th></tr></thead><tbody>
+<tr><td><strong>1–2 日</strong></td><td>21</td><td>2</td><td>2/2<span class="muted small">（100.0%）</span></td><td>2</td><td>117.8%</td><td><span class="vd vd-small">样本不足</span></td></tr><tr><td><strong>3–10 日</strong></td><td>369</td><td>13</td><td>8/13<span class="muted small">（61.5%）</span></td><td>5</td><td>107.8%</td><td><span class="vd vd-unstable">不稳定（正但非跨年）</span></td></tr><tr><td><strong>11–30 日</strong></td><td>655</td><td>13</td><td>7/13<span class="muted small">（53.8%）</span></td><td>5</td><td>124.8%</td><td><span class="vd vd-unstable">不稳定（正但非跨年）</span></td></tr><tr><td><strong>30 日+</strong></td><td>436</td><td>14</td><td>5/14<span class="muted small">（35.7%）</span></td><td>4</td><td>160.8%</td><td><span class="vd vd-fake">假 edge（前三撑起）</span></td></tr>
+</tbody></table></div>
+
+<h2 id="s7">七、附录</h2>
+<h3>7.1 HARD 校验</h3>
+<div class="table-wrap"><table><thead><tr><th>级别</th><th>校验项</th><th>期望</th><th>实际</th><th>结果</th><th>备注</th></tr></thead><tbody><tr><td>HARD</td><td style="text-align:left">年份连续 2005–2018</td><td class="muted">14 年连续</td><td>14 年 2005–2018</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">缺年或乱序</td></tr><tr><td>HARD</td><td style="text-align:left">①样本总对账 vs 基线 1481</td><td class="muted">1481</td><td>1481</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left"></td></tr><tr><td>HARD</td><td style="text-align:left">②加总恒等式 Σ四带 + 不可复算 = 1481</td><td class="muted">1481</td><td>1481</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">不静默丢弃</td></tr><tr><td>HARD</td><td style="text-align:left">④反向匹配唯一性（多命中已按规则消解，失败=0）</td><td class="muted">失败 0</td><td>匹配 1481 / 失败 0 / 多命中 1</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">多命中按 execute_date 最近取一</td></tr><tr><td>HARD</td><td style="text-align:left">⑤寿命非负（无 broken_date<bottom_confirmed）</td><td class="muted">0 笔</td><td>0 笔</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left"></td></tr><tr><td>HARD</td><td style="text-align:left">⑥成本口径齐备（可复算样本 cost_basis>0 且 qty>0）</td><td class="muted">1481/1481</td><td>1481/1481</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">成本来自 position_leg 求和</td></tr><tr><td>HARD</td><td style="text-align:left">⑦逐年净利对账 Σrealized_pnl ≈ +1,461,228.2</td><td class="muted">1,461,228.2</td><td>1,461,228.2</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">新基线口径</td></tr><tr><td>HARD</td><td style="text-align:left">③逐年符号表齐备 2005–2018</td><td class="muted">14 行</td><td>14 行</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">缺年须登记原因</td></tr><tr><td>WARN</td><td style="text-align:left">不可复算样本占比</td><td class="muted">登记</td><td>0 笔</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">缺 box 字段 / 匹配失败 / 寿命异常</td></tr><tr><td>WARN</td><td style="text-align:left">多命中 box 笔数</td><td class="muted">登记</td><td>1 笔</td><td class="up"><strong>✓</strong></td><td class="muted small" style="text-align:left">同票相近价位反复成箱</td></tr></tbody></table></div>
+<h3>7.2 复现</h3>
+<div class="panel"><p class="small">生成器：<code>python scripts/e17_lb1_lifespan.py</code>（先 <code>--check-only</code> 校准）<br>
+独立校验：<code>python scripts/e17_lb1_lifespan_verify.py</code><br>
+sha256（前 16 位）：<code>59eb45f28dc85069</code><br>
+数据源 mtime：bt_baseA_2005.db 2026-10-29 22:45, bt_baseA_2006.db 2026-10-30 01:30, bt_baseA_2007.db 2026-10-29 22:45 …</p></div>
+
+<div class="foot">
+<p><b>结论边界</b>：只量化「寿命与突破质量的相关性分布」，不预测「寿命该定多少阈值」。任何阈值规则须走 B 类回测。</p>
+<p>单因子轮换：本实验只动「寿命」一个分组变量，其余十维固定（docs/29 §2.3）。样本外（2019+）未参与。</p>
+<p>生成于 2026-10-31 19:41:54 · 1 单位 = 2% 权益；E17 阶梯 t1=3 / t2=2 / t3=1 / t4=0.5</p>
+</div>
+</div></body></html>
