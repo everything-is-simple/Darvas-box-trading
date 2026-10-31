@@ -184,6 +184,7 @@
 | 放量倍数 | `box.volmult` | ×2.0 | 达瓦斯成交量确认（**A 类已验 2026-10-30**：2× 之上无梯度；**低端 0–1×/1–2× B 类已立项**，见 docs/29 §七 P1-4） |
 | 均量窗口 | `box.volwindow` | 50日 | 放量参照基准 |
 | 箱体最小宽度 | `box.min_width` | 0.05 | A2 校订：宽度校验 (top-bottom)/top ≥ 0.05（**梯度未验**） |
+| Box 成长速度准入门槛 | `box.max_growth_days` | 0（关闭） | LB-4 B 类（2026-10-31 立项）：成长速度（top_confirmed→bottom_confirmed 交易日数）超过阈值则不产生买单；0=关闭，生产与基线逐单等价 |
 | RS窗口 | `screen.rswindow` | 20日 | 相对强度 |
 | RS超额收益下限 | `screen.rs_excess_min` | 0.20 | A1：20日个股涨幅−上证涨幅 ≥ 20pp 得RS分（**梯度未验**） |
 | 流动性门槛 | `screen.turnover` | 5000万 | A股适配 |

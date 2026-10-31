@@ -130,6 +130,16 @@ func (r *BarRepo) BarCount(code, after, until string) (int, error) {
 	return n, err
 }
 
+// BarCountClosed code 在闭区间 [from, to] 的K线根数（交易日数，含两端）。
+// LB-4 B 类成长速度口径用（与 e17_lb4_growthspeed.py 的 daily_bar 闭区间计数严格一致）：
+// 成长速度 = top_confirmed → bottom_confirmed 的交易日数，含上/下轨确认日两端。
+func (r *BarRepo) BarCountClosed(code, from, to string) (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM daily_bar
+		WHERE code = ? AND date >= ? AND date <= ?`, code, from, to).Scan(&n)
+	return n, err
+}
+
 // BarsRange 取 code 在 [from, to] 区间的K线（升序；GUI U2 时间范围查询）。
 // from/to 传空=不限；上限 max 根防区间过大（超出则截尾保留最近 max 根）。
 func (r *BarRepo) BarsRange(code, from, to string, max int) ([]contract.DailyBar, error) {

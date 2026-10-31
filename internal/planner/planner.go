@@ -75,6 +75,12 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	unitValue := equity * unitPct
 	market := p.regimeLabel(planDate)
 
+	// LB-4 B 类（2026-10-31）：Box 成长速度买入准入门槛，参数 box.max_growth_days（种子化，
+	// migration 0020，默认 0=关闭）。成长速度 = 入场 Box 上轨确认(top_confirmed)到下轨确认
+	// (bottom_confirmed)的交易日数；超过阈值则不产生买单。0 时必须完全短路——不读行情、
+	// 不改 Reason、不改任何输出，保证 off 档与历史基线逐单等价。
+	maxGrowthDays := p.st.ParamRepo.GetInt("box.max_growth_days", 0)
+
 	// P0-3 B 类（2026-10-26）：MA60 闸门实验，参数 gate.ma60.mode = off|half|stop（未种子化，
 	// 回测时经 --set 注入；取不到时默认 off）。off 时必须完全短路——不读指数、不改 Reason、
 	// 不改任何输出，保证 bt_b12_off 与 bt_e17 历史基线逐单等价（等价性由 2014 对照跑验证）。
@@ -167,7 +173,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 			}
 			// A M1（2026-10-23）：首买单位由 A 判据升势决定（升势 2 / 其余 1），winner 5x 退役。
 			o := p.buyOrder(s, box, market, unitValue,
-				buyPrem, sellDisc, posByCode, budget, eqb, plannedQty, planDate, executeDate, maxEntryGap, ladder, gate)
+				buyPrem, sellDisc, posByCode, budget, eqb, plannedQty, planDate, executeDate, maxEntryGap, ladder, gate, maxGrowthDays)
 			if o != nil {
 				orders = append(orders, *o)
 			}
@@ -520,7 +526,7 @@ func (p *Planner) equityBudget(planDate string, equity, unitValue float64) *equi
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
 	buyPrem, sellDisc float64, posByCode map[string]*contract.Position,
 	budget *holdBudget, eqb *equityBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64,
-	ladder newHighLadder, gate gateState) *contract.PlanOrder {
+	ladder newHighLadder, gate gateState, maxGrowthDays int) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
 	// 初始止损（B2 校订 2026-10-22，原书 §4.1 + §3.4）：=被突破箱体上轨（突破点）下方
 	// ——紧止损。原书 §3.4「新箱体下轨 ≈ 前一箱体上轨（±3%容差）」，故「新箱体下轨下方」
@@ -528,6 +534,16 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	stop := box.Top * sellDisc
 	if trigger <= 0 || stop <= 0 || box.Top <= 0 {
 		return nil // 无上轨或触发/止损非法，不生成买单
+	}
+	// LB-4 B 类（2026-10-31）：Box 成长速度准入门槛。成长速度 = top_confirmed → bottom_confirmed
+	// 的交易日数（daily_bar 闭区间，与 LB-4 A 类口径一致）；超过阈值则拒绝买入。
+	// maxGrowthDays <= 0 时完全短路（保 off 档与历史基线逐单等价）。
+	if maxGrowthDays > 0 && box.TopConfirmed != "" && box.BottomConfirmed != "" {
+		if gs, err := p.st.BarRepo.BarCountClosed(s.Code, box.TopConfirmed, box.BottomConfirmed); err == nil && gs > maxGrowthDays {
+			p.log.Printf("成长速度拦截 %s：%d 日 > max_growth_days=%d（top_confirmed %s → bottom_confirmed %s）",
+				s.Code, gs, maxGrowthDays, box.TopConfirmed, box.BottomConfirmed)
+			return nil
+		}
 	}
 	// P0-2（2026-10-21）：生成买单前校验 trigger 与信号现价偏离。
 	// 正常 breakout 时 ClosePx ≈ 箱顶、trigger ≈ 箱顶×1.03（偏离约3%）；
