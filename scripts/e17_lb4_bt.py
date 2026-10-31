@@ -202,10 +202,18 @@ def main():
         print("未找到任何库（var/bt/lb4_bt/ 为空）。先跑 e17_lb4_bt_run.py。")
         return 1
 
+    # ★ 年集对齐（P2-6a 教训：可比口径按被比较对象的可用年集算）。
+    # off 档读 base 库全 14 年，而 5/6/7/8/10 档只有代表年。若不裁剪，off(14 年) vs 其余(4 年) 不可比。
+    # 规则：可用年集 = 5/6/7/8/10 档「至少一个库已存在」的年份；所有档位（含 off）都只在此年集上汇总。
+    non_off_years = sorted({d["year"] for d in by_db.values() if d["tier"] != "off"})
+    years = non_off_years if non_off_years else sorted({d["year"] for d in by_db.values()})
+    # 裁剪 by_db：off 档只保留 years 内的年份；非 off 档照单全收
+    by_db = {k: d for k, d in by_db.items()
+             if (d["tier"] != "off" or d["year"] in years)}
+
     # 诊断：档位 × 年份 覆盖
-    print(f"库数 {len(by_db)}")
+    print(f"库数 {len(by_db)}  对齐年集 {years}")
     print("\n=== 档位 × 年份 n（已平仓笔数 / 已实现净利）===")
-    years = sorted({d["year"] for d in by_db.values()})
     for tier in TIERS:
         for y in years:
             key = f"{tier}_{y}"
