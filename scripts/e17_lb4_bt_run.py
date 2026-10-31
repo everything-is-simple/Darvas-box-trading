@@ -67,15 +67,22 @@ def setargs(tier):
     return ",".join(f"{k}={v}" for k, v in sorted(p.items()))
 
 
-def db_complete(path):
-    """库是否完整：存在 + equity_snapshot 非空（base_run.py 同款判据）。"""
+def db_complete(path, year):
+    """库是否完整：存在 + equity_snapshot 覆盖到该年年末（最后交易日）。
+    判据：equity_snapshot 的最大 date ≥ year-12-01（12 月已有交易日），
+    且 position 表有已平仓记录。仅「非空」会误判半成品库（沙箱回收坑）。"""
     if not path.exists():
         return False
     try:
         import sqlite3
         c = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         try:
-            return c.execute("SELECT COUNT(*) FROM equity_snapshot").fetchone()[0] > 0
+            n = c.execute("SELECT COUNT(*) FROM equity_snapshot").fetchone()[0]
+            if n == 0:
+                return False
+            maxd = c.execute("SELECT MAX(date) FROM equity_snapshot").fetchone()[0]
+            # 年末判据：max date 必须进入该年 12 月（最后交易日 ≈ 12-31）
+            return bool(maxd) and maxd >= f"{year}-12-01"
         finally:
             c.close()
     except Exception:
@@ -85,7 +92,7 @@ def db_complete(path):
 def run_one(year, tier, force=False):
     db = OUT / f"bt_lb4_{tier}_{year}.db"
     logp = OUT / f"bt_lb4_{tier}_{year}.log"
-    if not force and db_complete(db):
+    if not force and db_complete(db, year):
         log(f"跳过（已完整）：{db.name}", logp)
         return 0
     if db.exists() and not force:
