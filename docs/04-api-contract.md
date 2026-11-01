@@ -46,6 +46,7 @@ type Box struct {
 type SignalType string // breakout / stop / failed_breakout（pyramid 于 0017 退役：一律不加码）
 
 type Signal struct {
+    ID int64  // signal.id（0021：planner 写 plan_order.source_signal_id 的强引用来源）
     Date, Code string
     Type SignalType
     BoxID int64
@@ -61,6 +62,7 @@ type PlanOrder struct {
     TriggerPrice, LimitPrice float64
     Qty int
     LegNo int
+    SourceSignalID int64 // 来源信号 id（0021；非信号驱动单为 0 → NULL）
     Reason map[string]any  // 推导明细：箱体轨、风险、权益、信号引用
 }
 

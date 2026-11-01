@@ -9,6 +9,7 @@ import (
 
 	"darvas/internal/box"
 	"darvas/internal/contract"
+	"darvas/internal/ledger"
 	"darvas/internal/store"
 )
 
@@ -1040,5 +1041,69 @@ func TestPlannerEquityGateBlocks(t *testing.T) {
 		if o.Side == "buy" && o.Code == code {
 			t.Fatalf("50%% 预算已用满，不应再开新仓: qty=%d", o.Qty)
 		}
+	}
+}
+
+// TestTrackingChain 端到端：signal.id → plan_order.source_signal_id → position.entry_box_id
+// （T2 交易对象追踪链，migration 0021）。验证 planner 写 box_id/source_signal_id 后，
+// ledger.applyBuy 的 reasonBoxID() 能把入场箱体落进持仓，对象链不再断裂。
+func TestTrackingChain(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	st.SignalRepo.AppendSignals([]contract.Signal{{
+		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
+		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
+	}})
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	// 1) 信号 id 已由 repo 带出（0021 起 SignalsOn 读 id）。
+	sigs, err := st.SignalRepo.SignalsOn("2026-10-16")
+	if err != nil || len(sigs) != 1 || sigs[0].ID == 0 {
+		t.Fatalf("SignalsOn: %d signals, sig.ID=%d（want 1 条且 id>0）", len(sigs), sigs[0].ID)
+	}
+
+	// 2) 订单的 source_signal_id 与 reason.box_id 已写。
+	_, orders, err := st.TradeRepo.PlanOn("2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("orders=%d want 1", len(orders))
+	}
+	o := orders[0]
+	if o.SourceSignalID != sigs[0].ID {
+		t.Errorf("source_signal_id=%d want %d（信号驱动买单必须带来源信号 id）", o.SourceSignalID, sigs[0].ID)
+	}
+	boxID, ok := o.Reason["box_id"].(float64)
+	if !ok || int64(boxID) != boxes[0].ID {
+		t.Errorf("reason.box_id=%v want %d（买单必须写真实入场箱体 id）", o.Reason["box_id"], boxes[0].ID)
+	}
+
+	// 3) 成交后 position.entry_box_id 落库（ledger.applyBuy → reasonBoxID）。
+	// 注意成交日必须 ≥ 订单 execute_date（plan 2026-10-16 → exec 2026-10-19），否则订单不匹配。
+	l := ledger.New(st)
+	r, err := l.ApplyFill(contract.Fill{Code: code, Date: "2026-10-19", Side: "buy", Price: 24.72, Qty: 800})
+	if err != nil {
+		t.Fatalf("ApplyFill: %v", err)
+	}
+	if r.PositionID == 0 {
+		t.Fatalf("买入成交未开仓")
+	}
+	pos, err := st.TradeRepo.PositionByCode(code)
+	if err != nil || pos == nil {
+		t.Fatalf("PositionByCode: %v / pos=%v", err, pos)
+	}
+	if pos.EntryBoxID != boxes[0].ID {
+		t.Errorf("position.entry_box_id=%d want %d（追踪链断裂：reason.box_id 未传导到持仓）", pos.EntryBoxID, boxes[0].ID)
 	}
 }

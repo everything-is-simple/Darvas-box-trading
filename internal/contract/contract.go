@@ -71,13 +71,14 @@ const (
 
 // Signal 信号（与 signal 表对应）
 type Signal struct {
-	Date     string
-	Code     string
-	Type     SignalType
-	BoxID    int64
-	ClosePx  float64
-	BoxLevel float64
-	Payload  map[string]any
+	ID        int64 // signal.id（0021 起 planner 写入 plan_order.source_signal_id 的强引用来源）
+	Date      string
+	Code      string
+	Type      SignalType
+	BoxID     int64
+	ClosePx   float64
+	BoxLevel  float64
+	Payload   map[string]any
 }
 
 // Candidate 初选候选（与 candidate 表对应）
@@ -139,7 +140,11 @@ type PlanOrder struct {
 	LimitPrice   float64
 	Qty          int
 	LegNo        int
-	Reason       map[string]any
+	// SourceSignalID 生成本单的信号 id（signal.id 强引用，0021 迁移）。
+	// 信号驱动订单（breakout/pyramid/stop/failed_breakout）必填；
+	// 非信号驱动订单（time_stop_noprofit / initial_stop / 手动单）为 0 → NULL——语义正确，不是缺失。
+	SourceSignalID int64
+	Reason         map[string]any
 }
 
 // TradePlan 交易计划头

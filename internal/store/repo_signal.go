@@ -57,9 +57,9 @@ func (r *SignalRepo) AppendSignals(sigs []contract.Signal) error {
 	return tx.Commit()
 }
 
-// SignalsOn 读某日全部信号（按类型、代码排序）。
+// SignalsOn 读某日全部信号（按类型、代码排序）。含 id（0021：planner 写 source_signal_id 用）。
 func (r *SignalRepo) SignalsOn(date string) ([]contract.Signal, error) {
-	rows, err := r.db.Query(`SELECT CAST(date AS TEXT), code, type, COALESCE(box_id,0), close_px, box_level, payload_json
+	rows, err := r.db.Query(`SELECT id, CAST(date AS TEXT), code, type, COALESCE(box_id,0), close_px, box_level, payload_json
 		FROM signal WHERE date = ? ORDER BY type, code`, date)
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (r *SignalRepo) SignalsOn(date string) ([]contract.Signal, error) {
 	for rows.Next() {
 		var s contract.Signal
 		var t, pj string
-		if err := rows.Scan(&s.Date, &s.Code, &t, &s.BoxID, &s.ClosePx, &s.BoxLevel, &pj); err != nil {
+		if err := rows.Scan(&s.ID, &s.Date, &s.Code, &t, &s.BoxID, &s.ClosePx, &s.BoxLevel, &pj); err != nil {
 			return nil, err
 		}
 		s.Type = contract.SignalType(t)
@@ -81,7 +81,7 @@ func (r *SignalRepo) SignalsOn(date string) ([]contract.Signal, error) {
 
 // SignalsRange 读某闭区间内全部信号（按日期、类型、代码排序；周报纪律审计用）。
 func (r *SignalRepo) SignalsRange(from, to string) ([]contract.Signal, error) {
-	rows, err := r.db.Query(`SELECT CAST(date AS TEXT), code, type, COALESCE(box_id,0), close_px, box_level, payload_json
+	rows, err := r.db.Query(`SELECT id, CAST(date AS TEXT), code, type, COALESCE(box_id,0), close_px, box_level, payload_json
 		FROM signal WHERE date BETWEEN ? AND ? ORDER BY date, type, code`, from, to)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func (r *SignalRepo) SignalsRange(from, to string) ([]contract.Signal, error) {
 	for rows.Next() {
 		var s contract.Signal
 		var t, pj string
-		if err := rows.Scan(&s.Date, &s.Code, &t, &s.BoxID, &s.ClosePx, &s.BoxLevel, &pj); err != nil {
+		if err := rows.Scan(&s.ID, &s.Date, &s.Code, &t, &s.BoxID, &s.ClosePx, &s.BoxLevel, &pj); err != nil {
 			return nil, err
 		}
 		s.Type = contract.SignalType(t)

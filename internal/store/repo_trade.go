@@ -44,8 +44,8 @@ func (r *TradeRepo) AddOrders(planID int64, orders []contract.PlanOrder) error {
 	}
 	defer tx.Rollback()
 	stmt, err := tx.Prepare(`INSERT INTO plan_order(trade_plan_id, code, side, order_kind,
-		trigger_price, limit_price, qty, leg_no, reason_json, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`)
+		trigger_price, limit_price, qty, leg_no, reason_json, source_signal_id, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (r *TradeRepo) AddOrders(planID int64, orders []contract.PlanOrder) error {
 		}
 		leg := nullInt64(int64(o.LegNo))
 		if _, err := stmt.Exec(planID, o.Code, o.Side, o.OrderKind,
-			o.TriggerPrice, o.LimitPrice, o.Qty, leg, j); err != nil {
+			o.TriggerPrice, o.LimitPrice, o.Qty, leg, j, nullInt64(o.SourceSignalID)); err != nil {
 			return fmt.Errorf("add order %s %s: %w", o.Code, o.Side, err)
 		}
 	}
@@ -81,7 +81,7 @@ func (r *TradeRepo) PlanOn(date string) (*contract.TradePlan, []contract.PlanOrd
 		return nil, nil, err
 	}
 	rows, err := r.db.Query(`SELECT code, side, order_kind, trigger_price, limit_price, qty,
-		COALESCE(leg_no,0), reason_json FROM plan_order WHERE trade_plan_id = ? ORDER BY side, code`, pid)
+		COALESCE(leg_no,0), COALESCE(source_signal_id,0), reason_json FROM plan_order WHERE trade_plan_id = ? ORDER BY side, code`, pid)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -91,7 +91,7 @@ func (r *TradeRepo) PlanOn(date string) (*contract.TradePlan, []contract.PlanOrd
 		var o contract.PlanOrder
 		var rj string
 		if err := rows.Scan(&o.Code, &o.Side, &o.OrderKind, &o.TriggerPrice, &o.LimitPrice,
-			&o.Qty, &o.LegNo, &rj); err != nil {
+			&o.Qty, &o.LegNo, &o.SourceSignalID, &rj); err != nil {
 			return nil, nil, err
 		}
 		o.PlanDate = p.PlanDate

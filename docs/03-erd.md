@@ -133,6 +133,7 @@ erDiagram
         INTEGER qty
         INTEGER leg_no
         TEXT reason_json "六问答案引用"
+        INTEGER source_signal_id FK "来源信号(signal.id,0021)"
         TEXT status "pending/placed/filled/cancelled/expired"
     }
     trade_fill {
@@ -211,6 +212,12 @@ erDiagram
 > A0/A1 轨迹验证给出结论后，先写 migration 方案并同 commit 更新 03/04/06；禁止直接改已发布 migration。**
 > 详见 docs/00 §3.7 第 1.1/6 点与 docs/29 §七前置段。
 
+> **✅ source_signal_id 已补（2026-11-02，migration 0021，docs/40 §2 T2）**：`plan_order.source_signal_id`
+> 强引用 `signal.id`，突破事件到成交的精确回溯不再依赖 reason_json。`position.entry_box_id` 同步修复——
+> planner 的 reason_json 现已写真实 `box_id`，`ledger.applyBuy` 的 `reasonBoxID()` 据此落库（此前该函数早已就位，
+> 但 planner 从未写 box_id，导致 entry_box_id 全 NULL）。**历史行不回填、不伪造**：NULL = 早于 0021 的订单，
+> 历史库分析继续用 `(code, box_top, box_bottom)` 反向匹配口径，新老口径在报告中必须显式声明。
+
 ### 2.2 `watch.stage`
 
 | 迁移 | 触发 |
@@ -259,6 +266,7 @@ erDiagram
 | watch | `(code)` | 按股查池状态/两亏拉黑巡检（B2） |
 | trade_review | `(code)` + `UNIQUE(position_id)` | 战绩按股查询 / 每笔一条复盘（B3） |
 | plan_order | `(trade_plan_id, status)` | 计划视图 |
+| plan_order | `(source_signal_id)` | 信号→订单回溯（0021） |
 | position | `(status)` | 持仓/清仓过滤 |
 | trade_fill | `(code, date)` | 成交幂等检查 |
 | trade_fill | `(date)` | 成交按日查询（0002） |
@@ -299,9 +307,11 @@ erDiagram
 | `signal` | string | 信号类型（`breakout` 等） | 审计（非研究字段） |
 | `budget_bucket` | string | 预算桶（当前恒 `normal`） | 审计（非研究字段） |
 | `track_level` | string | 跟踪级别（`normal`/`winner`/`blacklist`） | 审计（E17 后不再驱动 units） |
+| `box_id` | number | 本单实际使用的入场箱体 id（0021 起写入；传导到 `position.entry_box_id`） | 追踪链（非研究字段） |
 
 > 另有执行冗余键 `leg` / `stop` / `unit_shares` / `unit_value`，由 planner 写入用于下单与审计，**不入研究字段清单**。
 > 本节 2026-10-26 补齐 `regime` 缺项——此前 §6.1 只列 7 个字段，而实际库中每笔订单产出 15 个键，属契约漂移。
+> 2026-11-02 补 `box_id`（0021 追踪链）；旧年份库无此键，分析脚本对缺失返回 None 并诚实标注（§6.3 契约）。
 
 ### 6.2 待加字段（解锁其余维度，需改回测器 + 重编译）
 

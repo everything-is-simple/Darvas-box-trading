@@ -220,8 +220,11 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 			PlanDate: planDate, ExecuteDate: executeDate, Code: pos.Code,
 			Side: "sell", OrderKind: "stop_sell",
 			TriggerPrice: px, LimitPrice: px, Qty: pos.Qty, LegNo: 0,
+			// 无信号驱动（source_signal_id 保持 NULL）；entry_box_id 取持仓自己的入场箱体，
+			// 复盘「不获利离场」时能定位该仓位来自哪个箱体。
 			Reason: map[string]any{
 				"signal": "time_stop_noprofit", "days_held": n,
+				"entry_box_id": pos.EntryBoxID,
 				"avg_cost": pos.AvgCost, "last_close": px, "qty": pos.Qty, "position_id": pos.ID,
 			},
 		})
@@ -249,6 +252,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 			TriggerPrice: pos.StopPrice, LimitPrice: pos.StopPrice, Qty: pos.Qty, LegNo: 0,
 			Reason: map[string]any{
 				"signal": "initial_stop", "stop_price": pos.StopPrice,
+				"entry_box_id": pos.EntryBoxID,
 				"avg_cost": pos.AvgCost, "qty": pos.Qty, "position_id": pos.ID,
 			},
 		})
@@ -644,7 +648,8 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	plannedQty[s.Code] = qty
 
 	reason := map[string]any{
-		"signal": string(s.Type), "box_top": box.Top, "box_bottom": box.Bottom,
+		"signal": string(s.Type), "box_id": box.ID,
+		"box_top": box.Top, "box_bottom": box.Bottom,
 		"trigger": trigger, "stop": stop, "leg": 1,
 		"regime": string(market), "sizing_basis": basis,
 		"track_level": string(lv), "budget_bucket": "normal",
@@ -667,10 +672,14 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		}
 	}
 
+	// T2 追踪链（2026-11-02，migration 0021）：box_id 与 trigger/stop 同源（本单实际用的箱体），
+	// 成交后 ledger.applyBuy 的 reasonBoxID() 据此写 position.entry_box_id；
+	// source_signal_id 是 signal.id 强引用——非信号驱动订单（time_stop/initial_stop）保持 NULL。
 	return &contract.PlanOrder{
 		PlanDate: planDate, ExecuteDate: execDate, Code: s.Code,
 		Side: "buy", OrderKind: "stop_buy",
 		TriggerPrice: trigger, LimitPrice: trigger, Qty: qty, LegNo: 1,
+		SourceSignalID: s.ID,
 		Reason: reason,
 	}
 }
@@ -683,12 +692,14 @@ func (p *Planner) sellOrder(s contract.Signal, box *contract.Box, sellDisc float
 		return nil // 无持仓不生成卖单（watching 的 stop 由 poolsync 出池处理）
 	}
 	trigger := box.Bottom * sellDisc
+	// T2 追踪链（0021）：卖单同样写 box_id 与 source_signal_id（信号驱动单强引用来源信号）。
 	return &contract.PlanOrder{
 		PlanDate: planDate, ExecuteDate: execDate, Code: s.Code,
 		Side: "sell", OrderKind: "stop_sell",
 		TriggerPrice: trigger, LimitPrice: trigger, Qty: pos.Qty, LegNo: 0,
+		SourceSignalID: s.ID,
 		Reason: map[string]any{
-			"signal": string(s.Type), "box_bottom": box.Bottom,
+			"signal": string(s.Type), "box_id": box.ID, "box_bottom": box.Bottom,
 			"trigger": trigger, "qty": pos.Qty, "position_id": pos.ID,
 		},
 	}

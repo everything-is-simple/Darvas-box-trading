@@ -65,6 +65,7 @@ commit message约定：`feat(box): ...` / `feat(contract): ...`（contract前缀
 | 账本恒等式 cash+Σmarket=total | ledger.AuditEquation每日跑，>1分误差红色告警 |
 | signal.type封闭集合 | DDL CHECK+Go类型系统双重 |
 | 箱体阶梯 prev_box_id无环 | Upsert时应用层校验（链长度≤100） |
+| signal → plan_order → position 追踪链 | `plan_order.source_signal_id` 强引用 signal.id（0021）；`position.entry_box_id` 由 planner 写 reason.box_id → ledger.applyBuy 的 reasonBoxID() 传导落库 |
 
 **M8 复核沉淀的状态不变量**（← 沉淀自 archive/07-M8 回放审计、archive/18 量化复核）：
 
