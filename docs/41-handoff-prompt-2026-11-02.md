@@ -25,10 +25,13 @@
   「执行环境隔离回环 TCP」——纯 Python 自连本机随机端口同样超时，8787 也超时。
 
 【今日第一件事】
-在沙箱外（普通 PowerShell，无隔离）重跑：
+在**用户本人的 PowerShell**（普通终端，非智能体会话派生进程）重跑：
   go test ./internal/gui -run TestAPIEndpoints -v
-- 通过 → 关闭 docs/40 §1.1 的待办，把「GUI 测试失败」这条从发布阻断项划掉；
-- 仍失败 → 才是真 bug，按代码路径定位。
+> 06:45 复核修订：已实测解除沙箱（dangerouslyDisableSandbox）后仍失败，纯 Python 新建监听
+> 也连不上（IPv4/IPv6/0.0.0.0 全灭），而已存活的 7897/4709 能连、无监听端口秒拒 RST——
+> 机器级 WFP 过滤签名，新建监听者一律被丢 SYN。详见 docs/40 §1.1.1。
+- 通过 → 过滤只作用于智能体进程树，「GUI 测试失败」发布阻断条目作废关闭；
+- 仍失败 → 机器级过滤，先关 Clash Verge 的 TUN 模式再试，仍不行查 netsh wfp show filters。
 
 【今日工作顺序（docs/40 §2）】
 T1 GUI 测试定性收口 → T2 恢复交易对象追踪链（reason 写真实 box_id + plan_order.source_signal_id）
@@ -66,6 +69,10 @@ T1 GUI 测试定性收口 → T2 恢复交易对象追踪链（reason 写真实 
 | **定性结论** | **执行环境隔离回环 TCP，GUI 测试失败不是代码 bug** |
 
 依据已写入 `docs/40-handoff-2026-11-02.md §1.1`。
+
+> **06:45 沙箱外复核增补**：解除沙箱后 GUI 测试仍失败；定性升级为「机器级 WFP 过滤：新建监听者的
+> 入站 SYN 一律丢弃」（证据与推理链见 docs/40 §1.1.1）。顺带修正：本机代理是 verge-mihomo
+> （127.0.0.1:7897 活着），`http_proxy=57669` 只是过期错误端口。
 
 ---
 
