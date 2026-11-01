@@ -24,14 +24,16 @@
 - 测试基线（今晨实跑）：除 internal/gui.TestAPIEndpoints 外全部通过；GUI 失败已定性为
   「执行环境隔离回环 TCP」——纯 Python 自连本机随机端口同样超时，8787 也超时。
 
-【今日第一件事】
-在**用户本人的 PowerShell**（普通终端，非智能体会话派生进程）重跑：
-  go test ./internal/gui -run TestAPIEndpoints -v
-> 06:45 复核修订：已实测解除沙箱（dangerouslyDisableSandbox）后仍失败，纯 Python 新建监听
-> 也连不上（IPv4/IPv6/0.0.0.0 全灭），而已存活的 7897/4709 能连、无监听端口秒拒 RST——
-> 机器级 WFP 过滤签名，新建监听者一律被丢 SYN。详见 docs/40 §1.1.1。
-- 通过 → 过滤只作用于智能体进程树，「GUI 测试失败」发布阻断条目作废关闭；
-- 仍失败 → 机器级过滤，先关 Clash Verge 的 TUN 模式再试，仍不行查 netsh wfp show filters。
+【T1 已定性收口，不要再花时间】
+`internal/gui.TestAPIEndpoints` 失败 = **机器环境问题，代码无罪**（docs/40 §1.1.3）。
+机制：Windows 防火墙**入站按程序完整路径白名单**放行——同一份 python.exe，原名能监听、复制改名即被丢 SYN；
+Go 作客户端正常、作服务端被丢 SYN；`go test` 的二进制每次落在新的 `%TEMP%\go-build*`，天然进不了名单。
+TUN 关闭只解除了叠加的第一层，主体是这条白名单。
+若要让它真跑起来（管理员，一次性）：
+  go test -c -o I:\Darvas-box-trading\var\tmp\gui.test.exe ./internal/gui
+  New-NetFirewallRule -DisplayName "Darvas GUI Test (loopback inbound)" -Direction Inbound `
+    -Program "I:\Darvas-box-trading\var\tmp\gui.test.exe" -Action Allow -Profile Any
+之后跑 var\tmp\gui.test.exe -test.run TestAPIEndpoints -v 即可。
 
 【今日工作顺序（docs/40 §2）】
 T1 GUI 测试定性收口 → T2 恢复交易对象追踪链（reason 写真实 box_id + plan_order.source_signal_id）
@@ -66,13 +68,18 @@ T1 GUI 测试定性收口 → T2 恢复交易对象追踪链（reason 写真实 
 | 排除代理假设 | 去掉全部 proxy 变量后仍失败 |
 | 排除 Go/httptest 假设 | 纯 Python 自连本机随机端口同样超时 |
 | 排除端口段假设 | 8787/18787/28787/38787/48787 全超时 |
-| **定性结论** | **执行环境隔离回环 TCP，GUI 测试失败不是代码 bug** |
+| **定性结论** | **环境约束（入站按程序路径白名单），GUI 测试失败不是代码 bug** |
 
 依据已写入 `docs/40-handoff-2026-11-02.md §1.1`。
 
 > **06:45 沙箱外复核增补**：解除沙箱后 GUI 测试仍失败；定性升级为「机器级 WFP 过滤：新建监听者的
 > 入站 SYN 一律丢弃」（证据与推理链见 docs/40 §1.1.1）。顺带修正：本机代理是 verge-mihomo
 > （127.0.0.1:7897 活着），`http_proxy=57669` 只是过期错误端口。
+>
+> **07:20 最终定性（docs/40 §1.1.3）**：关 TUN 后本进程回环已恢复（Python 三种绑定全通），但 Go exe
+> **作服务端仍被丢 SYN、作客户端正常**；`python.exe` 复制改名为 `copy_py.exe` 后立刻被拦。
+> → **入站按程序完整路径白名单放行**，与语言/TUN 无关，`httptest` 必然超时。**本条从「工程硬伤」改为
+> 「环境约束」**，审计三份的「发布阻断」判断作废；代码侧不需要任何改动。
 
 ---
 
