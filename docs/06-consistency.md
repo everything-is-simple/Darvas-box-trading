@@ -92,7 +92,7 @@ commit message约定：`feat(box): ...` / `feat(contract): ...`（contract前缀
 
 - 模块构造函数签名统一：`NewXxx(deps...) Xxx`，deps全部是contract接口类型 → **mock天然可行，测试不碰真DB**
 - 领域引擎（BoxEngine.Scan等）零IO依赖 → 纯函数测试
-- GUI绑定层方法表（04文档§6）与Wails bindings生成物对照（6.x任务中建立脚本比对）
+- GUI契约核对：`docs/04 §6` 的本地HTTP JSON端点与 `internal/gui` 路由/JSON响应、嵌入静态资源对照；Wails bindings 不适用（当前实现为 `net/http` + embed）。
 
 ### 3.3 行为一致性（理论与代码）
 

@@ -1,7 +1,7 @@
 # 03 · 数据库ERD（SQLite）
 
-> **单一事实源**：`internal/store/migrations/`（append-only，0001→0004，最新状态为事实源）。本文档是它的可视化与释义；两者必须同步修改（流程见《06-consistency》）。
-> 版本：schema v4（2026-10-18）
+> **单一事实源**：`internal/store/migrations/`（append-only；当前仓库含 0001–0020，实际 schema 以已应用迁移及代码为准）。本文档为数据模型释义，修改遵循《06-consistency》。
+> 版本注记：截至 2026-11-01，最新迁移编号为 0020；该编号不等同于 ERD 文档 schema 版本号。
 
 ---
 

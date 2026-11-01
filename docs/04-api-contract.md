@@ -97,8 +97,8 @@ type Position struct {
     RealizedPnl float64  // 清仓时由 ClosePosition 计算写入（战绩分级状态机流转依据，0017）
 }
 
-// 战绩等级（0017）
-type TrackLevel string // normal / winner / blacklist
+// 跟踪等级（0017 历史字段；winner 的旧单位加仓语义已退役）
+type TrackLevel string // normal / winner / blacklist；winner 标签保留不代表 planner 按 winner 增加单位
 ```
 
 ---
