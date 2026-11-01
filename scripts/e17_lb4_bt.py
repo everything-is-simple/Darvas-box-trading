@@ -16,6 +16,7 @@
 用法：
   python scripts/e17_lb4_bt.py --diag      # 诊断：档位×年份 n 分布
   python scripts/e17_lb4_bt.py             # 全量产出 report.html/md + data.json
+  python scripts/e17_lb4_bt.py --dir A:/Darvas-archive/lb4   # 库已归档时从归档盘复算
 """
 import argparse
 import json
@@ -117,10 +118,10 @@ def load_db(db: Path):
         c.close()
 
 
-def load_all():
+def load_all(lb4_dir=None):
     by_db = OrderedDict()
     # off 档 = 旧基线库（等价性已验证，不重跑）；5/6/7/8/10 档 = lb4_bt 库
-    db_files = list(LB4_DIR.glob("bt_lb4_*.db"))
+    db_files = list(Path(lb4_dir or LB4_DIR).glob("bt_lb4_*.db"))
     db_files += list((ROOT / "var" / "bt" / "base").glob("bt_baseA_*.db"))
     for db in sorted(db_files):
         if "-wal" in db.name or "-shm" in db.name:
@@ -195,11 +196,14 @@ def tier_summary(by_db, tier):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--diag", action="store_true", help="只出诊断，不写产物")
+    ap.add_argument("--dir", default=None,
+                    help="lb4 库目录（默认 var/bt/lb4_bt；库已归档时传 A:/Darvas-archive/lb4）")
     a = ap.parse_args()
 
-    by_db = load_all()
+    lb4_dir = Path(a.dir) if a.dir else LB4_DIR
+    by_db = load_all(lb4_dir)
     if not by_db:
-        print("未找到任何库（var/bt/lb4_bt/ 为空）。先跑 e17_lb4_bt_run.py。")
+        print(f"未找到任何库（{lb4_dir} 为空）。先跑 e17_lb4_bt_run.py。")
         return 1
 
     # ★ 年集对齐（P2-6a 教训：可比口径按被比较对象的可用年集算）。
@@ -408,7 +412,7 @@ def render_html(data, summaries, year_matrix, years):
 <div class="eyebrow">DARVAS · E17 · 实验报告 · 十一维 #11 Box 生命体征 · LB-4 成长速度 · B 类</div>
 <h1>LB-4 B 类 · 成长速度买入准入门槛</h1>
 <p class="sub">把「只买快成型箱体（成长速度 ≤ 阈值）」做成引擎买入准入门槛，逐档回测对比基线（off 档）。
-研究问题：收紧成长速度门槛是否提升收益？最优门槛在哪？只读 <code>var/bt/lb4_bt/</code>。</p>
+研究问题：收紧成长速度门槛是否提升收益？最优门槛在哪？只读对应年份的回测库（baseline + 5/6/7/8/10 六档）。</p>
 </header>
 
 <div class="callout gold"><b>一句话结论</b>：<b>≤6 日是最优门槛</b>——四年合并每单位净利 1,134 元

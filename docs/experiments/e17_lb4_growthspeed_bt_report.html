@@ -34,7 +34,7 @@ code{background:var(--soft);border-radius:3px;padding:1px 5px;font-size:12.5px}
 <div class="eyebrow">DARVAS · E17 · 实验报告 · 十一维 #11 Box 生命体征 · LB-4 成长速度 · B 类</div>
 <h1>LB-4 B 类 · 成长速度买入准入门槛</h1>
 <p class="sub">把「只买快成型箱体（成长速度 ≤ 阈值）」做成引擎买入准入门槛，逐档回测对比基线（off 档）。
-研究问题：收紧成长速度门槛是否提升收益？最优门槛在哪？只读 <code>var/bt/lb4_bt/</code>。</p>
+研究问题：收紧成长速度门槛是否提升收益？最优门槛在哪？只读对应年份的回测库（baseline + 5/6/7/8/10 六档）。</p>
 </header>
 
 <div class="callout gold"><b>一句话结论</b>：<b>≤6 日是最优门槛</b>——四年合并每单位净利 1,134 元
@@ -86,6 +86,6 @@ code{background:var(--soft);border-radius:3px;padding:1px 5px;font-size:12.5px}
 ③ 成长速度低端（&lt;4 日）结构性无样本（上/下轨各需 3 日确认刚性钳制）；④ 样本外（2019+）未参与；
 ⑤ 不推断因果——成长速度快可能与「强势股快速成型」内生相关。
 单因子轮换：只动 <code>box.max_growth_days</code>，其余十维固定。</p>
-<p>生成于 2026-11-01 21:32 · 生成器 <code>scripts/e17_lb4_bt.py</code> · 框架 <code>e17_lb4_growthspeed_bt_framework.md</code></p>
+<p>生成于 2026-11-01 22:19 · 生成器 <code>scripts/e17_lb4_bt.py</code> · 框架 <code>e17_lb4_growthspeed_bt_framework.md</code></p>
 </div>
 </div></body></html>
