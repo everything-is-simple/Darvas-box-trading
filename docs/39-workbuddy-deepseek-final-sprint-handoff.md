@@ -3,7 +3,7 @@
 > **编制日期**：2026-11-01  
 > **用途**：交给 WorkBuddy + DeepSeek，作为 Darvas-box 最后阶段的执行交接单。  
 > **文档性质**：工程与实验交接，不替代理论宪法、需求、API 契约或唯一实验纲领。  
-> **GPT 新增文档说明**：本文件与 `docs/37-gpt61sol-audit-remediation-report-2026-11-01.md`、`docs/38.a.Darvas-Box-Trading-System-Audit-Report-2026-11-01.md`、`docs/38.b.Darvas-Box-Trading-System-Audit-Report-2026-11-01.md` 一起，用于帮助 WorkBuddy + DeepSeek 对现有成果做最后审计、查漏补缺和证据收口；它们不是新的交易规则，也不是对已有实验结论的替代。
+> **GPT 新增文档说明**：本文件与 `docs/37-gpt61sol-audit-remediation-report-2026-11-01.md`、`docs/38.a-opus5.5-Darwas-Box-Trading-System-Audit-Report-2026-11-01.md`、`docs/38.b-opus5.5-Darwas-Box-Trading-System-Audit-Report-2026-11-01.md` 一起，用于帮助 WorkBuddy + DeepSeek 对现有成果做最后审计、查漏补缺和证据收口；它们不是新的交易规则，也不是对已有实验结论的替代。
 
 ---
 
@@ -166,8 +166,8 @@
 相关文档：
 
 - `docs/37-gpt61sol-audit-remediation-report-2026-11-01.md`：GPT 独立审计与整改报告。
-- `docs/38.a.Darvas-Box-Trading-System-Audit-Report-2026-11-01.md`：整理后的审计材料 A。
-- `docs/38.b.Darvas-Box-Trading-System-Audit-Report-2026-11-01.md`：整理后的审计材料 B。
+- `docs/38.a-opus5.5-Darwas-Box-Trading-System-Audit-Report-2026-11-01.md`：整理后的审计材料 A。
+- `docs/38.b-opus5.5-Darwas-Box-Trading-System-Audit-Report-2026-11-01.md`：整理后的审计材料 B。
 - `docs/39-workbuddy-deepseek-final-sprint-handoff.md`：本交接文档，面向执行。
 
 这些文档不修改 Claude 原始报告：`A:/Darvas-USB/Darvas-Box-Trading-System-Audit-Report-2026-11-01.md`。
