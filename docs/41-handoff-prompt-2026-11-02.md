@@ -24,16 +24,13 @@
 - 测试基线（今晨实跑）：除 internal/gui.TestAPIEndpoints 外全部通过；GUI 失败已定性为
   「执行环境隔离回环 TCP」——纯 Python 自连本机随机端口同样超时，8787 也超时。
 
-【T1 已定性收口，不要再花时间】
-`internal/gui.TestAPIEndpoints` 失败 = **机器环境问题，代码无罪**（docs/40 §1.1.3）。
-机制：Windows 防火墙**入站按程序完整路径白名单**放行——同一份 python.exe，原名能监听、复制改名即被丢 SYN；
-Go 作客户端正常、作服务端被丢 SYN；`go test` 的二进制每次落在新的 `%TEMP%\go-build*`，天然进不了名单。
-TUN 关闭只解除了叠加的第一层，主体是这条白名单。
-若要让它真跑起来（管理员，一次性）：
-  go test -c -o I:\Darvas-box-trading\var\tmp\gui.test.exe ./internal/gui
-  New-NetFirewallRule -DisplayName "Darvas GUI Test (loopback inbound)" -Direction Inbound `
-    -Program "I:\Darvas-box-trading\var\tmp\gui.test.exe" -Action Allow -Profile Any
-之后跑 var\tmp\gui.test.exe -test.run TestAPIEndpoints -v 即可。
+【T1 已关闭，真实结论是环境残留，不是代码】
+`internal/gui.TestAPIEndpoints` 失败 = **Mihomo TUN 的 WFP 过滤规则残留**，代码零缺陷（docs/40 §1.1.4）。
+事实：关掉 TUN 后 07:09、07:16 仍失败，07:33 同一台机器、防火墙三档全开、普通权限跑
+`go test ./internal/gui -run TestAPIEndpoints -v` **PASS**；07:37 `go test ./internal/...` **18/18 全绿（含 gui）**。
+→ 三份审计的「GUI 测试失败 / 发布阻断」条目**正式作废**，不要再排查、不要改代码。
+以后再遇到同类超时：先看是否有 TUN/代理软件刚切换模式，等规则卸载或重启该软件后复测。
+（曾于 07:20 误判为「防火墙按程序路径白名单」，那是横向对照的做法错误，已在 §1.1.4 推翻并记入方法论。）
 
 【今日工作顺序（docs/40 §2）】
 T1 GUI 测试定性收口 → T2 恢复交易对象追踪链（reason 写真实 box_id + plan_order.source_signal_id）
@@ -68,7 +65,7 @@ T1 GUI 测试定性收口 → T2 恢复交易对象追踪链（reason 写真实 
 | 排除代理假设 | 去掉全部 proxy 变量后仍失败 |
 | 排除 Go/httptest 假设 | 纯 Python 自连本机随机端口同样超时 |
 | 排除端口段假设 | 8787/18787/28787/38787/48787 全超时 |
-| **定性结论** | **环境约束（入站按程序路径白名单），GUI 测试失败不是代码 bug** |
+| **定性结论** | **TUN 过滤规则延迟卸载（环境瞬态），GUI 测试本身无缺陷；07:37 复测 18/18 全绿** |
 
 依据已写入 `docs/40-handoff-2026-11-02.md §1.1`。
 
@@ -76,10 +73,9 @@ T1 GUI 测试定性收口 → T2 恢复交易对象追踪链（reason 写真实 
 > 入站 SYN 一律丢弃」（证据与推理链见 docs/40 §1.1.1）。顺带修正：本机代理是 verge-mihomo
 > （127.0.0.1:7897 活着），`http_proxy=57669` 只是过期错误端口。
 >
-> **07:20 最终定性（docs/40 §1.1.3）**：关 TUN 后本进程回环已恢复（Python 三种绑定全通），但 Go exe
-> **作服务端仍被丢 SYN、作客户端正常**；`python.exe` 复制改名为 `copy_py.exe` 后立刻被拦。
-> → **入站按程序完整路径白名单放行**，与语言/TUN 无关，`httptest` 必然超时。**本条从「工程硬伤」改为
-> 「环境约束」**，审计三份的「发布阻断」判断作废；代码侧不需要任何改动。
+> **07:20 中间误判（已作废）**：曾据「Go 只作服务端失败 + python.exe 改名即被拦」判为「防火墙按程序完整路径
+> 白名单放行」。**07:35 用同一份 `gui.test.exe` 做前后纵向对照推翻了它**（防火墙全开仍 PASS，普通权限也 PASS）——
+> 真因是 TUN 过滤规则延迟卸载。详见 docs/40 §1.1.4。**T1 已关闭，测试基线 18/18 全绿。**
 
 ---
 
