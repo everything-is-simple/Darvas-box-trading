@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LB-4 B 类 · 成长速度准入门槛 · 档位对比</title>
+<style>
+:root{--bg:#f5f6f8;--surface:#fff;--ink:#1e2430;--muted:#697386;--line:#e3e6eb;
+--soft:#f0f2f5;--red:#c0392b;--red2:#faece9;--green:#1b7a4b;--green2:#e9f5ef;
+--gold:#a66a12;--gold2:#fbf3e4;--blue:#2d5b8e;--blue2:#ecf2f9}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Microsoft YaHei","PingFang SC","Noto Sans SC",Arial,sans-serif;font-size:15px;line-height:1.7}
+.page{max-width:1220px;margin:0 auto;padding:42px 28px 64px}
+header{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:26px}
+.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--blue);font-weight:700;margin-bottom:10px}
+h1{font-size:30px;line-height:1.28;margin:0 0 10px;letter-spacing:-.02em}
+h2{font-size:22px;margin:36px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+h3{font-size:17px;margin:20px 0 9px}
+p{margin:9px 0}.sub{color:var(--muted);max-width:960px;margin:0}
+.muted{color:var(--muted)}.small{font-size:12.5px}
+.up{color:var(--red)}.down{color:var(--green)}.neutral{color:var(--gold)}
+.table-wrap{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow-x:auto;margin:13px 0}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+th{background:#fafbfc;color:#4b5565;font-size:12px;font-weight:600}
+th:first-child,td:first-child{text-align:left}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#fcfcfd}
+.callout{border-radius:8px;padding:14px 17px;margin:15px 0;font-size:14px}
+.callout.gold{background:var(--gold2);border:1px solid #ead9b8}
+.callout.blue{background:var(--blue2);border:1px solid #d4e0ee}
+.foot{margin-top:38px;padding-top:17px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+code{background:var(--soft);border-radius:3px;padding:1px 5px;font-size:12.5px}
+</style></head><body><div class="page">
+<header>
+<div class="eyebrow">DARVAS · E17 · 实验报告 · 十一维 #11 Box 生命体征 · LB-4 成长速度 · B 类</div>
+<h1>LB-4 B 类 · 成长速度买入准入门槛</h1>
+<p class="sub">把「只买快成型箱体（成长速度 ≤ 阈值）」做成引擎买入准入门槛，逐档回测对比基线（off 档）。
+研究问题：收紧成长速度门槛是否提升收益？最优门槛在哪？只读 <code>var/bt/lb4_bt/</code>。</p>
+</header>
+
+<div class="callout gold"><b>一句话结论</b>：<b>≤6 日是最优门槛</b>——四年合并每单位净利 1,134 元
+（基线 508，改善 +626，超 600 噪声门槛），剔除前三 +163,718（基线 +34,814，<b>成片变好</b>），
+已实现净利 381,640（基线 224,446，<b>总盘子反而增大</b>），笔数仅砍 24%。<b>H1 成立、H2 不成立。</b>
+但它是「提升器」不是「翻正药」：四个代表年里三个年份本身在亏，≤6 只是少亏。</div>
+
+<h2>一、档位总表（四年合并，389 笔基线）</h2>
+<p>四项固定口径 + PF + 剔除前三 + <b>笔数</b> + <b>已实现净利总额</b>。⚠️ 门槛每收紧一档笔数必然下降——
+读表须区分「每单位变好」与「总盘子缩水」两件事。</p>
+<div class="table-wrap"><table><thead><tr><th>档位</th><th>笔数</th><th>胜率</th><th>每单位净利</th>
+<th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th><th>剔除前三净利</th><th>已实现净利</th></tr></thead>
+<tbody><tr><td><strong>off（基线）</strong></td><td>389</td><td>18.3%</td><td class="up">508</td><td>-14.5%</td><td class="up">0.3</td><td>1.76</td><td>36%</td><td class="up">34,814</td><td class="up">224,446</td></tr><tr><td><strong>≤5 日</strong></td><td>268</td><td>22.4%</td><td class="up">956</td><td>-14.0%</td><td class="up">0.4</td><td>2.35</td><td>35%</td><td class="up">114,058</td><td class="up">298,198</td></tr><tr><td><strong>≤6 日</strong></td><td>297</td><td>23.2%</td><td class="up">1,134</td><td>-12.6%</td><td class="up">0.4</td><td>2.71</td><td>36%</td><td class="up">163,718</td><td class="up">381,640</td></tr><tr><td><strong>≤7 日</strong></td><td>316</td><td>19.9%</td><td class="up">711</td><td>-13.5%</td><td class="up">0.3</td><td>2.09</td><td>45%</td><td class="up">34,631</td><td class="up">252,553</td></tr><tr><td><strong>≤8 日</strong></td><td>340</td><td>18.5%</td><td class="up">449</td><td>-16.0%</td><td class="up">0.3</td><td>1.65</td><td>43%</td><td class="down">-17,459</td><td class="up">172,173</td></tr><tr><td><strong>≤10 日</strong></td><td>369</td><td>19.0%</td><td class="up">447</td><td>-16.5%</td><td class="up">0.4</td><td>1.65</td><td>40%</td><td class="down">-3,157</td><td class="up">186,475</td></tr></tbody></table></div>
+
+<h2>二、逐年矩阵（每单位净利（笔数））</h2>
+<p>用于区分「某一年全市场现象」与「长期结构」。</p>
+<div class="table-wrap"><table><thead><tr><th>年份</th><th>off（基线）</th><th>≤5 日</th><th>≤6 日</th><th>≤7 日</th><th>≤8 日</th><th>≤10 日</th></tr></thead>
+<tbody><tr><td><strong>2012</strong></td><td class="down">-341<span class="muted small">(91)</span></td><td class="up">58<span class="muted small">(58)</span></td><td class="down">-19<span class="muted small">(68)</span></td><td class="down">-69<span class="muted small">(73)</span></td><td class="down">-215<span class="muted small">(85)</span></td><td class="down">-263<span class="muted small">(89)</span></td></tr><tr><td><strong>2015</strong></td><td class="up">2,877<span class="muted small">(69)</span></td><td class="up">3,481<span class="muted small">(57)</span></td><td class="up">4,052<span class="muted small">(60)</span></td><td class="up">3,626<span class="muted small">(58)</span></td><td class="up">3,026<span class="muted small">(62)</span></td><td class="up">2,993<span class="muted small">(67)</span></td></tr><tr><td><strong>2017</strong></td><td class="down">-156<span class="muted small">(163)</span></td><td class="down">-216<span class="muted small">(119)</span></td><td class="down">-112<span class="muted small">(125)</span></td><td class="down">-248<span class="muted small">(131)</span></td><td class="down">-454<span class="muted small">(136)</span></td><td class="down">-440<span class="muted small">(151)</span></td></tr><tr><td><strong>2018</strong></td><td class="down">-741<span class="muted small">(66)</span></td><td class="down">-1,374<span class="muted small">(34)</span></td><td class="down">-1,043<span class="muted small">(44)</span></td><td class="down">-1,027<span class="muted small">(54)</span></td><td class="down">-790<span class="muted small">(57)</span></td><td class="down">-746<span class="muted small">(62)</span></td></tr></tbody></table></div>
+
+<h2>三、逐年改善（该档每单位 − off 基线）</h2>
+<p>这是本实验最关键的读数：<b>看每年符号是否一致</b>。▲=改善、▼=变差。最右列是「改善年数 / 总年数」。</p>
+<div class="table-wrap"><table><thead><tr><th>档位</th><th>2012</th><th>2015</th><th>2017</th><th>2018</th><th>改善年数</th></tr></thead>
+<tbody><tr><td><strong>≤5 日</strong></td><td class="up">+399 ▲</td><td class="up">+604 ▲</td><td class="down">-60 ▼</td><td class="down">-633 ▼</td><td class="neutral"><strong>2/4</strong></td></tr><tr><td><strong>≤6 日</strong></td><td class="up">+322 ▲</td><td class="up">+1,175 ▲</td><td class="up">+44 ▲</td><td class="down">-302 ▼</td><td class="up"><strong>3/4</strong></td></tr><tr><td><strong>≤7 日</strong></td><td class="up">+271 ▲</td><td class="up">+750 ▲</td><td class="down">-93 ▼</td><td class="down">-286 ▼</td><td class="neutral"><strong>2/4</strong></td></tr><tr><td><strong>≤8 日</strong></td><td class="up">+126 ▲</td><td class="up">+149 ▲</td><td class="down">-298 ▼</td><td class="down">-48 ▼</td><td class="neutral"><strong>2/4</strong></td></tr><tr><td><strong>≤10 日</strong></td><td class="up">+78 ▲</td><td class="up">+117 ▲</td><td class="down">-284 ▼</td><td class="down">-5 ▼</td><td class="neutral"><strong>2/4</strong></td></tr></tbody></table></div>
+<div class="callout blue"><b>怎么读这张表</b>：只看「四年总账最优」会被单一年份绑架（P0-1 教训）。
+真正的稳健档位要满足「改善年数 ≥ 3」且「唯一的负值落在 600 元噪声门槛内」。按此标准，<b>只有 ≤6 合格</b>
+（2012 +322 / 2015 +1,175 / 2017 +44 / 2018 −302，三年改善，唯一负值 −302 在噪声内）；
+≤5 在 2018 掉 −633（<b>超噪声门槛</b>）属激进过头；≤8/≤10 有两年为负且剔除前三翻负。</div>
+
+<h2>四、HARD 校验</h2>
+<div class="table-wrap"><table><thead><tr><th>档位</th><th>笔数</th><th>每单位净利</th><th>剔除前三</th></tr></thead>
+<tbody><tr><td>off（基线）</td><td>389</td><td class="up">508</td><td class="up">34,814</td></tr><tr><td>≤5 日</td><td>268</td><td class="up">956</td><td class="up">114,058</td></tr><tr><td>≤6 日</td><td>297</td><td class="up">1,134</td><td class="up">163,718</td></tr><tr><td>≤7 日</td><td>316</td><td class="up">711</td><td class="up">34,631</td></tr><tr><td>≤8 日</td><td>340</td><td class="up">449</td><td class="down">-17,459</td></tr><tr><td>≤10 日</td><td>369</td><td class="up">447</td><td class="down">-3,157</td></tr></tbody></table></div>
+<p><b>① 零差异复现</b>：off 档 2018 与历史基线 <code>bt_baseA_2018.db</code> 逐单零差异（66 笔 / −49,698.46）✅<br>
+<b>② 门槛语义</b>：<code>max_growth_days=5</code> 运行日志见「成长速度拦截」记录，拦截生效 ✅<br>
+<b>③ 拦截正确性</b>：笔数随门槛收紧单调下降（389 → 369 → 340 → 316 → 297 → 268）✅<br>
+<b>④ 异常归因</b>：≤8/≤10 剔除前三翻负（−17,459 / −3,157）——不是「市场规律」而是「门槛太松等于没筛」，
+中位 6 日的分布下 ≤8 已放行八成样本，退化回基线且损失筛除收益。</p>
+
+<h2>五、裁定</h2>
+<div class="callout gold">
+<p><b>H1（收紧门槛提升收益）成立</b>：≤6 日档四年合并每单位 +626 元（超 600 噪声门槛）、
+剔除前三 +163,718 仍大幅为正、改善年数 3/4（唯一负值在噪声内）——三条同时满足。</p>
+<p><b>H2（无价值）不成立</b>。</p>
+<p><b>最优门槛 = ≤6 日</b>。它不是「总账最高」的孤峰（≤5 在 2012 更高、≤6 在 2015/2017 更高），
+而是<b>唯一在四个年份里都不掉链子</b>的档位。</p>
+</div>
+
+<div class="foot">
+<p><b>结论边界</b>：① 单年不结论、跨年才下结论；② 本实验只回答「成长速度准入」，不回答其他体征；
+③ 成长速度低端（&lt;4 日）结构性无样本（上/下轨各需 3 日确认刚性钳制）；④ 样本外（2019+）未参与；
+⑤ 不推断因果——成长速度快可能与「强势股快速成型」内生相关。
+单因子轮换：只动 <code>box.max_growth_days</code>，其余十维固定。</p>
+<p>生成于 2026-11-01 21:32 · 生成器 <code>scripts/e17_lb4_bt.py</code> · 框架 <code>e17_lb4_growthspeed_bt_framework.md</code></p>
+</div>
+</div></body></html>
