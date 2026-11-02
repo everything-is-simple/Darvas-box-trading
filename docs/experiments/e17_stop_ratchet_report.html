@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>raiseStops 止损上移事件研究 · 2005–2018</title>
+<style>
+:root{--bg:#f5f6f8;--surface:#fff;--ink:#1e2430;--muted:#697386;--line:#e3e6eb;
+--red:#c0392b;--green:#1b7a4b;--gold:#a66a12;--blue:#2d5b8e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;font-size:15px;line-height:1.7}
+.page{max-width:1120px;margin:0 auto;padding:42px 28px 64px}
+header{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:26px}
+.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--blue);font-weight:700;margin-bottom:10px}
+h1{font-size:30px;margin:0 0 10px}h2{font-size:22px;margin:36px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+h3{font-size:16px;margin:20px 0 9px}p{margin:9px 0}.sub{color:var(--muted)}
+.up{color:var(--red)}.down{color:var(--green)}.neutral{color:var(--gold)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.kpi .label{font-size:12px;color:var(--muted)}.kpi .value{font-size:24px;font-weight:700;margin-top:4px}
+.kpi .note{font-size:12px;color:var(--muted);margin-top:3px}
+.summary{background:var(--surface);border-left:4px solid var(--blue);border-radius:8px;padding:18px 22px;margin:22px 0}
+.callout{border-radius:8px;padding:14px 17px;margin:15px 0;font-size:14px}
+.callout.gold{background:#fbf3e4;border:1px solid #ead9b8}
+.callout.red{background:#faece9;border:1px solid #efd0ca}
+.callout.blue{background:#ecf2f9;border:1px solid #d4e0ee}
+.table-wrap{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow-x:auto;margin:13px 0}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+th{background:#fafbfc;color:#4b5565;font-size:12px}
+th:first-child,td:first-child{text-align:left}
+tr:last-child td{border-bottom:0}
+tr.sum td{background:#fafbfc;font-weight:700;border-top:2px solid #cfd4dc}
+code{background:#f0f2f5;border-radius:3px;padding:1px 5px;font-size:12.5px}
+.foot{margin-top:38px;padding-top:17px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+</style></head><body><div class="page">
+<header>
+<div class="eyebrow">DARVAS · E17 · 队列第 1 项 · 十一维 #8/#9 何时卖</div>
+<h1>raiseStops 止损随 Box 上移事件研究（A 类降级版）</h1>
+<p class="sub">2005–2018 全 14 年已平仓交易，测「止损有没有跟着箱体往上挪」与交易质量的关系。
+零回测、只读 <code>var/bt/base/bt_baseA_&lt;year&gt;.db</code>。框架先于跑数定稿。</p>
+</header>
+
+<div class="kpis"><div class="kpi"><div class="label">已平仓样本</div><div class="value">1481</div><div class="note">2005–2018 · 14 库</div></div><div class="kpi"><div class="label">止损从未上移</div><div class="value">995</div><div class="note">占比 67%</div></div><div class="kpi"><div class="label">上移过</div><div class="value">486</div><div class="note">占比 33%</div></div><div class="kpi"><div class="label">14 年净利合计</div><div class="value">¥1,461,228</div><div class="note">阶梯制新基线</div></div></div>
+
+<div class="summary" id="s0"><h2>核心结论</h2>
+<ul><li>2005–2018 共 <b>1481</b> 笔已平仓交易，其中止损从未上移（ratchet=1.0）<b>995</b> 笔（67%），上移过 <b>486</b> 笔。</li><li>四带每单位净利：未上移（=1.0） <b>-331</b> / 1.00–1.10 <b>+179</b> / 1.10–1.50 <b>+2,581</b> / 大幅上移（>1.5） <b>+5,767</b>，递增相邻对 3/3。</li><li><b>内生性警示</b>：止损上移本身就是「股价大涨」的结果。总净利梯度再漂亮也可能是同义反复，不能据此说「上移导致多赚」。</li><li><b>决定性拆解（受害者计数）</b>：未上移的 995 笔里，曾浮盈 &gt;30% 的仅 <b>33</b> 笔，其中最终亏损的 <b>1</b> 笔（涨过 30% 却亏 = 真正的「止损没跟上」受害者）。</li><li><b>结论：raiseStops 没有「追不上」的问题。</b>未上移的票 97% 从未涨过 30%（本来就没涨、本来就该亏），真正「涨了很多却因止损钉在低位而倒亏」的受害者仅 <b>1</b> 笔（995 笔里涨过 30% 却亏的），体量可忽略。「上移幅度 vs 净利」的梯度是内生性，不是可干预缺陷。维持现状，不做 B 类。</li></ul></div>
+
+<div class="callout gold"><b>口径</b>：<code>ratchet = position.stop_price / position_leg.stop_after</code>。
+<code>stop_after</code> 是 leg1 建仓时写入的初始止损（= 被突破箱上轨 × 0.97），
+<code>stop_price</code> 是清仓时的最终止损。<code>ratchet=1.0</code> = 止损从未上移；
+<code>&gt;1.0</code> = 止损已被 raiseStops 抬到初始位之上。这是「总上移幅度」的成本归一化代理，非每次上移的事件账。</div>
+
+<div class="callout red"><b>内生性（本文最关键的口径声明）</b>：止损上移本身是「股价大涨」的<b>结果</b>——股票涨了，
+箱体才往上叠，raiseStops 才把止损往上抬。所以「上移多 → 赚得多」很可能是同义反复，不是因果。
+<b>因此不能只看总净利梯度</b>，必须看「剔除前三赢家后」低上移带是否仍显著更差，以及回吐率是否显著更高（框架 §5 转 B 门槛）。</div>
+
+<h2 id="s1">一、分带主表（按上移幅度 ratchet）</h2>
+<div class="table-wrap"><table><thead><tr><th>上移幅度</th><th>笔数</th><th>胜率</th>
+<th>每单位净利</th><th>保本胜率</th><th>缺口</th><th>PF</th><th>集中度</th>
+<th>剔除前三净利</th><th>剔除前三每单位</th><th>回吐率中位</th><th>回吐金额</th><th>净利</th></tr></thead><tbody>
+<tr><td><strong>未上移（=1.0）</strong></td><td>995</td><td>11.3%</td><td class="down">-331</td><td>16.8%</td><td class="down">-5.5pp</td><td>0.63</td><td>18.6%</td><td class="down">-594,011</td><td class="down">-438</td><td>182.5%</td><td>2,370,826</td><td class="down">-451,817</td></tr><tr><td><strong>1.00–1.10</strong></td><td>150</td><td>14.7%</td><td class="up">+179</td><td>11.3%</td><td class="up">+3.4pp</td><td>1.35</td><td>44.9%</td><td class="down">-24,319</td><td class="down">-133</td><td>124.2%</td><td>488,350</td><td class="up">+33,898</td></tr><tr><td><strong>1.10–1.50</strong></td><td>157</td><td>66.9%</td><td class="up">+2,581</td><td>16.0%</td><td class="up">+50.9pp</td><td>10.63</td><td>26.2%</td><td class="up">+468,439</td><td class="up">+1,893</td><td>71.6%</td><td>874,401</td><td class="up">+659,458</td></tr><tr><td><strong>大幅上移（>1.5）</strong></td><td>179</td><td>60.3%</td><td class="up">+5,767</td><td>5.6%</td><td class="up">+54.8pp</td><td>25.79</td><td>36.9%</td><td class="up">+751,430</td><td class="up">+3,711</td><td>72.7%</td><td>463,109</td><td class="up">+1,219,689</td></tr><tr class="sum"><td>合计</td><td>1481</td><td>23.4%</td><td class="up">+723</td><td>13.1%</td><td class="up">+10.3pp</td><td>2.02</td><td>—</td><td class="up">+992,969</td><td>+493</td><td>148.5%</td><td>4,196,687</td><td class="up">+1,461,228</td></tr>
+</tbody></table></div>
+
+<h2 id="s2">二、逐年矩阵（未上移 vs 上移）</h2>
+<div class="table-wrap"><table><thead><tr><th>年份</th><th>全年净利</th>
+<th>未上移笔数</th><th>未上移净利</th><th>上移笔数</th><th>上移净利</th></tr></thead><tbody>
+<tr><td><strong>2005</strong></td><td class="down">-7,381</td><td>45</td><td class="down">-15,836</td><td>29</td><td class="up">+8,455</td></tr><tr><td><strong>2006</strong></td><td class="up">+237,681</td><td>92</td><td class="up">+104,418</td><td>69</td><td class="up">+133,263</td></tr><tr><td><strong>2007</strong></td><td class="up">+963,551</td><td>69</td><td class="down">-75,481</td><td>47</td><td class="up">+1,039,032</td></tr><tr><td><strong>2008</strong></td><td class="down">-12,841</td><td>14</td><td class="down">-12,841</td><td>0</td><td class="neutral">+0</td></tr><tr><td><strong>2009</strong></td><td class="up">+66,791</td><td>88</td><td class="up">+3,072</td><td>27</td><td class="up">+63,718</td></tr><tr><td><strong>2010</strong></td><td class="down">-33,254</td><td>76</td><td class="down">-76,106</td><td>40</td><td class="up">+42,852</td></tr><tr><td><strong>2011</strong></td><td class="down">-71,406</td><td>64</td><td class="down">-60,264</td><td>27</td><td class="down">-11,143</td></tr><tr><td><strong>2012</strong></td><td class="down">-24,554</td><td>62</td><td class="down">-35,648</td><td>29</td><td class="up">+11,094</td></tr><tr><td><strong>2013</strong></td><td class="down">-7,703</td><td>112</td><td class="down">-86,008</td><td>54</td><td class="up">+78,305</td></tr><tr><td><strong>2014</strong></td><td class="up">+124,865</td><td>73</td><td class="down">-83,967</td><td>65</td><td class="up">+208,832</td></tr><tr><td><strong>2015</strong></td><td class="up">+328,148</td><td>42</td><td class="up">+16,824</td><td>27</td><td class="up">+311,324</td></tr><tr><td><strong>2016</strong></td><td class="down">-23,520</td><td>82</td><td class="down">-33,843</td><td>19</td><td class="up">+10,323</td></tr><tr><td><strong>2017</strong></td><td class="down">-29,449</td><td>123</td><td class="down">-52,935</td><td>40</td><td class="up">+23,486</td></tr><tr><td><strong>2018</strong></td><td class="down">-49,698</td><td>53</td><td class="down">-43,202</td><td>13</td><td class="down">-6,496</td></tr>
+</tbody></table></div>
+
+<h2 id="s3">三、假设判定</h2>
+<h3>H1：上移幅度与交易质量单调相关</h3>
+<p>四带每单位净利：未上移（=1.0） -331｜1.00–1.10 +179｜1.10–1.50 +2,581｜大幅上移（>1.5） +5,767。
+递增相邻对 <b>3/3</b>（需 ≥3）。→ <b>成立</b>（但见下方内生性拆解）</p>
+<h3>H2：从未上移的带，剔除前三后仍显著更差 + 回吐率显著更高</h3>
+<p>未上移带剔除前三每单位 <b>-438</b> vs 其余带 <b>+2,231</b>（差 -2,669）；
+未上移带回吐率中位 <b>182.5%</b> vs 其余带 <b>102.4%</b>（差 +0.8pp）；
+未上移带 n=<b>995</b>（需 ≥30）。→ 表面 <b>成立</b>（但这是内生性，见下方决定性拆解）</p>
+
+<h3>内生性拆解（本实验的真正判据）</h3>
+<p>「未上移 → 净利差、回吐高」这个相关，到底是「止损没跟上」的可干预缺陷，还是「本来就没涨」的自然结果？
+关键区分是：<b>未上移的票里，有没有「曾经大涨、却因止损钉在低位而回吐倒亏」的受害者？</b></p>
+<div class="table-wrap"><table><thead><tr><th>未上移票的浮盈幅度</th><th>笔数</th><th>其中最终亏损</th><th>亏损合计</th></tr></thead><tbody>
+<tr><td>MFE &gt; 10%</td><td>150</td><td>60</td><td>-98,954</td></tr>
+<tr><td>MFE &gt; 20%</td><td>57</td><td>4</td><td>-4,010</td></tr>
+<tr><td>MFE &gt; 30%</td><td>33</td><td>1</td><td>-87</td></tr>
+<tr><td>MFE &gt; 50%</td><td>8</td><td>0</td><td>+0</td></tr>
+</tbody></table></div>
+<p>未上移的 995 笔里，曾浮盈 &gt;30% 的只有 <b>33</b> 笔（占 3%），
+其中最终亏损的 <b>1</b> 笔。也就是说：<b>97% 的未上移票从来没涨过 30%</b>——它们不是「涨了没跟上止损」，是「压根没涨、本来就该亏」。</p>
+
+<div class="callout blue">
+<b>最终裁定：维持现状，不做 B 类</b><br>
+真正「涨了很多却因止损钉在低位而倒亏」的受害者仅 1 笔，体量可忽略。「止损上移幅度 vs 净利」的梯度是内生性（涨得多→止损自然上移→赚得多），不是 raiseStops「追不上」的可干预缺陷。<b>raiseStops 规则无需改动</b>：3 日确认 + 入场箱不参与 两条限制都不构成出血口。本项关闭为观察结果，不做 B 类补事件账。</div>
+
+<h2 id="s4">四、HARD 校验</h2>
+<div class="table-wrap"><table><thead><tr><th>级别</th><th>校验项</th><th>期望</th><th>实际</th><th>结果</th></tr></thead><tbody>
+<tr><td>HARD</td><td style="text-align:left">年份连续 2005–2018</td><td class="muted">14 年连续</td><td>14 年 2005–2018</td><td class="up"><b>✓</b></td></tr><tr><td>HARD</td><td style="text-align:left">分带 n 加总 = 有效样本</td><td class="muted">1481</td><td>1481</td><td class="up"><b>✓</b></td></tr><tr><td>HARD</td><td style="text-align:left">ratchet=1.0 与 >1.0 二分恒等</td><td class="muted">恒等</td><td>995+486</td><td class="up"><b>✓</b></td></tr><tr><td>INFO</td><td style="text-align:left">14 年已实现净利合计</td><td class="muted">登记</td><td>1,461,228.2</td><td class="up"><b>✓</b></td></tr>
+</tbody></table></div>
+
+<div class="foot">
+<p><b>结论边界</b>：本报告只测「总上移幅度 vs 交易质量」的相关性，不下因果（框架 §1.3）。
+「该不该改 raiseStops 的确认日/入场箱参与」只能由后续 B 类回测回答。</p>
+<p>数据源：<code>var/bt/base/bt_baseA_&lt;year&gt;.db</code>（阶梯制新基线，close_reason 为旧二分类）。
+样本外（2019+）未参与。</p>
+<p>生成于 2026-11-03 05:54:28 · 生成器 sha256 <code>e150169ae3133917</code></p>
+</div>
+</div></body></html>
