@@ -243,8 +243,10 @@ def main():
             continue
         # 完整性守卫：equity_snapshot 必须覆盖到该年年末，否则是半成品库（回测被中断），
         # 计入会给出「半年的笔数与已实现」并在报告里与其他完整年并列，属可比口径污染。
-        if not d.get("max_date") or d["max_date"] < f"{year}-12-01":
-            print(f"[skip] {db.name} 未完整（equity 末日期 {d.get('max_date')} < {year}-12-01）")
+        # 阈值取 12-20（原 12-01 过松：2017-12-04 即可通过，当年最后交易日是 12-29，
+        # 等于放行缺整月的库；实测 099_2017 跑到 12-04 时曾被误判完整并计入汇总）。
+        if not d.get("max_date") or d["max_date"] < f"{year}-12-20":
+            print(f"[skip] {db.name} 未完整（equity 末日期 {d.get('max_date')} < {year}-12-20）")
             continue
         by_db[f"{tier}_{year}"] = d
 

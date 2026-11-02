@@ -68,8 +68,16 @@ def setargs(tier):
 
 def db_complete(path, year):
     """库是否完整：存在 + equity_snapshot 覆盖到该年年末。
-    判据：equity_snapshot 的最大 date ≥ year-12-01（12 月已有交易日）。
-    仅「非空」会误判半成品库（沙箱回收坑）。"""
+
+    判据：equity_snapshot 的最大 date ≥ year-12-20。
+    仅「非空」会误判半成品库（沙箱回收坑）。
+
+    2026-11-02 14:55 修正（跑中发现，非跑后调参）：原判据 ≥ year-12-01 过松——
+    2017-12-04 即可通过，而当年最后交易日是 12-29，等于放行一个**缺整月**的库。
+    实测 099_2017 跑到 12-04 时被判 OK 并计入汇总，直接把缺月数字写进对比表。
+    年末最后一周（12-20~12-31）只有 7~8 个交易日，卡到 12-20 既能挡住缺月库，
+    又不会把「跑到 12-28 因个别停牌少一天」的正常库误判成半成品。
+    """
     if not path.exists():
         return False
     try:
@@ -80,7 +88,7 @@ def db_complete(path, year):
             if n == 0:
                 return False
             maxd = c.execute("SELECT MAX(date) FROM equity_snapshot").fetchone()[0]
-            return bool(maxd) and maxd >= f"{year}-12-01"
+            return bool(maxd) and maxd >= f"{year}-12-20"
         finally:
             c.close()
     except Exception:
