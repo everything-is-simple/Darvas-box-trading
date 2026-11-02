@@ -102,7 +102,7 @@ erDiagram
         REAL stop_price "最新止损位(只升不降)"
         TEXT status "open/closed"
         DATE closed_date
-        TEXT close_reason
+        TEXT close_reason "六值枚举: stop/stop_box/failed_breakout/time_stop/dividend_clear/manual (0023)"
         REAL realized_pnl "清仓时落库净盈亏(含费,0003)"
     }
     position_leg {
@@ -217,16 +217,17 @@ erDiagram
 > 无 `invalidated_date` / `invalid_reason`（invalid 无结构化失效时间与原因）、无 append-only 迁移事件账——
 > 持久层保存的是**重算后的状态投影**：`UpsertBoxes` 按上下轨价格对（6 位小数）复用数据库 ID，
 > 未被业务外键引用的陈旧行可被删除。因此「数据库 ID」不是受契约保证的逻辑 Box 身份。
-> 另：`signal` → `plan_order` 尚无 source signal id 外键，突破事件到成交的精确回溯依赖 reason_json 而非强引用。
-> **是否补 schema（start_date / invalidated_date / 事件表 / source id），须待 docs/29 §五 第 0 项
+> **是否补生命周期 schema（start_date / invalidated_date / 事件表），须待 docs/29 §五第 0 项
 > A0/A1 轨迹验证给出结论后，先写 migration 方案并同 commit 更新 03/04/06；禁止直接改已发布 migration。**
 > 详见 docs/00 §3.7 第 1.1/6 点与 docs/29 §七前置段。
 
-> **✅ source_signal_id 已补（2026-11-02，migration 0021）**：`plan_order.source_signal_id`
-> 强引用 `signal.id`，突破事件到成交的精确回溯不再依赖 reason_json。`position.entry_box_id` 同步修复——
+> **✅ 交易对象追踪链已补（2026-11-02，migration 0021）**：`plan_order.source_signal_id`
+> 强引用 `signal.id`，突破事件到成交的精确回溯不再依赖 `reason_json`。`position.entry_box_id` 同步修复——
 > planner 的 reason_json 现已写真实 `box_id`，`ledger.applyBuy` 的 `reasonBoxID()` 据此落库（此前该函数早已就位，
 > 但 planner 从未写 box_id，导致 entry_box_id 全 NULL）。**历史行不回填、不伪造**：NULL = 早于 0021 的订单，
 > 历史库分析继续用 `(code, box_top, box_bottom)` 反向匹配口径，新老口径在报告中必须显式声明。
+
+
 
 ### 2.2 `watch.stage`
 

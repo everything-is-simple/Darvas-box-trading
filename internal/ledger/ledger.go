@@ -457,9 +457,13 @@ func (l *Ledger) applySell(f contract.Fill, order *store.PendingOrder) (int64, e
 		return pos.ID, fmt.Errorf("卖出数量 %d 超过持仓 %d: %s", f.Qty, pos.Qty, f.Code)
 	}
 	if newQty == 0 {
-		reason := "stop" // 计划内止损离场
-		if order == nil {
-			reason = "manual" // 计划外人工卖出
+		// 卖出出口六分类（T5，docs/43）：从订单 reason_json.signal 提取明确出口，
+		// 除权强平（无订单、RawText=sim:dividend）与真正人工卖出分开，不再统一糊成 stop/manual。
+		reason := "manual" // 兜底：无订单且非除权 = 人工
+		if order != nil {
+			reason = exitReasonFromSignal(order.ReasonJSON)
+		} else if f.RawText == "sim:dividend" {
+			reason = "dividend_clear" // 除权除息日规则强平（match.go §3.8）
 		}
 		if err := l.st.TradeRepo.ClosePosition(pos.ID, f.Date, reason); err != nil {
 			return pos.ID, err
@@ -492,6 +496,29 @@ func (l *Ledger) onPositionClosed(code, reason string) {
 	w.Stage = contract.StageExited
 	w.ExitReason = "position_closed_" + reason
 	l.st.PoolRepo.UpsertWatch(*w)
+}
+
+// exitReasonFromSignal 从订单 reason_json.signal 映射卖出出口标签（T5 六分类，docs/43）。
+// 映射：initial_stop→stop（首腿紧止损）、stop→stop_box（跌破箱体下轨）、
+// failed_breakout→failed_breakout、time_stop_noprofit→time_stop；未知 signal 回退 manual。
+func exitReasonFromSignal(reasonJSON string) string {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(reasonJSON), &m); err != nil {
+		return "manual"
+	}
+	sig, _ := m["signal"].(string)
+	switch sig {
+	case "initial_stop":
+		return "stop"
+	case "stop":
+		return "stop_box"
+	case "failed_breakout":
+		return "failed_breakout"
+	case "time_stop_noprofit":
+		return "time_stop"
+	default:
+		return "manual"
+	}
 }
 
 // reasonStop 从订单 reason 提取计划止损价（无则0）。

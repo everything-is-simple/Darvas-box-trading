@@ -228,6 +228,49 @@ func TestSellWithoutPositionRejected(t *testing.T) {
 	}
 }
 
+// TestExitReasonFromSignal 卖出出口六分类映射（T5，docs/43）。
+func TestExitReasonFromSignal(t *testing.T) {
+	cases := []struct {
+		signal string
+		want   string
+	}{
+		{"initial_stop", "stop"},
+		{"stop", "stop_box"},
+		{"failed_breakout", "failed_breakout"},
+		{"time_stop_noprofit", "time_stop"},
+		{"breakout", "manual"}, // 未知 signal 回退 manual
+		{"", "manual"},        // 空回退 manual
+	}
+	for _, c := range cases {
+		got := exitReasonFromSignal(`{"signal":"` + c.signal + `"}`)
+		if got != c.want {
+			t.Errorf("signal=%q → %q, want %q", c.signal, got, c.want)
+		}
+	}
+	// 非法 JSON 回退 manual
+	if got := exitReasonFromSignal("not-json"); got != "manual" {
+		t.Errorf("非法 JSON → %q, want manual", got)
+	}
+}
+
+// TestSellCloseReasonDividendAndManual 除权强平与人工卖出须分开记 close_reason。
+func TestSellCloseReasonDividendAndManual(t *testing.T) {
+	l, st := newLedger(t, "sh600519")
+
+	// 开仓
+	if _, err := l.ApplyFill(contract.Fill{Code: "sh600519", Date: "2026-10-16", Side: "buy", Price: 1030, Qty: 900}); err != nil {
+		t.Fatalf("开仓: %v", err)
+	}
+	// 除权强平（无订单，RawText=sim:dividend）
+	if _, err := l.ApplyFill(contract.Fill{Code: "sh600519", Date: "2026-10-17", Side: "sell", Price: 1000, Qty: 900, RawText: "sim:dividend"}); err != nil {
+		t.Fatalf("除权强平: %v", err)
+	}
+	all, _ := st.TradeRepo.AllPositions()
+	if len(all) != 1 || all[0].CloseReason != "dividend_clear" {
+		t.Errorf("除权强平 close_reason=%q, want dividend_clear (%+v)", all[0].CloseReason, all)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 止损只升不降（DB 触发器 + 应用层双防护，M4.4 验收）
 // ---------------------------------------------------------------------------
