@@ -154,7 +154,7 @@ def load_db(db: Path):
             ))
         return dict(tier=tier, year=year, trades=trades, first_eq=first_eq, last_eq=last_eq,
                     mdd=mdd, under_days=under, longest_under=longest, unfilled=unfilled,
-                    n_sell_orders=tot_sell)
+                    n_sell_orders=tot_sell, max_date=eq_rows[-1][0])
     finally:
         c.close()
 
@@ -240,6 +240,11 @@ def main():
             continue
         d = load_db(db)
         if not d or not d["trades"]:
+            continue
+        # 完整性守卫：equity_snapshot 必须覆盖到该年年末，否则是半成品库（回测被中断），
+        # 计入会给出「半年的笔数与已实现」并在报告里与其他完整年并列，属可比口径污染。
+        if not d.get("max_date") or d["max_date"] < f"{year}-12-01":
+            print(f"[skip] {db.name} 未完整（equity 末日期 {d.get('max_date')} < {year}-12-01）")
             continue
         by_db[f"{tier}_{year}"] = d
 
