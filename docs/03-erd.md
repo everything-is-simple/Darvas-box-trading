@@ -222,7 +222,7 @@ erDiagram
 > A0/A1 轨迹验证给出结论后，先写 migration 方案并同 commit 更新 03/04/06；禁止直接改已发布 migration。**
 > 详见 docs/00 §3.7 第 1.1/6 点与 docs/29 §七前置段。
 
-> **✅ source_signal_id 已补（2026-11-02，migration 0021，docs/40 §2 T2）**：`plan_order.source_signal_id`
+> **✅ source_signal_id 已补（2026-11-02，migration 0021）**：`plan_order.source_signal_id`
 > 强引用 `signal.id`，突破事件到成交的精确回溯不再依赖 reason_json。`position.entry_box_id` 同步修复——
 > planner 的 reason_json 现已写真实 `box_id`，`ledger.applyBuy` 的 `reasonBoxID()` 据此落库（此前该函数早已就位，
 > 但 planner 从未写 box_id，导致 entry_box_id 全 NULL）。**历史行不回填、不伪造**：NULL = 早于 0021 的订单，

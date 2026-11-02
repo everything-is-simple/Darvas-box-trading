@@ -289,7 +289,7 @@ forming(确认上轨) --3日无新高--> forming(确认下轨) --3日无新低+�
 | `isLimitBoard(bar, prevClose)` | 一字板不成交（按昨收方向） |
 | `slip(side, px, slippage)` | 买贵卖贱 |
 | `feeOf(side, px, qty, p)` | 佣金（最低 5）+ 印花税（卖）+ 过户费 |
-| `isDividendGap(...)` | 单日跌幅超涨跌停限制 → 视为除权 |
+| `DivRepo.IsDividendDay(code, date)` | 查 `dividend_event` 真实除权日；不再用价格跌幅反推 |
 | `gapThreshold(code)` | 主板 10%，创业板/科创板 20%，留 1% 余量 |
 
 **买入闸门**：成交价/trigger > `match.max_entry_gap` → 弃单记 `skipped_gap`。

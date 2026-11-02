@@ -120,7 +120,7 @@ darvas version
 | [docs/05-task-breakdown.md](docs/05-task-breakdown.md) | 任务划分：M0-M10里程碑 |
 | [docs/06-consistency.md](docs/06-consistency.md) | ERD/API一致性维护机制（三道防线） |
 | [docs/29-box-gradient-experiment-plan.md](docs/29-box-gradient-experiment-plan.md) | **唯一实验纲领**：基线四层、结论登记、待做队列 |
-| [docs/39-workbuddy-deepseek-final-sprint-handoff.md](docs/39-workbuddy-deepseek-final-sprint-handoff.md) | **WorkBuddy + DeepSeek 最后冲刺交接**：成果评价、剩余实验、实验纪律、工程查漏补缺、样本外考试与完成定义 | GPT 独立审计交接 |
+| `A:\Darvas-archive\docs\39-41\` | 阶段性交接材料 39/40/41（已归档） | 仅作历史溯源；当前事实以 `docs/29`、`docs/36`、`docs/42` 和 `docs/experiments/` 为准 |
 | [docs/35-box-second-buy-point-and-volume-divergence.md](docs/35-box-second-buy-point-and-volume-divergence.md) | 研究前瞻：第二买点 pinbar + 量=分歧（未立项） |
 
 ---

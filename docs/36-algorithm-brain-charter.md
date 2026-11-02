@@ -83,7 +83,7 @@ planner.raiseStops 读最新已落定 Box，候选止损 = bottom × sell.discou
 | 短期突破失败 | broken_up 后短窗口内收盘跌回该 Box 上轨之下 → failed_breakout | 是 |
 | position.stop_price 保护单 | 初值 = 入场 Box top×0.97，之后随更高确认下轨上移 | 间接 |
 | time_stop_noprofit | 持有达参数门槛仍未获利时退出（staledays=2） | 否 |
-| 复权跳空清仓 / 人工卖出 | 撮合或人工路径 | 否 |
+| 真实除权日清仓 / 人工卖出 | 撮合或人工路径；真实除权日由 `dividend_event` 查表，非价格跌幅反推 | 否 |
 
 **Box broken_down ≠ position 已 closed**；反向，time stop 也能关闭 position 而 Box 未必
 broken_down。**Box 状态图不能代替交易全系统状态图。**
