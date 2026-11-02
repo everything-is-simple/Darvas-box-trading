@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E17 入场/池管理旋钮扫描 · 2005–2018</title>
+<style>
+:root{--bg:#f5f6f8;--surface:#fff;--ink:#1e2430;--muted:#697386;--line:#e3e6eb;
+--red:#c0392b;--green:#1b7a4b;--gold:#a66a12;--blue:#2d5b8e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;font-size:15px;line-height:1.7}
+.page{max-width:1120px;margin:0 auto;padding:42px 28px 64px}
+header{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:26px}
+.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--blue);font-weight:700;margin-bottom:10px}
+h1{font-size:30px;margin:0 0 10px}h2{font-size:22px;margin:36px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+h3{font-size:16px;margin:20px 0 9px}p{margin:9px 0}.sub{color:var(--muted)}
+.up{color:var(--red)}.down{color:var(--green)}.neutral{color:var(--gold)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.kpi .label{font-size:12px;color:var(--muted)}.kpi .value{font-size:24px;font-weight:700;margin-top:4px}
+.kpi .note{font-size:12px;color:var(--muted);margin-top:3px}
+.summary{background:var(--surface);border-left:4px solid var(--blue);border-radius:8px;padding:18px 22px;margin:22px 0}
+.callout{border-radius:8px;padding:14px 17px;margin:15px 0;font-size:14px}
+.callout.gold{background:#fbf3e4;border:1px solid #ead9b8}
+.callout.red{background:#faece9;border:1px solid #efd0ca}
+.callout.blue{background:#ecf2f9;border:1px solid #d4e0ee}
+.callout.green{background:#eaf5ee;border:1px solid #cfe4d8}
+.table-wrap{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow-x:auto;margin:13px 0}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+th{background:#fafbfc;color:#4b5565;font-size:12px}
+th:first-child,td:first-child{text-align:left}
+tr:last-child td{border-bottom:0}
+code{background:#f0f2f5;border-radius:3px;padding:1px 5px;font-size:12.5px}
+.foot{margin-top:38px;padding-top:17px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+</style></head><body><div class="page">
+<header>
+<div class="eyebrow">DARVAS · E17 · 队列序 2 · 参数 P0 六项</div>
+<h1>入场/池管理旋钮梯度扫描（A 类零成本）</h1>
+<p class="sub">2005–2018 全 14 年，6 个「从未验证」的入场/池管理旋钮逐个判定。
+零回测、只读 <code>var/bt/base/bt_baseA_&lt;year&gt;.db</code>。框架先于跑数定稿。</p>
+</header>
+
+<div class="kpis"><div class="kpi"><div class="label">已平仓交易</div><div class="value">1481</div><div class="note">2005–2018 · 14 库</div></div><div class="kpi"><div class="label">candidate 候选</div><div class="value">1,225,249</div><div class="note">screen 阶段</div></div><div class="kpi"><div class="label">flat_too_long</div><div class="value">11,122</div><div class="note">横盘出池</div></div><div class="kpi"><div class="label">跳空弃单</div><div class="value">118</div><div class="note">max_entry_gap</div></div></div>
+
+<div class="summary" id="s0"><h2>核心结论（六旋钮一览）</h2>
+<ul>
+<li><b>rs_excess_min（0.20）</b>：相对强度门槛 <b>0.20 方向正确</b>：≥0.30 带是唯一「剔除前三后仍大幅为正」的强带（每单位 <b>+3,476</b>、剔前三 <b>+276</b>、胜率 32%、n=77）。0.20 之下四带里三个剔除前三翻负（0.05–0.20 区间），只有 <0.05 例外。但 <b>注意内生性</b>：高 rs 本身是「强势股」的结果，此梯度不能证「提高门槛就多赚」，只能证「低相对强度（<0.05）不被明显误杀」。</li>
+<li><b>latedays（4）</b>：<b>latedays=4 在 14 年回测中 0 次触发</b>（122 万 candidate 里 too_late_days 全 0）。原因：达瓦斯突破信号在「突破当天」生成、screener 当天 screen，不存在「突破后 4 日才想起」的场景。这是一个<b>名义存在、实际从未生效</b>的防御性参数，无需分带，登记「死规则」。</li>
+<li><b>min_watch_days（3）</b>：观察期 0–3 日 <b>0 笔</b>（被 min_watch_days=3 机械拦截，符合预期）。4–5/+440、6–10/+527、≥11/+953 单调递增且剔前三后仍递增（+74/+202/+496）。但这是 <b>内生性</b>：观察期长 = 首买时点离入池远，可能只是「没急着追、后来慢慢涨」的票，不能证「延长观察期就多赚」。</li>
+<li><b>flatboxmax（4）</b>：11122 笔 flat_too_long 出池后 60 日 <b>均值 +2.74% 但中位 −0.48%</b>——厚右尾：多数票出池后横盘微跌（正占比 49.1%），少数大涨。印证横盘出池基本合理：被淘汰的票多数确实没戏，个别右尾会错过，但体量不足以证「flatboxmax=4 误杀」。</li>
+<li><b>max_entry_gap（1.05）</b>：引用 P1-4 臂 C 结论（118 笔被弃单 n_hit=118、低胜率+厚右尾、无一致方向、2015 占 10.2%）。ratio 梯度需 matchOrder 成交价复算，P1-4 已做，结论明确 → <b>维持 1.05</b>。</li>
+<li><b>regime.a.*</b>：<b>死参数</b>：新基线 newhigh_ladder=on，仓位走阶梯制，A 判据升势分支（planner.go:598）不触发，regime.a.* 三键不影响任何下注。</li>
+</ul></div>
+
+<h2 id="s1">一、rs_excess_min 相对强度门槛（0.20）</h2>
+<p>口径：candidate 的 rs_value（screen 日快照，个股 20 日涨幅 − 上证 20 日涨幅），
+每 (year,code) 取「首笔成交日前最近一次 screen」的 rs_value 归带。</p>
+<div class="table-wrap"><table><thead><tr><th>rs 带</th><th>笔数</th><th>胜率</th>
+<th>每单位净利</th><th>PF</th><th>集中度</th><th>剔除前三净利</th><th>剔除前三每单位</th></tr></thead><tbody>
+<tr><td><strong><0.05</strong></td><td>488</td><td>21.9%</td><td class="up">+368</td><td>1.47</td><td>2410.8%</td><td class="up">+56,947</td><td class="up">+93</td></tr><tr><td><strong>0.05–0.10</strong></td><td>389</td><td>20.3%</td><td class="up">+145</td><td>1.20</td><td>2918.8%</td><td class="down">-52,083</td><td class="down">-109</td></tr><tr><td><strong>0.10–0.15</strong></td><td>258</td><td>22.9%</td><td class="up">+619</td><td>1.94</td><td>5031.2%</td><td class="down">-8,637</td><td class="down">-24</td></tr><tr><td><strong>0.15–0.20</strong></td><td>164</td><td>22.0%</td><td class="up">+798</td><td>2.06</td><td>5835.5%</td><td class="down">-26,326</td><td class="down">-110</td></tr><tr><td><strong>0.20–0.25</strong></td><td>77</td><td>32.5%</td><td class="up">+3,476</td><td>8.07</td><td>8110.5%</td><td class="up">+31,079</td><td class="up">+276</td></tr><tr><td><strong>0.25–0.30</strong></td><td>43</td><td>32.6%</td><td class="up">+1,036</td><td>2.50</td><td>5883.7%</td><td class="up">+1,416</td><td class="up">+23</td></tr><tr><td><strong>≥0.30</strong></td><td>51</td><td>49.0%</td><td class="up">+2,592</td><td>6.13</td><td>4672.7%</td><td class="up">+115,622</td><td class="up">+1,243</td></tr>
+</tbody></table></div>
+
+<h2 id="s2">二、min_watch_days 观察期（3 日）</h2>
+<p>口径：watch.added_date → 首笔成交日的交易日间隔。</p>
+<div class="table-wrap"><table><thead><tr><th>间隔带</th><th>笔数</th><th>胜率</th>
+<th>每单位净利</th><th>PF</th><th>集中度</th><th>剔除前三净利</th><th>剔除前三每单位</th></tr></thead><tbody>
+<tr><td><strong>0–1 日</strong></td><td>0</td><td>—</td><td class="neutral">—</td><td>—</td><td>—</td><td class="neutral">+0</td><td class="neutral">—</td></tr><tr><td><strong>2 日</strong></td><td>0</td><td>—</td><td class="neutral">—</td><td>—</td><td>—</td><td class="neutral">+0</td><td class="neutral">—</td></tr><tr><td><strong>3 日</strong></td><td>0</td><td>—</td><td class="neutral">—</td><td>—</td><td>—</td><td class="neutral">+0</td><td class="neutral">—</td></tr><tr><td><strong>4–5 日</strong></td><td>346</td><td>23.4%</td><td class="up">+440</td><td>1.70</td><td>3446.6%</td><td class="up">+30,608</td><td class="up">+74</td></tr><tr><td><strong>6–10 日</strong></td><td>420</td><td>24.8%</td><td class="up">+527</td><td>1.72</td><td>2605.0%</td><td class="up">+116,963</td><td class="up">+202</td></tr><tr><td><strong>≥11 日</strong></td><td>715</td><td>22.7%</td><td class="up">+953</td><td>2.31</td><td>2746.2%</td><td class="up">+499,146</td><td class="up">+496</td></tr>
+</tbody></table></div>
+
+<h2 id="s3">三、flatboxmax 横盘出池（4 箱）· 反事实</h2>
+<p>口径：exit_reason='flat_too_long' 的票，用「added_date 后 60 交易日」近似出池时点，fwd N 日收益。</p>
+<div class="table-wrap"><table><thead><tr><th>出池后</th><th>样本</th><th>均值</th>
+<th>中位</th><th>正占比</th><th>剔前三均值</th></tr></thead><tbody>
+<tr><td>5 日</td><td>11117</td><td class="up">0.08%</td><td class="neutral">0.00%</td><td>49.1%</td><td class="up">0.06%</td></tr><tr><td>10 日</td><td>11116</td><td class="up">0.30%</td><td class="up">0.10%</td><td>50.2%</td><td class="up">0.25%</td></tr><tr><td>20 日</td><td>11115</td><td class="up">1.63%</td><td class="up">0.80%</td><td>52.4%</td><td class="up">1.56%</td></tr><tr><td>60 日</td><td>11113</td><td class="up">2.74%</td><td class="down">-0.48%</td><td>49.1%</td><td class="up">2.63%</td></tr>
+</tbody></table></div>
+
+<h2 id="s4">四、HARD 校验</h2>
+<div class="table-wrap"><table><thead><tr><th>级别</th><th>校验项</th><th>期望</th><th>实际</th><th>结果</th></tr></thead><tbody>
+<tr><td>HARD</td><td style="text-align:left">年份连续 2005–2018</td><td class="muted">14 年连续</td><td>14 年 2005–2018</td><td class="up"><b>✓</b></td></tr><tr><td>HARD</td><td style="text-align:left">已平仓交易总数 > 0</td><td class="muted">>0</td><td>1481</td><td class="up"><b>✓</b></td></tr><tr><td>INFO</td><td style="text-align:left">旋钮 6 regime.a.* 死参数</td><td class="muted">已代码级确认</td><td>newhigh_ladder=on，A 判据分支不触发</td><td class="up"><b>✓</b></td></tr><tr><td>INFO</td><td style="text-align:left">rs 关联成功样本</td><td class="muted">登记</td><td>1470</td><td class="up"><b>✓</b></td></tr><tr><td>INFO</td><td style="text-align:left">min_watch_days 可复算样本</td><td class="muted">登记</td><td>1481</td><td class="up"><b>✓</b></td></tr><tr><td>INFO</td><td style="text-align:left">latedays 触发次数</td><td class="muted">登记</td><td>0（/ 82213 candidate）</td><td class="up"><b>✓</b></td></tr>
+</tbody></table></div>
+
+<div class="foot">
+<p><b>结论边界</b>：本报告只做 A 类零成本分带（已过门槛样本内部梯度 + 被弃样本反事实），
+回答不了「门槛该定在哪」（那是 B 类改门槛重跑的事）。六旋钮中 rs_excess_min 的 ≥0.30 强带、
+min_watch_days 的 ≥11 日带、flatboxmax 的右尾，均登记为「有结构、但内生性待 B 类证因果」。</p>
+<p>数据源：<code>var/bt/base/bt_baseA_&lt;year&gt;.db</code>（阶梯制新基线）。样本外 2019+ 未参与。</p>
+<p>生成于 2026-11-03 06:13:19 · 生成器 sha256 <code>3bd590bef45fe2e2</code></p>
+</div>
+</div></body></html>
