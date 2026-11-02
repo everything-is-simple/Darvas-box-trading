@@ -23,7 +23,7 @@
 
 - 买什么：跟踪池中放量突破箱体上轨的股票
 - 何时买：次日停损买单挂在箱体上轨×1.03
-- 买多少：A M1 仓位——升势日首买 2 单位、其余 1 单位（A 判据 60 日低点相邻日比，一律不加码；见 docs/23 §9 D0）
+- 买多少：A M1 仓位——升势日首买 2 单位、其余 1 单位（A 判据 60 日低点相邻日比，一律不加码；见 `docs/00 §5.6.7 D0`）
 - 卖什么：收盘跌破最新箱体下轨的持仓
 - 何时卖：次日止损卖单挂在下轨×0.97
 - 卖多少：全部，一次清仓（达瓦斯纪律）
@@ -121,6 +121,7 @@ darvas version
 | [docs/06-consistency.md](docs/06-consistency.md) | ERD/API一致性维护机制（三道防线） |
 | [docs/29-box-gradient-experiment-plan.md](docs/29-box-gradient-experiment-plan.md) | **唯一实验纲领**：基线四层、结论登记、待做队列 |
 | `A:\Darvas-archive\docs\39-41\` | 阶段性交接材料 39/40/41（已归档） | 仅作历史溯源；当前事实以 `docs/29`、`docs/36`、`docs/42` 和 `docs/experiments/` 为准 |
+| `A:\Darvas-archive\deployment\DEPLOY-PLAN-2026-10-29.md` | 已完成部署事实记录（不再是行动项） |
 | [docs/35-box-second-buy-point-and-volume-divergence.md](docs/35-box-second-buy-point-and-volume-divergence.md) | 研究前瞻：第二买点 pinbar + 量=分歧（未立项） |
 
 ---
@@ -166,8 +167,8 @@ var/                   # 运行时（db/备份/报告）
 - 🚧 M7 周而复始：✅ 7.1 常驻调度（serve）· ✅ 7.2 周报 · ✅ 7.3 备份轮转+恢复演练 · ✅ 7.4 移植演练（15b5183）· 观察期：连续20交易日无人值守
 - ✅ M8 内置回放器：✅ 8.1 回放骨架 + as-of 差分审计（`darvas backtest`）· ✅ 8.2 模拟撮合器（`internal/match`）· ✅ 8.3 体制运行器（`--mode regime`）· ✅ 8.4a 体制参数敏感性（`internal/regimesweep`，结论：基线已处理论前沿，单参数无解）
   - M8.1 审计发现事件驱动链路三条死路（archive/07 #1-#3，均已修复）；as-of 纪律成立（六任务链未读未来K线）
-- 🚧 仓位规则演进：0017 战绩分级制（normal 1 / winner 5）→ **A M1（2026-10-23 落地，commit 9207bb1）**：升势日首买 2 单位、其余 1 单位，winner 5x 退役，不择时、不做熊市闸门（六轮回测证伪大盘择时）。详见 docs/23 §9 D0 + var/bt/regime_final_summary_and_prompt.md。
-  - 五年回测（2014-2018）后台运行中验 ≈+94,358；三家 AI 统一纲领见 docs/21。
+- ✅ 仓位规则已收敛为 **A M1（2026-10-23 落地）**：升势日首买 2 单位、其余 1 单位，一律不加码；winner 5x、旧大盘择时和旧 M8.8 方案均已退役。定稿见 `docs/00 §5.6.7 D0`，实验事实见 `docs/29`。
+- ✅ 新基线（`max_hold=14`、`equity_gate=off`、MA60 上证停买）已完成 14 年验证；当前实验队列以 `docs/29` 为准。
 
 数据源已验证：TDX vipdoc 更新至 2026-10-16 收盘；真实库全链路跑通（142候选入池、茅台29箱体）。
 

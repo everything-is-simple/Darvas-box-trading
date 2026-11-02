@@ -563,28 +563,21 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
 | `trigger` | signal 上下文 | ✅ | 触发价 = box_top × buy.premium |
 | `high_52w` | signal 上下文 | ✅ | 截至突破日的 52 周最高 |
 | `newhigh_distance_pct` | signal 上下文 | ✅ | (high_52w - close) / high_52w × 100 |
-| `sizing_basis` | planner 计算 | ✅ | newhigh_t1/t2/t3/t4 之一（按 newhigh_distance_pct 分档） |
-| `units` | planner 计算 | ✅ | 该笔订单仓位单位数 |
-| `regime` | planner（`regime.ClassifyDateA(planDate)`） | ✅ | A 判据标签 `bull`/`bear`/`range`，**按 plan_date 当日计算**；仅作第 10 维归因原料，**不作择时依据** |
+| `sizing_basis` | planner 计算 | ✅ | 当前生产值为 `A_regime_up`（A 判据升势日，2 单位）或 `default`（其余，1 单位）；历史 E17 `newhigh_t1..t4` 仅保留在旧回测报告语义中，不是当前生产订单档位 |
+| `units` | planner 计算 | ✅ | 当前生产值为 2 或 1；历史 E17 研究库可出现 3/2/1/0.5，报告必须注明基线语义 |
+| `regime` | planner（`regime.ClassifyDateA(planDate)`） | ✅ | A 判据标签 `bull`/`bear`/`range`，按 plan_date 当日计算；仅作第 10 维归因原料，不作择时依据 |
 
-- **sizing_basis 分档规则**（E17 阶梯，与 docs/01 §10.3 一致）：
-  - `newhigh_t1`：0% ≤ distance < 5%，units=3
-  - `newhigh_t2`：5% ≤ distance < 10%，units=2
-  - `newhigh_t3`：10% ≤ distance < 20%，units=1
-  - `newhigh_t4`：20% ≤ distance ≤ 40%，units=0.5
-  - distance > 40%：**不生成订单**（拒买，不进 plan_order 表）
+- **当前生产仓位规则**：`A_regime_up` → 2 单位；`default` → 1 单位；一律不加码，`budget_bucket` 恒为 `normal`。
+- **历史 E17 研究分档**：`newhigh_t1/t2/t3/t4` → 3/2/1/0.5 单位，仅用于旧基线/研究库对账，不得反推当前 planner 行为。
 
 - **`regime` 时点语义（2026-10-26 补）**：写入的是 **T 日（`plan_date`）** 的 A 判据标签，订单在 **T+1** 执行。
   因此 `regime` 与「成交日的大盘状态」存在 1 日错位——离线归因若按 `opened_date` 重算会得到不同分布
   （实测：2014 年 plan 日与 opened 日一致率 86/100；14 年全样本升势笔数 107 vs 91）。
   报告必须显式声明用的是哪个时点，并与本字段逐笔对账，**不得混用**。
 
-### 9.2 待加字段的契约扩展（2026-10-30 更新：第 6/7 维 A 类已证无需加字段，第 4 维仍需）
+### 9.2 待加字段的契约扩展（2026-11-02 更新）
 
-> **P1-4 A 类（2026-10-30）结论**：第 6 维强度 = `close(plan_date)/box_top−1`、第 7 维量比 =
-> `vol/avg(前50日vol)` 均可从 `daily_bar` 用 `(code, plan_date)` 复算（14 年 1560 笔缺行情 0 笔），
-> **故第 6/7 维的 A 类分带不需要加字段**。`volume_ratio`/`break_strength_pct` 字段仅在将来 B 类
-> A/B 对照需保留审计记录时才值得加。第 4 维（最高 box）仍缺 box 序列历史，需加字段/查询。
+> **P1-4 A 类（2026-10-30）结论**：第 6 维强度 = `close(plan_date)/box_top−1`、第 7 维量比 = `vol/avg(前50日vol)` 均可从 `daily_bar` 用 `(code, plan_date)` 复算（14 年 1560 笔缺行情 0 笔），故第 6/7 维的 A 类分带不需要加字段。`volume_ratio`/`break_strength_pct` 字段仅在将来 B 类审计留痕时才值得加。第 4 维（最高 box）仍缺 box 序列历史，需加字段/查询。
 
 | 字段 | 来源 | 解锁维度 | 契约改动 | 状态 |
 |------|------|---------|---------|------|
