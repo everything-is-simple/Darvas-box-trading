@@ -14,7 +14,6 @@ import (
 	"context"
 	"log"
 	"math"
-	"strings"
 
 	"darvas/internal/contract"
 	"darvas/internal/ledger"
@@ -41,7 +40,11 @@ func (m *Matcher) Match(ctx context.Context, date string) (int, error) {
 	slippage := m.st.ParamRepo.GetFloat("match.slippage", 0.002)
 	n := 0
 
-	// 1. 复权跳空日：持仓股强制清仓（先于订单撮合，§3.8）
+	// 1. 除权除息日：持仓股强制清仓（先于订单撮合，§3.8）。
+	// 识别口径（2026-11-02 修复）：查真实除权记录 dividend_event，不再用价格反推
+	// isDividendGap——原阈值 0.09 恰卡在主跌停 10% 上，四年 44 笔 sim:dividend 里
+	// 37 笔是「跌停误判」，只 7 笔是真除权。定价口径：除权后实际价 today.Close
+	// （而非「昨收×滑点」——那在除权跳空日会按除权前价虚增成交）。
 	cleared := map[string]bool{}
 	positions, err := m.st.TradeRepo.OpenPositions()
 	if err != nil {
@@ -56,10 +59,15 @@ func (m *Matcher) Match(ctx context.Context, date string) (int, error) {
 		if today.Date != date {
 			continue // 当日无数据（停牌）
 		}
-		if !isDividendGap(today, prev, gapThreshold(pos.Code)) {
+		_ = prev
+		isDiv, err := m.st.DivRepo.IsDividendDay(pos.Code, date)
+		if err != nil {
+			return n, err
+		}
+		if !isDiv {
 			continue
 		}
-		clearPx := slip("sell", prev.Close, slippage) // C4：滑点买贵卖贱，除权清仓同样适用
+		clearPx := today.Close // 除权后实际价格（保守、真实）
 		fill := contract.Fill{
 			Code: pos.Code, Date: date, Side: "sell",
 			Price: clearPx, Qty: pos.Qty,
@@ -70,7 +78,7 @@ func (m *Matcher) Match(ctx context.Context, date string) (int, error) {
 		}
 		cleared[pos.Code] = true
 		n++
-		// 复权清仓后，在途订单（止损卖单/突破买单）同步作废：卖单不取消会次日触发
+		// 除权清仓后，在途订单（止损卖单/突破买单）同步作废：卖单不取消会次日触发
 		// 「卖出成交但无持仓」（2018-05-23 sz300630 暴露）；买单不取消会以复权前
 		// 箱体逻辑开幻影新仓。复权后箱体重算、重新出信号属正常流程。
 		if _, err := m.st.TradeRepo.CancelOpenOrders(pos.Code); err != nil {
@@ -215,22 +223,3 @@ func feeOf(side string, px float64, qty int, p feeParams) float64 {
 	return fee
 }
 
-// gapThreshold 除权跳空检测阈值（涨跌停幅度减 1% 余量）。
-// 初版不识别 ST（达瓦斯池不含 ST）；科创板/创业板 20% 涨跌停，主板 10%。
-func gapThreshold(code string) float64 {
-	num := strings.TrimPrefix(strings.TrimPrefix(code, "sh"), "sz")
-	if strings.HasPrefix(num, "68") || strings.HasPrefix(num, "30") {
-		return 0.19
-	}
-	return 0.09
-}
-
-// isDividendGap 判断当日是否除权跳空（close 相对昨收跌幅超过涨跌停限制）。
-// 正常交易不可能单日跌超涨跌停，故超限即除权（一字跌停 ≈ 跌停幅度，不误判）。
-func isDividendGap(today, prev contract.DailyBar, threshold float64) bool {
-	if prev.Close <= 0 {
-		return false
-	}
-	drop := (prev.Close - today.Close) / prev.Close
-	return drop > threshold
-}

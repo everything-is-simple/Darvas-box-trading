@@ -27,6 +27,7 @@ type Store struct {
 	*TradeRepo
 	*RunRepo
 	*ParamRepo
+	*DivRepo
 }
 
 // Open 打开（或创建）数据库并执行迁移。
@@ -68,6 +69,7 @@ func Open(dsn string) (*Store, error) {
 	s.TradeRepo = NewTradeRepo(db)
 	s.RunRepo = NewRunRepo(db)
 	s.ParamRepo = NewParamRepo(db)
+	s.DivRepo = NewDivRepo(db)
 	return s, nil
 }
 

@@ -75,37 +75,8 @@ func TestFeeOf(t *testing.T) {
 	}
 }
 
-func TestIsDividendGap(t *testing.T) {
-	// 主板 15% 跌（超过 9% 阈值）→ 除权
-	if !isDividendGap(bar(0, 0, 0, 8.5), bar(0, 0, 0, 10), 0.09) {
-		t.Errorf("主板 15%% 跌应判除权")
-	}
-	// 主板 5% 跌 → 非除权
-	if isDividendGap(bar(0, 0, 0, 9.5), bar(0, 0, 0, 10), 0.09) {
-		t.Errorf("主板 5%% 跌不应判除权")
-	}
-	// 创业板 15% 跌（未超 19% 阈值）→ 非除权
-	if isDividendGap(bar(0, 0, 0, 8.5), bar(0, 0, 0, 10), 0.19) {
-		t.Errorf("创业板 15%% 跌不应判除权")
-	}
-	// 昨收为 0 → 不判
-	if isDividendGap(bar(0, 0, 0, 8), bar(0, 0, 0, 0), 0.09) {
-		t.Errorf("昨收为0不应判除权")
-	}
-}
-
 func TestGapThreshold(t *testing.T) {
-	cases := map[string]float64{
-		"sh600519": 0.09, // 沪主板
-		"sz000001": 0.09, // 深主板
-		"sz300750": 0.19, // 创业板
-		"sh688981": 0.19, // 科创板
-	}
-	for code, want := range cases {
-		if got := gapThreshold(code); !near(got, want) {
-			t.Errorf("%s 阈值=%.4f want %.4f", code, got, want)
-		}
-	}
+	t.Skip("gapThreshold 已随 isDividendGap 删除（除权识别改查 dividend_event 表，2026-11-02）")
 }
 
 // TestSlip C4（2026-10-22）：滑点买贵卖贱；0/负值关闭；价格非法原样返回。
@@ -210,8 +181,10 @@ func TestMatchSlippage(t *testing.T) {
 }
 
 // TestMatchDividendClearCancelsPendingOrders 回归：除权日强制清仓后，在途订单必须取消。
-// 场景复刻 2018-05-23 sz300630：05-21 持仓 + 挂 05-23 止损卖单 → 05-22 除权跳空清仓
+// 场景复刻 2018-05-23 sz300630：05-21 持仓 + 挂 05-23 止损卖单 → 05-22 除权清仓
 // → 修复前 05-23 陈旧卖单触发「卖出成交但无持仓」报错，回放中断无汇总报告。
+// 2026-11-02 更新：除权识别改查 dividend_event 表（不再价格反推 isDividendGap），
+// 测试须显式插入除权记录；清仓价改为 today.Close（除权后实际价）。
 func TestMatchDividendClearCancelsPendingOrders(t *testing.T) {
 	st, err := store.Open(t.TempDir() + "/test.db")
 	if err != nil {
@@ -226,10 +199,17 @@ func TestMatchDividendClearCancelsPendingOrders(t *testing.T) {
 	}
 	if _, err := st.BarRepo.UpsertBars([]contract.DailyBar{
 		mkBar("2018-05-21", 104, 105, 103, 104),
-		mkBar("2018-05-22", 70, 71, 69, 69.28), // 除权跳空 -33%（创业板阈值 19%）
+		mkBar("2018-05-22", 70, 71, 69, 69.28), // 除权日（10送15 型跳空 -33%）
 		mkBar("2018-05-23", 69.5, 70, 68.5, 69.0),
 	}); err != nil {
 		t.Fatalf("seed bars: %v", err)
+	}
+	// 插入真实除权记录（识别依据，不再靠价格反推）
+	if _, err := st.DivRepo.Upsert([]store.DividendEvent{{
+		Code: "sz300630", Date: "2018-05-22", Type: 1,
+		Bonus10: 3, ShareBonus10: 15, // 10送15 + 派3元/10股（跌幅约 33%）
+	}}); err != nil {
+		t.Fatalf("seed dividend: %v", err)
 	}
 
 	m := New(st)
@@ -253,13 +233,22 @@ func TestMatchDividendClearCancelsPendingOrders(t *testing.T) {
 		t.Fatalf("AddOrders: %v", err)
 	}
 
-	// 05-22 撮合：除权跳空 → 强制清仓 + 取消在途订单
+	// 05-22 撮合：除权日 → 强制清仓 + 取消在途订单；清仓价 = today.Close
 	n, err := m.Match(ctx, "2018-05-22")
 	if err != nil {
 		t.Fatalf("除权日撮合报错: %v", err)
 	}
 	if n != 1 {
 		t.Fatalf("除权日成交笔数=%d want 1（sim:dividend 清仓）", n)
+	}
+	// 清仓价应为除权后实际价 today.Close（69.28），非昨收×滑点
+	var clearPx float64
+	if err := st.DB().QueryRow(
+		`SELECT price FROM trade_fill WHERE date='2018-05-22' AND raw_text='sim:dividend'`).Scan(&clearPx); err != nil {
+		t.Fatalf("查清仓价: %v", err)
+	}
+	if !near(clearPx, 69.28) {
+		t.Fatalf("清仓价=%.4f want 69.28（today.Close，除权后实际价）", clearPx)
 	}
 
 	// 05-23 撮合：修复前这里报「卖出成交但无持仓」；修复后应零成交、无报错

@@ -178,6 +178,16 @@ erDiagram
         DATETIME changed_at
         TEXT old_value
     }
+    security ||--o{ dividend_event : "除权除息事件"
+    dividend_event {
+        TEXT code FK
+        DATE date PK
+        INTEGER type "1=除权除息(唯一落库)"
+        REAL bonus_10 "派息(每10股,元)"
+        REAL share_bonus_10 "送股(每10股)"
+        REAL allot_10 "配股(每10股)"
+        REAL allot_price "配股价(元/股)"
+    }
 ```
 > **复利前提（2026-10-27）**：回测按年独立起跑，`equity_snapshot` 每年首日 `total = 1,000,000`（起始资金），
 > 年末含未平仓头寸的市价估值（即含浮盈浮亏）；`drawdown` 为**年内**距峰值回撤，逐年重置。
