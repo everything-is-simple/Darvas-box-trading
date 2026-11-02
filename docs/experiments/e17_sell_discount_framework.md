@@ -106,7 +106,28 @@ gate.ma60.mode=stop          gate.ma60.index=sh000001   position.staledays=2
 
 每一笔已平仓交易打三个正交标签：
 
-### 5.1 标签 A：出口来源（`plan_order.reason_json.signal`，经 `trade_fill.plan_order_id` 关联）
+### 5.1 标签 A：出口来源（优先按**成交来源**判定，其次按 `plan_order.reason_json.signal`）
+
+> **2026-11-02 08:24 口径修正（跑完首库 097/2018 后发现并立即固定，非跑后调参）**
+>
+> 原定义「一律按 `plan_order.reason.signal` 归类」会把**复权跳空日强制清仓**混进策略出口，原因是双层错配：
+> ① 该清仓由 `internal/match/match.go` §3.8 直接调 `ledger.ApplyFill`，无计划单 → `close_reason='manual'`（首库 7 笔）；
+> ② 若当日恰有在途卖单，`ApplyFill` 的订单匹配会把这笔清仓「配」给该计划单 → `close_reason='stop'` 并沿用该单 signal（首库 4 笔）。
+> 结果 11 笔复权清仓被拆进 `manual`/`stop`/`initial_stop` 三类，稀释档位差异，且它们按构造偏正
+> （清仓价 = 昨收×(1−滑点)，刻意避开跳空损失），会系统性抬高所有档位的胜率。
+>
+> **修正后的判定优先级**（唯一依据是成交的 `raw_text`，客观可复核）：
+>
+> | 优先级 | 条件 | 标签 |
+> |---|---|---|
+> | 1 | 平仓日存在 `trade_fill.side='sell' AND raw_text='sim:dividend'` | `dividend_clear` |
+> | 2 | 匹配到计划单且 `reason.signal` 非空 | 该 signal 值 |
+> | 3 | `close_reason='manual'` 且无计划单 | `manual`（真·计划外） |
+> | 4 | 其余 | `(未知)` |
+>
+> `dividend_clear` **不参与档位归因**，并在报告 §2.0 单列「剔除复权清仓」的可比口径表
+> （三档之间的差异只能来自受 `sell.discount` 影响的出场）。这是分类口径的**修正**，
+> 不改变任何假设、档位、年集或判定门槛。
 
 | 值 | 含义 |
 |---|---|
@@ -114,7 +135,8 @@ gate.ma60.mode=stop          gate.ma60.index=sh000001   position.staledays=2
 | `stop` | 信号驱动卖单（箱体下轨跌破等） |
 | `time_stop_noprofit` | 时间止损不获利离场（`staledays=2`） |
 | `failed_breakout` | 突破失败 |
-| `manual` | 计划外（`close_reason='manual'`，无对应订单） |
+| `manual` | 计划外（`close_reason='manual'` 且无对应订单） |
+| `dividend_clear` | **复权跳空日强制清仓（撮合层规则，非策略出口，不参与归因）** |
 
 ### 5.2 标签 B：止损位是否已上移（仅 `initial_stop` 笔）
 

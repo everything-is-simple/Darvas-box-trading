@@ -74,7 +74,10 @@ SELECT p.id, p.code, p.opened_date, p.closed_date, p.realized_pnl, p.close_reaso
           WHERE f.code = p.code AND f.date = p.closed_date AND f.side = 'sell' LIMIT 1) AS exit_px,
        (SELECT json_extract(po.reason_json, '$.signal')
           FROM trade_fill f JOIN plan_order po ON po.id = f.plan_order_id
-         WHERE f.code = p.code AND f.date = p.closed_date AND f.side = 'sell' LIMIT 1) AS sig
+         WHERE f.code = p.code AND f.date = p.closed_date AND f.side = 'sell' LIMIT 1) AS sig,
+       (SELECT COUNT(*) FROM trade_fill f
+         WHERE f.code = p.code AND f.date = p.closed_date AND f.side = 'sell'
+           AND f.raw_text = 'sim:dividend') AS n_div
 FROM position p
 LEFT JOIN box b ON b.id = p.entry_box_id
 WHERE p.status = 'closed'
@@ -113,7 +116,7 @@ def load_db(db: Path):
         unfilled = (tot_sell - filled_sell) / tot_sell if tot_sell else None
 
         trades = []
-        for (pid, code, od, cd, pnl, creason, boxid, etop, cost, qty, exit_px, sig) in c.execute(TRADE_Q):
+        for (pid, code, od, cd, pnl, creason, boxid, etop, cost, qty, exit_px, sig, n_div) in c.execute(TRADE_Q):
             base_eq = eq.get(od) or first_eq or 0.0
             unit_val = base_eq * UNIT_PCT
             units = (cost / unit_val) if unit_val and unit_val > 0 else 0.0
@@ -123,9 +126,21 @@ def load_db(db: Path):
                     hold = (datetime.fromisoformat(str(cd)) - datetime.fromisoformat(str(od))).days
                 except Exception:
                     hold = None
+            # 出口来源判定（优先级：复权清仓 > 计划单信号 > 兜底）。
+            # 复权跳空日强制清仓由 match.go §3.8 触发（raw_text='sim:dividend'），与 sell.discount 无关；
+            # 若当日恰有在途卖单，该笔清仓会被 ApplyFill 误配给该计划单（close_reason 记成 stop），
+            # 因此必须按成交来源而非计划单信号判定，否则规则强制清仓会被混入策略出口、稀释档位对比。
+            if n_div and n_div > 0:
+                exit_src = "dividend_clear"
+            elif sig:
+                exit_src = sig
+            elif creason == "manual":
+                exit_src = "manual"
+            else:
+                exit_src = "(未知)"
             # 标签 B
             tagB = "n/a"
-            if sig == "initial_stop":
+            if exit_src == "initial_stop":
                 if etop and exit_px:
                     ref = etop * DISC[tier]
                     tagB = "初始位未上移" if abs(exit_px / ref - 1) <= B_TOL else "已上移"
@@ -134,7 +149,7 @@ def load_db(db: Path):
             trades.append(dict(
                 code=code, opened=str(od), closed=str(cd), pnl=pnl, close_reason=creason,
                 cost=cost, qty=qty, units=units, exit_px=exit_px,
-                sig=sig or ("manual" if creason == "manual" else "(未知)"),
+                sig=exit_src,
                 tagB=tagB, hold_days=hold,
             ))
         return dict(tier=tier, year=year, trades=trades, first_eq=first_eq, last_eq=last_eq,
@@ -187,6 +202,11 @@ def tier_summary(by_db, tier):
                              mdd=d["mdd"], under_days=d["under_days"],
                              unfilled=d["unfilled"]))
     s = agg(trades)
+    # 可比口径：剔除复权跳空日强制清仓（撮合层规则 §3.8，与 sell.discount 无关）。
+    # 三档之间唯一可能变化的只有受 sell.discount 影响的出场，混入规则强制清仓会稀释档位差异。
+    ex_div_trades = [t for t in trades if t["sig"] != "dividend_clear"]
+    s["ex_div"] = agg(ex_div_trades)
+    s["div_n"] = len(trades) - len(ex_div_trades)
     s["per_year"] = per_year
     s["years"] = [by_db[k]["year"] for k in keys]
     s["mdd_worst"] = max((d["mdd"] for k in keys for d in [by_db[k]]), default=None)
@@ -265,6 +285,16 @@ def main():
                  f"{money(s['ex_top3'])} | {money(s['tot'])} | {money(s['equity_delta'])} | "
                  f"{pct(s['mdd_worst'])} | {fnum(s['avg_hold'],1)} 天 |")
     L.append("\n## 2 逐年明细\n")
+    L.append("\n### 2.0 可比口径（剔除复权跳空日强制清仓）\n")
+    L.append("> 复权清仓由撮合层规则（§3.8：除权跳空日按昨收×(1−滑点) 强制清仓）产生，**与 `sell.discount` 无关**，"
+             "且按构造偏正（避开跳空损失）。档位差异只能来自其余出场，故并列此表。\n")
+    L.append("| 档位 | 复权清仓笔数 | 剩余笔数 | 每单位净利 | 胜率 | PF | 剔除前三 | 已实现净利 |")
+    L.append("|---|---|---|---|---|---|---|---|")
+    for t, s in sums.items():
+        e = s["ex_div"]
+        pf = "∞" if e["pf"] == float("inf") else fnum(e["pf"])
+        L.append(f"| {TIER_LABEL[t]} | {s['div_n']} | {e.get('n',0)} | {fnum(e.get('per_unit'),0)} | "
+                 f"{pct(e.get('win_rate'))} | {pf} | {money(e.get('ex_top3'))} | {money(e.get('tot'))} |")
     for t, s in sums.items():
         L.append(f"\n### {TIER_LABEL[t]}\n")
         L.append("| 年 | 笔数 | 每单位净利 | 胜率 | PF | 剔除前三 | 已实现 | 权益变动 | MDD | 水下天数 | 卖单未成交率 |")
@@ -279,6 +309,8 @@ def main():
 
 def _finish_md(L, sums, data):
     L.append("\n## 3 出口分解 · 标签 A（出口来源）\n")
+    L.append("> `dividend_clear` = 复权跳空日强制清仓（成交 `raw_text='sim:dividend'`），撮合层规则产物、"
+             "非策略出口，不参与档位归因；其余按计划单 `reason.signal` 归类。\n")
     for t in sums:
         L.append(f"\n### {TIER_LABEL[t]}\n")
         L.append("| 出口来源 | 笔数 | 已实现净利 | 每单位净利 | 胜率 | 平均持仓 |")
@@ -294,6 +326,15 @@ def _finish_md(L, sums, data):
         for k, s in sorted(data["exit_b"][t].items(), key=lambda kv: -kv[1]["n"]):
             L.append(f"| {k} | {s['n']} | {money(s['tot'])} | {fnum(s['per_unit'],0)} | "
                      f"{pct(s['win_rate'])} | {fnum(s['avg_hold'],1)} 天 |")
+    L.append("\n---\n")
+    L.append("## 5 口径声明\n")
+    L.append("1. **保本胜率** = |平均亏损| ÷ (平均盈利 + |平均亏损|)。历史脚本 `e17_lb4_bt.py` 误用负数直接除，"
+             "得 `−L/(W−L)`（LB-4 off 档显示 −14.5%，正确应为 11.3%），故 LB-4／P1-4 等历史报告的"
+             "「保本胜率」「缺口」两列不可引用；本报告已修正。各实验的判定未使用这两列，主结论不受影响。\n")
+    L.append("2. **每单位净利** = 已实现净利 ÷ Σ单位数，单位数按开仓日权益 × 2% 折出。\n")
+    L.append("3. **权益变动** = 年末权益 − 年初权益（含浮盈）；**已实现净利**只含已平仓。"
+             "讨论出场质量用已实现，账户层用权益变动。\n")
+    L.append("4. **复权清仓**单列，见 §2.0 与标签 A 的 `dividend_clear`。\n")
     md = "\n".join(L)
     (OUT_DIR / "e17_sell_discount_report.md").write_text(md, encoding="utf-8")
     print(f"\n已写 {OUT_DIR / 'e17_sell_discount_report.md'}")
