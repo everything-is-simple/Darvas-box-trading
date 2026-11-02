@@ -75,11 +75,12 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	unitValue := equity * unitPct
 	market := p.regimeLabel(planDate)
 
-	// LB-4 B 类（2026-10-31）：Box 成长速度买入准入门槛，参数 box.max_growth_days（种子化，
-	// migration 0020，默认 0=关闭）。成长速度 = 入场 Box 上轨确认(top_confirmed)到下轨确认
-	// (bottom_confirmed)的交易日数；超过阈值则不产生买单。0 时必须完全短路——不读行情、
-	// 不改 Reason、不改任何输出，保证 off 档与历史基线逐单等价。
-	maxGrowthDays := p.st.ParamRepo.GetInt("box.max_growth_days", 0)
+	// LB-4 B 类（2026-10-31 立项，2026-11-02 投产 ≤6）：Box 成长速度买入准入门槛，
+	// 参数 box.max_growth_days（种子化，migration 0020 种 0，0024 投产改默认 6）。
+	// 成长速度 = 入场 Box 上轨确认(top_confirmed)到下轨确认(bottom_confirmed)的交易日数；
+	// 超过阈值则不产生买单。0 时必须完全短路——不读行情、不改 Reason、不改任何输出，
+	// 保证 off 档与历史基线逐单等价。
+	maxGrowthDays := p.st.ParamRepo.GetInt("box.max_growth_days", 6)
 
 	// P0-3 B 类（2026-10-26）：MA60 闸门实验，参数 gate.ma60.mode = off|half|stop（未种子化，
 	// 回测时经 --set 注入；取不到时默认 off）。off 时必须完全短路——不读指数、不改 Reason、
