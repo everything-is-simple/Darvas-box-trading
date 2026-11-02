@@ -170,28 +170,29 @@
 
 ### §5.1 连通性验证结论（2026-11-02 实测，决策依据）
 
-**当前环境走不通，原因是客户端版本太老 + 客户端未运行，不是代码问题。**
+**最终结论：`tqserver` 通道已打通（升级客户端后 dll 加载 + 接口调用均成功），唯一卡点是鉴权——需要一个「数据服务 Key」，且按积分计费，不是免费匿名接口。**
 
 | 探测项 | 结果 |
 |---|---|
-| 本机 TDX 目录 | `D:\new_tdx64`（主程序 `TdxW.exe`，文件日期 **2026-04-04**） |
-| 是否支持 TQ | **部分**：有 `PYPlugins\sys\tqcenter.py` + `TPythClient.dll`，**但无 `TdxAiData.dll`、无 `tqserver.py`** |
+| 本机 TDX 目录 | `D:\new_tdx64`（**已升级**，含 `PYPlugins\TdxAiData.dll` + `PYPlugins\sys\tqserver.py`） |
 | Python | 3.13.12（WorkBuddy 内置），pandas/numpy 已装 |
-| dll 加载 | `ctypes.CDLL(TPythClient.dll)` **成功**（环境无问题） |
-| `tqcenter` 的 `InitConnect`（客户端未运行时） | 返回 `ErrorId=11：「初始化错误：请确认是否打开通达信客户端」` |
-| 通达信客户端进程 | **未运行**（tasklist 无 TdxW.exe） |
+| `tqserver` import | `from tqserver import tqs` **成功** |
+| `get_divid_factors("600519.SH")` | dll 调用成功，但返回 **`错误码 13「Need TokenKey, Check TdxAiData.in」`** → 空 DataFrame |
+| `get_market_data` | 同样报 `错误码 13`，K 线返回空 |
+| 根因 | `PYPlugins\TdxAiData.ini` 的 `[Token] token=` **为空** |
 
-**两条硬结论：**
+**三条硬结论：**
 
-1. **`tqcenter` 模式硬依赖运行中的通达信客户端**——实测 `InitConnect` 明确报 `ErrorId=11`。要用它，必须先启动 `TdxW.exe` 并登录，且 `get_divid_factors` 实际走的是本地 IPC，拿的是客户端已下载的本地数据。这意味着取数时客户端必须在后台常驻。
+1. **`tqcenter`（旧模式）硬依赖运行中的客户端**——升级前实测 `InitConnect` 报 `ErrorId=11`。现已弃用该路径。
 
-2. **`tqserver` 模式当前不可用**——它依赖 `TdxAiData.dll`，而本机客户端（2026-04-04 版）**没有这个 dll，也没有 `tqserver.py`**。`tqserver` 是更新版本客户端才提供的能力，需要先升级通达信客户端到带 `TdxAiData.dll` 的版本。
+2. **`tqserver`（新模式）已可用，但需要鉴权 TokenKey**——`TdxAiData.ini` 注释原文：「token 请登录通达信个人版商城的会员中心 → 积分和Key管理 → 创建数据服务Key」。**这不是免费匿名接口。**
 
-**因此阶段一的真正前置（二选一）：**
-- **A. 升级客户端** → 获得 `tqserver`（不依赖客户端常驻，最符合「只取数」的定位）；或
-- **B. 保持现状 + 用 `tqcenter`** → 但每次取数前须手动启动并登录 `TdxW.exe`，且取的是客户端本地数据。
+3. **计费方式：按积分消耗**（第三方实测交叉印证）——简单查询约 1 积分，复杂查询约 15 积分；新用户初始送 10,000 积分，每天签到 +100。对「一次性拉全历史除权除息清单」这种批量任务，积分消耗需要先估算。
 
-> 本方案倾向 **A（升级客户端 → 走 tqserver）**，因为它不要求客户端常驻、不引交易通道、纯数据查询，最贴合 §3.3 的边界。是否升级、何时升级，由用户拍板（涉及登录账号与数据下载，AI 不代操作）。
+**阶段一的真正前置（只需你做一步）：**
+> 登录通达信 VIP 商城 `https://vip.tdx.com.cn/` → 会员中心 → 积分和 Key 管理 → 创建 Key（**勾选「通达信数据服务」类型**）→ 把 Key 填进 `D:\new_tdx64\PYPlugins\TdxAiData.ini` 的 `[Token] token=`。
+
+> 填完 Key 后，`tqserver` 即可脱离客户端取数。这是「登录账号 + 生成 Key + 手填 ini」的操作，涉及你的账号凭证，**AI 不代做**；你填好后我再跑一次连通性实测确认打通，并估算批量拉取除权除息清单的积分成本。
 
 ---
 
