@@ -82,6 +82,15 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	// 保证 off 档与历史基线逐单等价。
 	maxGrowthDays := p.st.ParamRepo.GetInt("box.max_growth_days", 6)
 
+	// P3-8（2026-11-03 立项）：升势 + 最高 Box 准入。三参数均未种子化，回测 --set 注入，默认 off。
+	// off 时必须完全短路——不读 Ladder、不改 Reason、不改任何输出，保历史基线逐单等价。
+	//   buy.uptrend_only: off|on —— on 时拦截非「顶底双抬」的买入（硬门槛）。
+	//   buy.highest_box_mode: off|trend|alltime —— trend=近N日最高箱顶 / alltime=历史最高箱顶（择优）。
+	//   buy.highest_box_window: 近 N 交易日（trend 模式用，默认 120）。
+	uptrendOnly := p.st.ParamRepo.GetString("buy.uptrend_only", "off") == "on"
+	highestBoxMode := p.st.ParamRepo.GetString("buy.highest_box_mode", "off")
+	highestBoxWindow := p.st.ParamRepo.GetInt("buy.highest_box_window", 120)
+
 	// P0-3 B 类（2026-10-26）：MA60 闸门实验，参数 gate.ma60.mode = off|half|stop（未种子化，
 	// 回测时经 --set 注入；取不到时默认 off）。off 时必须完全短路——不读指数、不改 Reason、
 	// 不改任何输出，保证 bt_b12_off 与 bt_e17 历史基线逐单等价（等价性由 2014 对照跑验证）。
@@ -171,6 +180,15 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 						continue
 					}
 				}
+			}
+			// P3-8（2026-11-03）：升势硬门槛 + 最高 Box 择优。off 时完全短路（不读 Ladder）。
+			if uptrendOnly && !p.isUptrend(box) {
+				p.log.Printf("升势拦截 %s：Box#%d (top=%.2f,bottom=%.2f) 非顶底双抬", s.Code, box.ID, box.Top, box.Bottom)
+				continue
+			}
+			if highestBoxMode != "off" && !p.isHighestBox(box, highestBoxMode, highestBoxWindow, planDate) {
+				p.log.Printf("最高Box拦截 %s：Box#%d (top=%.2f) 非%s最高", s.Code, box.ID, box.Top, highestBoxMode)
+				continue
 			}
 			// A M1（2026-10-23）：首买单位由 A 判据升势决定（升势 2 / 其余 1），winner 5x 退役。
 			o := p.buyOrder(s, box, market, unitValue,
@@ -512,6 +530,68 @@ func (p *Planner) equityBudget(planDate string, equity, unitValue float64) *equi
 		b.used += n
 	}
 	return b
+}
+
+// isUptrend 判断当前 Box 是否处于升势（顶底双抬）：
+// 沿 box.prev_box_id 链找前驱，要求当前 top > 前驱 top 且 bottom > 前驱 bottom。
+// 前驱缺失（prev_box_id=0 或库内无此 id）时保守放行（不拦截），与框架 §3.2 一致。
+func (p *Planner) isUptrend(box *contract.Box) bool {
+	if box.PrevBoxID == 0 {
+		return true // 首级箱体，无前驱可比，保守放行
+	}
+	ladder, err := p.st.BoxRepo.Ladder(box.Code)
+	if err != nil {
+		return true // 读取失败，保守放行
+	}
+	var prev *contract.Box
+	for i := range ladder {
+		if ladder[i].ID == box.PrevBoxID {
+			prev = &ladder[i]
+			break
+		}
+	}
+	if prev == nil {
+		return true // 前驱不存在，保守放行
+	}
+	// 顶底双抬：整个箱体区间上移（达瓦斯「金字塔层层叠加」的完整含义）
+	return box.Top > prev.Top && box.Bottom > prev.Bottom
+}
+
+// isHighestBox 判断当前 Box 是否处于「最高 Box」：
+//   - mode=alltime：当前 box.Top 是该票全部箱体的 top 极值（创历史新高）。
+//   - mode=trend：当前 box.Top 是近 N 交易日（broken_date 距 planDate ≤ N）内的 top 极值。
+//
+// 容差用相对 1e-9 比较（浮点相等）；Ladder 含 forming/invalid，但 forming 的 top 可能为 0，
+// 取 max 时自然被排除。broken_date 为空（forming）的 box 不参与 trend 窗口判定。
+func (p *Planner) isHighestBox(box *contract.Box, mode string, windowN int, planDate string) bool {
+	ladder, err := p.st.BoxRepo.Ladder(box.Code)
+	if err != nil || len(ladder) == 0 {
+		return false // 读取失败或无箱体，不满足「最高」
+	}
+	maxTop := box.Top
+	for i := range ladder {
+		b := &ladder[i]
+		if b.Top <= 0 {
+			continue // forming(0,0) 或非法箱体
+		}
+		switch mode {
+		case "alltime":
+			if b.Top > maxTop {
+				maxTop = b.Top
+			}
+		case "trend":
+			if b.BrokenDate == "" || b.BrokenDate > planDate {
+				continue // 无破位日或未来箱体，不参与窗口
+			}
+			if n, err := p.st.BarRepo.BarCount(box.Code, b.BrokenDate, planDate); err == nil && n <= windowN {
+				if b.Top > maxTop {
+					maxTop = b.Top
+				}
+			}
+		}
+	}
+	// 当前 box 是否就是最高（浮点容差）
+	return box.Top >= maxTop-1e-9
 }
 
 // buyOrder 构造停损买单（A M1：首买，一律不加码）。

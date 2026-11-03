@@ -219,6 +219,9 @@
 | 单票上限 | `pos.single_limit` | 0.08 | 同上，单票 ≤8% 权益 |
 | **MA60 闸门模式** | `gate.ma60.mode` | **stop** | 回测注入（不种子化）：B-2 擂主规则，指数收盘 < MA60 时停买 |
 | **MA60 镜子** | `gate.ma60.index` | A=sh000001 / B=sh000905 | 回测注入：双镜对照（上证 vs 中证500），默认 sh000001 |
+| 升势准入门槛 | `buy.uptrend_only` | off | 回测注入（不种子化，P3-8 2026-11-03）：on 时拦截非「顶底双抬」的买入 |
+| 最高Box模式 | `buy.highest_box_mode` | off | 回测注入（不种子化，P3-8）：off/trend（近N日最高）/alltime（历史最高） |
+| 最高Box窗口 | `buy.highest_box_window` | 120 | trend 模式的近 N 交易日窗口（60/120/250 待验） |
 
 > **`regime.a.*` 三项**（`lookback=60 / up_bias=1.002 / down_bias=0.998`）**代码默认值、未种子化**，
 > 影响「首买 2 单位 vs 1 单位」，从未调过 → 待立项梯度验证。

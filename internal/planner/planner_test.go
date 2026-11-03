@@ -1107,3 +1107,113 @@ func TestTrackingChain(t *testing.T) {
 		t.Errorf("position.entry_box_id=%d want %d（追踪链断裂：reason.box_id 未传导到持仓）", pos.EntryBoxID, boxes[0].ID)
 	}
 }
+
+// TestIsUptrendTopBottomBothRise 顶底双抬 → 升势。
+func TestIsUptrendTopBottomBothRise(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600001"
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
+	// prev(id=1): top=10 bottom=9；current(id=2, prev=1): top=12 bottom=10 → 顶底双抬
+	if _, err := st.DB().Exec(`INSERT INTO box(id, code, top, bottom, top_confirmed, bottom_confirmed, status, prev_box_id, broken_date)
+		VALUES (1, ?, 10, 9, '2026-10-01', '2026-09-28', 'broken_up', NULL, '2026-10-06'),
+		       (2, ?, 12, 10, '2026-10-08', '2026-10-06', 'broken_up', 1, '2026-10-13')`, code, code); err != nil {
+		t.Fatal(err)
+	}
+	p := New(st)
+	cur := &contract.Box{ID: 2, Code: code, Top: 12, Bottom: 10, PrevBoxID: 1}
+	if !p.isUptrend(cur) {
+		t.Fatalf("顶底双抬应判升势，实际 false")
+	}
+}
+
+// TestIsUptrendTopRiseBottomNot 顶抬底不抬 → 非升势。
+func TestIsUptrendTopRiseBottomNot(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600002"
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
+	// prev(id=1): top=10 bottom=9；current(id=2, prev=1): top=12 bottom=8 → 顶抬底降，非双抬
+	if _, err := st.DB().Exec(`INSERT INTO box(id, code, top, bottom, top_confirmed, bottom_confirmed, status, prev_box_id, broken_date)
+		VALUES (1, ?, 10, 9, '2026-10-01', '2026-09-28', 'broken_up', NULL, '2026-10-06'),
+		       (2, ?, 12, 8, '2026-10-08', '2026-10-06', 'broken_up', 1, '2026-10-13')`, code, code); err != nil {
+		t.Fatal(err)
+	}
+	p := New(st)
+	cur := &contract.Box{ID: 2, Code: code, Top: 12, Bottom: 8, PrevBoxID: 1}
+	if p.isUptrend(cur) {
+		t.Fatalf("顶抬底降应判非升势，实际 true")
+	}
+}
+
+// TestIsUptrendNoPrev 首级箱体（prev=0）→ 保守放行为升势。
+func TestIsUptrendNoPrev(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600003"
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
+	p := New(st)
+	cur := &contract.Box{ID: 9, Code: code, Top: 10, Bottom: 9, PrevBoxID: 0}
+	if !p.isUptrend(cur) {
+		t.Fatalf("首级箱体应保守放行为升势，实际 false")
+	}
+}
+
+// TestIsHighestBoxAlltime 历史最高：当前 box 是全部箱体中 top 最大 → true；否则 false。
+func TestIsHighestBoxAlltime(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600004"
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
+	if _, err := st.DB().Exec(`INSERT INTO box(id, code, top, bottom, top_confirmed, bottom_confirmed, status, prev_box_id, broken_date)
+		VALUES (1, ?, 10, 8, '2026-10-01', '2026-09-28', 'broken_up', NULL, '2026-10-06'),
+		       (2, ?, 15, 12, '2026-10-08', '2026-10-06', 'broken_up', 1, '2026-10-13'),
+		       (3, ?, 13, 11, '2026-10-15', '2026-10-13', 'broken_up', 2, '2026-10-20')`, code, code, code); err != nil {
+		t.Fatal(err)
+	}
+	p := New(st)
+	// id=2(top=15) 是历史最高；id=3(top=13) 不是
+	if !p.isHighestBox(&contract.Box{ID: 2, Code: code, Top: 15, PrevBoxID: 1}, "alltime", 120, "2026-10-21") {
+		t.Fatalf("id=2 top=15 应是历史最高，实际 false")
+	}
+	if p.isHighestBox(&contract.Box{ID: 3, Code: code, Top: 13, PrevBoxID: 2}, "alltime", 120, "2026-10-21") {
+		t.Fatalf("id=3 top=13 不是历史最高，实际 true")
+	}
+}
+
+// TestIsHighestBoxTrend 本轮趋势（近 N 日）最高：窗口外的历史最高不计入。
+func TestIsHighestBoxTrend(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600005"
+	st.SecRepo.UpsertSecurities([]contract.Security{store.DeriveSecurity(code, "")})
+	// 老箱体(id=1, broken 2026-01-05) top=50（历史最高，但超窗）；近箱体 id=2 top=20、id=3 top=22
+	if _, err := st.DB().Exec(`INSERT INTO box(id, code, top, bottom, top_confirmed, bottom_confirmed, status, prev_box_id, broken_date)
+		VALUES (1, ?, 50, 40, '2025-12-20', '2025-12-18', 'broken_up', NULL, '2026-01-05'),
+		       (2, ?, 20, 18, '2026-10-01', '2026-09-28', 'broken_up', 1, '2026-10-06'),
+		       (3, ?, 22, 19, '2026-10-08', '2026-10-06', 'broken_up', 2, '2026-10-13')`, code, code, code); err != nil {
+		t.Fatal(err)
+	}
+	// 播 daily_bar：2026-01-05 到 2026-10-20 之间有 10-06/10-13 两根，故 BarCount(01-05→10-20)=2。
+	// 用 window=2 时：id=1(broken 01-05) 距 planDate 有 2 根 bar → 恰在窗内（top=50 会进来）。
+	// 为让 id=1 明确超窗，改用 window=1：只有 broken 距今 ≤1 根 bar 的 box 入窗。
+	//   id=1(01-05) 距 10-20 有 2 根 bar > 1 → 超窗；id=2(10-06)/id=3(10-13) 距 10-20 各 0 根 → 在窗内。
+	bars := []contract.DailyBar{
+		{Code: code, Date: "2026-01-05", Open: 20, High: 20, Low: 20, Close: 20, Volume: 100, Amount: 1e5},
+		{Code: code, Date: "2026-10-06", Open: 20, High: 20, Low: 20, Close: 20, Volume: 100, Amount: 1e5},
+		{Code: code, Date: "2026-10-13", Open: 20, High: 20, Low: 20, Close: 20, Volume: 100, Amount: 1e5},
+		{Code: code, Date: "2026-10-20", Open: 20, High: 20, Low: 20, Close: 20, Volume: 100, Amount: 1e5},
+	}
+	if _, err := st.BarRepo.UpsertBars(bars); err != nil {
+		t.Fatal(err)
+	}
+	p := New(st)
+	// window=1：id=1 的 top=50 超窗不计，窗口内最高是 id=3(top=22)。
+	if !p.isHighestBox(&contract.Box{ID: 3, Code: code, Top: 22, PrevBoxID: 2}, "trend", 1, "2026-10-20") {
+		t.Fatalf("window=1 时 id=3(top=22) 应为窗口内最高，实际 false")
+	}
+	// id=2(top=20) 在窗口内但不是最高（id=3 的 22 更高）。
+	if p.isHighestBox(&contract.Box{ID: 2, Code: code, Top: 20, PrevBoxID: 1}, "trend", 1, "2026-10-20") {
+		t.Fatalf("window=1 时 id=2(top=20) 不是窗口内最高，实际 true")
+	}
+	// 对比：alltime 下 id=3 不是最高（id=1 的 top=50 是历史最高）。
+	if p.isHighestBox(&contract.Box{ID: 3, Code: code, Top: 22, PrevBoxID: 2}, "alltime", 1, "2026-10-20") {
+		t.Fatalf("alltime 下 id=3(top=22) 不是历史最高（id=1 top=50），实际 true")
+	}
+}
+
