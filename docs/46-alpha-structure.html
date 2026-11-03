@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>darvas-box alpha 结构图</title>
+<style>
+  :root { --bg:#ffffff; --surface:#f5f5f3; --text:#1a1a1a; --muted:#6b6b6b; --border:#e5e5e0; --up:#E24B4A; --down:#1D9E75; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); padding:2rem 1.5rem; max-width:860px; margin:0 auto; line-height:1.6; }
+  h1 { font-size:20px; font-weight:600; margin-bottom:4px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:1.5rem; }
+  h2 { font-size:16px; font-weight:600; margin:2rem 0 0.75rem; }
+  .card { background:var(--bg); border:0.5px solid var(--border); border-radius:12px; padding:1.25rem 1.5rem; margin-bottom:1rem; }
+  .legend { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:10px; font-size:12px; color:var(--muted); }
+  .legend span { display:flex; align-items:center; gap:5px; }
+  .sw { width:10px; height:10px; border-radius:2px; display:inline-block; }
+  .chartbox { position:relative; width:100%; height:320px; }
+  .metricgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
+  .metric { background:var(--surface); border-radius:8px; padding:1rem; }
+  .metric .lbl { font-size:13px; color:var(--muted); }
+  .metric .num { font-size:24px; font-weight:600; }
+  .metric .note { font-size:12px; color:var(--muted); }
+  .note { font-size:12px; color:var(--muted); margin-top:0.75rem; }
+</style>
+</head>
+<body>
+<h1>darvas-box alpha 结构图</h1>
+<p class="sub">配套 docs/46-alpha-and-experiment-value.md · 数据源 docs/experiments/e17_baseline_single_index_report.md</p>
+
+<h2>一、各年盈亏贡献（2005–2018）</h2>
+<div class="card">
+  <div class="legend">
+    <span><span class="sw" style="background:var(--up)"></span>盈利年（涨）</span>
+    <span><span class="sw" style="background:var(--down)"></span>亏损年（跌）</span>
+  </div>
+  <div class="chartbox"><canvas id="yearChart" role="img" aria-label="各年收益率柱状图"></canvas></div>
+  <p class="note">三个利润集中年：2006 +35.1%、2007 +114.4%、2015 +34.1%；其余 11 年合计净贡献 ≈ +3.0%。</p>
+</div>
+
+<h2>二、形态三要素：低胜率 · 高赔率 · 右尾集中</h2>
+<div class="card">
+  <div class="metricgrid">
+    <div class="metric"><div class="lbl">胜率（2010 震荡年）</div><div class="num">14.7%</div><div class="note">2007 牛年也仅 33.7%</div></div>
+    <div class="metric"><div class="lbl">盈亏比 PF（2007）</div><div class="num">2.81</div><div class="note">赚的是亏的近 3 倍</div></div>
+    <div class="metric"><div class="lbl">前 3 笔赢家占比</div><div class="num">53%</div><div class="note">2007 年总净利的一半</div></div>
+  </div>
+  <div class="legend"><span><span class="sw" style="background:var(--up)"></span>前 N 笔赢家累计占总净利比例</span></div>
+  <div class="chartbox" style="height:260px;"><canvas id="concChart" role="img" aria-label="利润集中度柱状图"></canvas></div>
+  <p class="note">前 1 / 3 / 5 / 10 笔赢家占总净利 30.4% / 53.0% / 73.6% / 111.5%（前 10 笔已超过总净利，靠后续亏损笔抵消）。</p>
+</div>
+
+<h2>三、防守端：MA60 闸门前后</h2>
+<div class="card">
+  <div class="metricgrid">
+    <div class="metric"><div class="lbl">MDD（闸门 off → stop）</div><div class="num">−21% → −8%</div><div class="note">回撤砍去 62%</div></div>
+    <div class="metric"><div class="lbl">水下天数</div><div class="num">1657 → 868</div><div class="note">砍去 48%</div></div>
+    <div class="metric"><div class="lbl">Calmar</div><div class="num">0.79 → 1.01</div><div class="note">+27%</div></div>
+  </div>
+  <p class="note">B-2 实验三判据全过：Σ改善 +132,136、亏损年减亏 66.2%、剔最佳年仍 +63,486。</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const years=['2005','2006','2007','2008','2009','2010','2011','2012','2013','2014','2015','2016','2017','2018'];
+const vals=[-0.51,35.10,114.40,-1.14,14.39,-0.84,-7.14,1.34,-0.31,14.58,34.08,-0.31,0.19,-4.97];
+const colors=vals.map(v=>v>=0?'#E24B4A':'#1D9E75');
+new Chart(document.getElementById('yearChart'),{
+  type:'bar', data:{labels:years,datasets:[{data:vals,backgroundColor:colors,borderRadius:3}]},
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+c.parsed.y.toFixed(2)+'%'}}},
+    scales:{x:{ticks:{autoSkip:false,maxRotation:45,minRotation:45}},y:{ticks:{callback:v=>v+'%'},grid:{color:'rgba(0,0,0,0.08)'}}}}
+});
+new Chart(document.getElementById('concChart'),{
+  type:'bar', data:{labels:['前 1 笔','前 3 笔','前 5 笔','前 10 笔'],datasets:[{data:[30.4,53.0,73.6,111.5],backgroundColor:'#E24B4A',borderRadius:3}]},
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' 占总净利 '+c.parsed.y.toFixed(1)+'%'}}},
+    scales:{x:{ticks:{autoSkip:false}},y:{ticks:{callback:v=>v+'%'},grid:{color:'rgba(0,0,0,0.08)'},suggestedMax:120}}}
+});
+</script>
+</body>
+</html>

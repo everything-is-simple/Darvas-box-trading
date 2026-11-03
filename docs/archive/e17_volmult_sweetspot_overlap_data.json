@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-11-03 17:54:46",
+  "funnel": {
+    "dbs": 14,
+    "filled": 1560,
+    "no_bar": 0,
+    "no_vol": 0,
+    "no_ndist": 0
+  },
+  "n_total": 1560,
+  "n_vol": 1560,
+  "n_sweet": 138,
+  "n_both": 138,
+  "p_vol_given_sweet": 100.0,
+  "p_sweet_given_vol": 8.85,
+  "expected_both_if_independent": 138.0,
+  "ratio_obs_exp": 1.0,
+  "verdict": "降级关闭：两条件高度重叠（>70%），组合≈单参数，无新增信息",
+  "volratio_threshold": 1.5,
+  "sweet_band": [
+    2.0,
+    4.0
+  ]
+}

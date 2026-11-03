@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达瓦斯交易场景与参数全景</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg2: #f6f5f1;
+  --text: #2c2c2a;
+  --muted: #5f5e5a;
+  --border: #e2e0d8;
+  --purple: #534ab7;
+  --blue: #185fa5;
+  --green: #3b6d11;
+  --coral: #993c1d;
+  --amber: #854f0b;
+  --red: #a32d2d;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--text);
+  background: var(--bg2);
+  line-height: 1.6;
+}
+.wrap { max-width: 880px; margin: 0 auto; padding: 32px 24px 64px; }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+.sub { color: var(--muted); font-size: 14px; margin: 0 0 28px; }
+h2 { font-size: 17px; font-weight: 600; margin: 36px 0 12px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+.card { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+.card svg { width: 100%; height: auto; display: block; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--bg); border-radius: 8px; overflow: hidden; }
+th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { background: var(--bg2); font-weight: 600; font-size: 12px; color: var(--muted); }
+td.k { font-family: "SF Mono", Consolas, monospace; font-size: 12px; white-space: nowrap; }
+td.v { font-family: "SF Mono", Consolas, monospace; font-size: 12px; white-space: nowrap; }
+.tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; white-space: nowrap; }
+.tag.on { background: #eaf3de; color: var(--green); }
+.tag.off { background: #f1efe8; color: var(--muted); }
+.mod { font-size: 14px; font-weight: 600; padding: 12px 0 4px; }
+.note { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.hl { color: var(--red); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>达瓦斯交易场景与参数全景</h1>
+<p class="sub">模拟交易三大场景 + 全部 38 个参数对照 · 生成于 2026-11-03</p>
+
+<h2>场景一：买入决策链</h2>
+<div class="card">
+<svg viewBox="0 0 680 560" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>达瓦斯买入决策链与参数</title>
+<desc>从候选筛选到下单的买入流程，标注各环节参数</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<text x="40" y="30" font-size="15" font-weight="500" fill="#2C2C2A">买入决策链（信号 → 下单）</text>
+<g>
+<rect x="40" y="48" width="180" height="56" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="130" y="70" font-size="14" font-weight="500" text-anchor="middle" fill="#26215C">候选筛选</text>
+<text x="130" y="90" font-size="12" text-anchor="middle" fill="#534AB7">RS超额≥0.20 · 成交额≥5000万</text>
+</g>
+<path d="M220 76 L260 76" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<g>
+<rect x="260" y="48" width="180" height="56" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="350" y="70" font-size="14" font-weight="500" text-anchor="middle" fill="#26215C">入池观察</text>
+<text x="350" y="90" font-size="12" text-anchor="middle" fill="#534AB7">min_watch_days=3 · maxwatch=8</text>
+</g>
+<path d="M440 76 L480 76" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<g>
+<rect x="480" y="48" width="160" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="560" y="70" font-size="14" font-weight="500" text-anchor="middle" fill="#0C447C">突破确认</text>
+<text x="560" y="90" font-size="12" text-anchor="middle" fill="#185FA5">放量 volmult=2.0</text>
+</g>
+<path d="M560 104 L560 140" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<g>
+<rect x="400" y="140" width="240" height="64" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="520" y="162" font-size="14" font-weight="500" text-anchor="middle" fill="#0C447C">准入过滤（P3-8，默认 off）</text>
+<text x="520" y="182" font-size="12" text-anchor="middle" fill="#185FA5">升势=顶底双抬 · 最高Box择优</text>
+<text x="520" y="198" font-size="11" text-anchor="middle" fill="#378ADD">uptrend_only · highest_box_mode · window=120</text>
+</g>
+<path d="M520 204 L520 240" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<g>
+<rect x="400" y="240" width="240" height="64" rx="10" fill="#EAF3DE" stroke="#3B6D11" stroke-width="0.5"/>
+<text x="520" y="262" font-size="14" font-weight="500" text-anchor="middle" fill="#173404">阶梯制定仓位</text>
+<text x="520" y="282" font-size="12" text-anchor="middle" fill="#3B6D11">距52周新高越近 → 仓位越大</text>
+<text x="520" y="298" font-size="11" text-anchor="middle" fill="#639922">lookback=252 · cutoff=40 · 1单位=2%权益</text>
+</g>
+<path d="M400 272 L260 272 L260 360" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<g>
+<rect x="170" y="360" width="180" height="44" rx="10" fill="#EAF3DE" stroke="#3B6D11" stroke-width="0.5"/>
+<text x="260" y="382" font-size="13" font-weight="500" text-anchor="middle" fill="#173404">四档：t1=3 · t2=2 · t3=1 · t4=0.5</text>
+</g>
+<path d="M520 304 L520 340" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<g>
+<rect x="400" y="340" width="240" height="56" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+<text x="520" y="362" font-size="14" font-weight="500" text-anchor="middle" fill="#4A1B0C">下单撮合</text>
+<text x="520" y="382" font-size="12" text-anchor="middle" fill="#993C1D">触发价=箱顶×1.03 · 滑点0.2%</text>
+</g>
+<path d="M520 396 L520 432" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<g>
+<rect x="400" y="432" width="240" height="56" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+<text x="520" y="454" font-size="14" font-weight="500" text-anchor="middle" fill="#4A1B0C">初始止损</text>
+<text x="520" y="474" font-size="12" text-anchor="middle" fill="#993C1D">止损价 = 箱顶 × 0.97</text>
+</g>
+<g>
+<rect x="400" y="500" width="240" height="44" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="520" y="522" font-size="12" text-anchor="middle" fill="#2C2C2A">上限：max_hold=14只 · single=8%</text>
+</g>
+</svg>
+</div>
+
+<h2>场景二：持仓期止损上移</h2>
+<div class="card">
+<svg viewBox="0 0 680 420" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>止损上移机制</title>
+<desc>持仓期止损随新箱体上移的规则</desc>
+<defs>
+<marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<text x="40" y="30" font-size="15" font-weight="500" fill="#2C2C2A">持仓期：止损上移（M4.4）</text>
+<g>
+<rect x="40" y="52" width="200" height="120" rx="12" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="140" y="76" font-size="14" font-weight="500" text-anchor="middle" fill="#26215C">入场箱体</text>
+<text x="140" y="98" font-size="12" text-anchor="middle" fill="#534AB7">买入价 = 箱顶 × 1.03</text>
+<text x="140" y="118" font-size="12" text-anchor="middle" fill="#534AB7">初始止损 = 箱顶 × 0.97</text>
+<text x="140" y="140" font-size="11" text-anchor="middle" fill="#7F77DD">入场箱体不参与上移</text>
+</g>
+<path d="M240 112 L290 112" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow2)"/>
+<g>
+<rect x="290" y="52" width="220" height="120" rx="12" fill="#EAF3DE" stroke="#3B6D11" stroke-width="0.5"/>
+<text x="400" y="76" font-size="14" font-weight="500" text-anchor="middle" fill="#173404">新箱体确认</text>
+<text x="400" y="98" font-size="12" text-anchor="middle" fill="#3B6D11">下轨 BottomConfirmed ≠ 空</text>
+<text x="400" y="118" font-size="12" text-anchor="middle" fill="#3B6D11">且下轨已 3 日确认</text>
+<text x="400" y="140" font-size="11" text-anchor="middle" fill="#639922">最新非 forming 箱体</text>
+</g>
+<path d="M510 112 L560 112" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow2)"/>
+<g>
+<rect x="560" y="52" width="80" height="120" rx="12" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="600" y="108" font-size="14" font-weight="500" text-anchor="middle" fill="#501313">上移？</text>
+<text x="600" y="128" font-size="11" text-anchor="middle" fill="#A32D2D">cand&gt;现止损</text>
+</g>
+<path d="M600 172 L600 220" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow2)"/>
+<g>
+<rect x="430" y="220" width="220" height="56" rx="10" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="540" y="242" font-size="14" font-weight="500" text-anchor="middle" fill="#501313">新止损 = 新箱体下轨 × 0.97</text>
+<text x="540" y="262" font-size="12" text-anchor="middle" fill="#A32D2D">只上移、永不下降（触发器兜底拒绝）</text>
+</g>
+<text x="40" y="330" font-size="13" font-weight="500" fill="#2C2C2A">示意图：止损价逐箱上移</text>
+<g>
+<line x1="60" y1="380" x2="620" y2="380" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="60" y="400" font-size="11" fill="#5F5E5A">入场上轨0.97</text>
+<text x="180" y="366" font-size="11" fill="#5F5E5A">新箱下轨×0.97</text>
+<text x="330" y="352" font-size="11" fill="#5F5E5A">再上移</text>
+<text x="500" y="338" font-size="11" fill="#5F5E5A">继续上移</text>
+<circle cx="90" cy="380" r="5" fill="#888780"/>
+<circle cx="210" cy="368" r="5" fill="#639922"/>
+<circle cx="360" cy="356" r="5" fill="#639922"/>
+<circle cx="520" cy="344" r="5" fill="#639922"/>
+<path d="M90 380 L210 368 L360 356 L520 344" fill="none" stroke="#639922" stroke-width="1.5"/>
+</g>
+</svg>
+</div>
+
+<h2>场景三：卖出六出口</h2>
+<div class="card">
+<svg viewBox="0 0 680 470" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>卖出出口六分类</title>
+<desc>持仓清仓的六种出口及对应参数</desc>
+<defs>
+<marker id="arrow3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<text x="40" y="30" font-size="15" font-weight="500" fill="#2C2C2A">卖出出口六分类（close_reason）</text>
+<g>
+<rect x="250" y="48" width="180" height="44" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="340" y="70" font-size="14" font-weight="500" text-anchor="middle" fill="#2C2C2A">持仓中</text>
+</g>
+<path d="M340 92 L340 112" fill="none" stroke="#888780" stroke-width="1.5"/>
+<path d="M120 112 L560 112" fill="none" stroke="#888780" stroke-width="1.5"/>
+<path d="M120 112 L120 132" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow3)"/>
+<path d="M230 112 L230 132" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow3)"/>
+<path d="M340 112 L340 132" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow3)"/>
+<path d="M450 112 L450 132" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow3)"/>
+<path d="M560 112 L560 132" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow3)"/>
+<g>
+<rect x="40" y="132" width="160" height="110" rx="10" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="120" y="156" font-size="14" font-weight="500" text-anchor="middle" fill="#501313">stop</text>
+<text x="120" y="176" font-size="12" text-anchor="middle" fill="#A32D2D">首腿紧止损</text>
+<text x="120" y="194" font-size="11" text-anchor="middle" fill="#A32D2D">initial_stop</text>
+<text x="120" y="214" font-size="11" text-anchor="middle" fill="#A32D2D">跌破初始止损价</text>
+</g>
+<g>
+<rect x="220" y="132" width="160" height="110" rx="10" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="300" y="156" font-size="14" font-weight="500" text-anchor="middle" fill="#501313">stop_box</text>
+<text x="300" y="176" font-size="12" text-anchor="middle" fill="#A32D2D">跌破箱体下轨</text>
+<text x="300" y="194" font-size="11" text-anchor="middle" fill="#A32D2D">stop</text>
+<text x="300" y="214" font-size="11" text-anchor="middle" fill="#A32D2D">trigger=箱底×0.97</text>
+</g>
+<g>
+<rect x="400" y="132" width="160" height="110" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+<text x="480" y="156" font-size="14" font-weight="500" text-anchor="middle" fill="#4A1B0C">failed_breakout</text>
+<text x="480" y="176" font-size="12" text-anchor="middle" fill="#993C1D">突破失败跌回</text>
+<text x="480" y="194" font-size="11" text-anchor="middle" fill="#993C1D">假突破回落</text>
+<text x="480" y="214" font-size="11" text-anchor="middle" fill="#993C1D">回踩箱内卖出</text>
+</g>
+<g>
+<rect x="40" y="272" width="160" height="110" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="120" y="296" font-size="14" font-weight="500" text-anchor="middle" fill="#412402">time_stop</text>
+<text x="120" y="316" font-size="12" text-anchor="middle" fill="#854F0B">无利时间止损</text>
+<text x="120" y="334" font-size="11" text-anchor="middle" fill="#854F0B">time_stop_noprofit</text>
+<text x="120" y="354" font-size="11" text-anchor="middle" fill="#854F0B">staledays=2</text>
+</g>
+<g>
+<rect x="220" y="272" width="160" height="110" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="300" y="296" font-size="14" font-weight="500" text-anchor="middle" fill="#412402">dividend_clear</text>
+<text x="300" y="316" font-size="12" text-anchor="middle" fill="#854F0B">除权除息强平</text>
+<text x="300" y="334" font-size="11" text-anchor="middle" fill="#854F0B">sim:dividend</text>
+<text x="300" y="354" font-size="11" text-anchor="middle" fill="#854F0B">除权日清仓</text>
+</g>
+<g>
+<rect x="400" y="272" width="160" height="110" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="480" y="296" font-size="14" font-weight="500" text-anchor="middle" fill="#2C2C2A">manual</text>
+<text x="480" y="316" font-size="12" text-anchor="middle" fill="#5F5E5A">人工卖出</text>
+<text x="480" y="334" font-size="11" text-anchor="middle" fill="#5F5E5A">无订单非除权</text>
+<text x="480" y="354" font-size="11" text-anchor="middle" fill="#5F5E5A">兜底出口</text>
+</g>
+<text x="40" y="416" font-size="12" fill="#5F5E5A">参数关联：止损折扣 sell.discount=0.97 · 无利止损 position.staledays=2 · 除权清仓价=当日收盘</text>
+<text x="40" y="438" font-size="12" fill="#5F5E5A">说明：63% 的出口由 time_stop（staledays=2）制造；「复权清仓正收益」实为跌停日逃顶（已修除权识别 bug）</text>
+</svg>
+</div>
+
+<h2>场景四：市场环境层（交易层的前置输入）</h2>
+<div class="card">
+<svg viewBox="0 0 680 500" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>市场环境层判定</title>
+<desc>MA60闸门、体制识别、箱体成型三块参数的判定流程</desc>
+<defs>
+<marker id="arrow4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<text x="40" y="30" font-size="15" font-weight="500" fill="#2C2C2A">市场环境层（交易层的前置输入）</text>
+<g>
+<rect x="40" y="50" width="280" height="72" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="180" y="74" font-size="14" font-weight="500" text-anchor="middle" fill="#0C447C">MA60 市场闸门</text>
+<text x="180" y="94" font-size="12" text-anchor="middle" fill="#185FA5">大盘（上证 sh000001）跌破 60 日线</text>
+<text x="180" y="112" font-size="11" text-anchor="middle" fill="#378ADD">mode=stop → 熊市止损 · 新买禁入</text>
+</g>
+<path d="M320 86 L360 86" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow4)"/>
+<g>
+<rect x="360" y="50" width="280" height="72" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="500" y="74" font-size="14" font-weight="500" text-anchor="middle" fill="#26215C">体制识别（regime）</text>
+<text x="500" y="94" font-size="12" text-anchor="middle" fill="#534AB7">市场宽度判定牛 / 猴 / 熊</text>
+<text x="500" y="112" font-size="11" text-anchor="middle" fill="#7F77DD">window=20 · bull=0.55 · bear=0.40</text>
+</g>
+<path d="M500 122 L500 150" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow4)"/>
+<g>
+<rect x="360" y="150" width="280" height="90" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="500" y="174" font-size="14" font-weight="500" text-anchor="middle" fill="#26215C">三态输出</text>
+<text x="500" y="196" font-size="12" text-anchor="middle" fill="#534AB7">牛（放宽）· 猴（正常）· 熊（收紧）</text>
+<text x="500" y="216" font-size="11" text-anchor="middle" fill="#7F77DD">confirm=3 日 · min_history=60</text>
+</g>
+<path d="M180 122 L180 200 L300 200 L300 240" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow4)"/>
+<g>
+<rect x="160" y="240" width="280" height="90" rx="10" fill="#EAF3DE" stroke="#3B6D11" stroke-width="0.5"/>
+<text x="300" y="264" font-size="14" font-weight="500" text-anchor="middle" fill="#173404">箱体成型</text>
+<text x="300" y="286" font-size="12" text-anchor="middle" fill="#3B6D11">横盘区间 → 顶底确认 → 箱体成立</text>
+<text x="300" y="306" font-size="11" text-anchor="middle" fill="#639922">min_width=5% · volwindow=50</text>
+<text x="300" y="324" font-size="11" text-anchor="middle" fill="#639922">flatboxmax=4（平箱上限）</text>
+</g>
+<path d="M440 285 L560 285 L560 240" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow4)"/>
+<g>
+<rect x="460" y="240" width="180" height="72" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="550" y="266" font-size="14" font-weight="500" text-anchor="middle" fill="#2C2C2A">输出：候选股票池</text>
+<text x="550" y="288" font-size="12" text-anchor="middle" fill="#5F5E5A">进入交易层</text>
+</g>
+<text x="40" y="380" font-size="13" font-weight="500" fill="#2C2C2A">整体分层关系</text>
+<g>
+<rect x="40" y="396" width="180" height="56" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="130" y="418" font-size="13" font-weight="500" text-anchor="middle" fill="#2C2C2A">市场环境层</text>
+<text x="130" y="438" font-size="11" text-anchor="middle" fill="#5F5E5A">闸门 + 体制 + 箱体</text>
+</g>
+<path d="M220 424 L260 424" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow4)"/>
+<g>
+<rect x="260" y="396" width="180" height="56" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="350" y="418" font-size="13" font-weight="500" text-anchor="middle" fill="#26215C">交易层</text>
+<text x="350" y="438" font-size="11" text-anchor="middle" fill="#534AB7">买入 / 止损上移 / 卖出</text>
+</g>
+<path d="M440 424 L480 424" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow4)"/>
+<g>
+<rect x="480" y="396" width="160" height="56" rx="10" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="560" y="418" font-size="13" font-weight="500" text-anchor="middle" fill="#501313">成本层</text>
+<text x="560" y="438" font-size="11" text-anchor="middle" fill="#A32D2D">费用 fee.*</text>
+</g>
+</svg>
+</div>
+
+<h2>场景五：成本与权益预算</h2>
+<div class="card">
+<svg viewBox="0 0 680 320" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>成本与权益预算</title>
+<desc>费用与权益预算参数补遗</desc>
+<defs>
+<marker id="arrow5" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<text x="40" y="30" font-size="15" font-weight="500" fill="#2C2C2A">成本与权益预算（补遗）</text>
+<text x="40" y="66" font-size="13" font-weight="500" fill="#5F5E5A">成本层 · 费用（fee.*）—— 每笔买卖都要扣，直接影响净利</text>
+<g>
+<rect x="40" y="80" width="140" height="56" rx="10" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="110" y="102" font-size="13" font-weight="500" text-anchor="middle" fill="#501313">佣金</text>
+<text x="110" y="122" font-size="11" text-anchor="middle" fill="#A32D2D">0.025% · 最低5元</text>
+</g>
+<g>
+<rect x="200" y="80" width="140" height="56" rx="10" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="270" y="102" font-size="13" font-weight="500" text-anchor="middle" fill="#501313">印花税</text>
+<text x="270" y="122" font-size="11" text-anchor="middle" fill="#A32D2D">卖出 0.1%</text>
+</g>
+<g>
+<rect x="360" y="80" width="140" height="56" rx="10" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="430" y="102" font-size="13" font-weight="500" text-anchor="middle" fill="#501313">过户费</text>
+<text x="430" y="122" font-size="11" text-anchor="middle" fill="#A32D2D">0.001%</text>
+</g>
+<g>
+<rect x="520" y="80" width="120" height="56" rx="10" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="580" y="102" font-size="13" font-weight="500" text-anchor="middle" fill="#501313">滑点</text>
+<text x="580" y="122" font-size="11" text-anchor="middle" fill="#A32D2D">match 0.2%</text>
+</g>
+<text x="40" y="182" font-size="13" font-weight="500" fill="#5F5E5A">权益预算（pos.*）—— B-4 关键结论项</text>
+<g>
+<rect x="40" y="196" width="200" height="72" rx="10" fill="#EAF3DE" stroke="#3B6D11" stroke-width="0.5"/>
+<text x="140" y="220" font-size="13" font-weight="500" text-anchor="middle" fill="#173404">权益闸门</text>
+<text x="140" y="240" font-size="11" text-anchor="middle" fill="#639922">equity_gate=off</text>
+<text x="140" y="258" font-size="11" text-anchor="middle" fill="#639922">B-4 结论：关闭更优</text>
+</g>
+<path d="M240 232 L280 232" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow5)"/>
+<g>
+<rect x="280" y="196" width="180" height="72" rx="10" fill="#EAF3DE" stroke="#3B6D11" stroke-width="0.5"/>
+<text x="370" y="220" font-size="13" font-weight="500" text-anchor="middle" fill="#173404">权益预算上限</text>
+<text x="370" y="240" font-size="11" text-anchor="middle" fill="#639922">equity_limit=0.5</text>
+<text x="370" y="258" font-size="11" text-anchor="middle" fill="#639922">总仓位 ≤50% 权益</text>
+</g>
+<path d="M460 232 L500 232" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow5)"/>
+<g>
+<rect x="500" y="196" width="140" height="72" rx="10" fill="#EAF3DE" stroke="#3B6D11" stroke-width="0.5"/>
+<text x="570" y="220" font-size="13" font-weight="500" text-anchor="middle" fill="#173404">单票上限</text>
+<text x="570" y="240" font-size="11" text-anchor="middle" fill="#639922">single_limit=0.08</text>
+<text x="570" y="258" font-size="11" text-anchor="middle" fill="#639922">单票 ≤8%</text>
+</g>
+<text x="40" y="300" font-size="12" fill="#5F5E5A">注：equity_gate=off 时 equity_limit/single_limit 不生效（旧语义仅靠 max_hold 只数约束）；on 时才启用权益预算。</text>
+</svg>
+</div>
+
+<h2>场景六：撮合与筛选边角</h2>
+<div class="card">
+<svg viewBox="0 0 680 300" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>撮合与筛选边角</title>
+<desc>max_entry_gap 与 rswindow、latedays 参数补遗</desc>
+<defs>
+<marker id="arrow6" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<text x="40" y="30" font-size="15" font-weight="500" fill="#2C2C2A">撮合与筛选边角（补遗）</text>
+<g>
+<rect x="40" y="50" width="280" height="100" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+<text x="180" y="74" font-size="14" font-weight="500" text-anchor="middle" fill="#4A1B0C">陈旧箱体拦截</text>
+<text x="180" y="96" font-size="12" text-anchor="middle" fill="#993C1D">max_entry_gap = 1.05</text>
+<text x="180" y="116" font-size="11" text-anchor="middle" fill="#993C1D">触发价 / 现价 &gt; 1.05 → 拒单</text>
+<text x="180" y="134" font-size="11" text-anchor="middle" fill="#D85A30">防「箱体早就过期、价格已走远」</text>
+</g>
+<path d="M320 100 L360 100" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow6)"/>
+<g>
+<rect x="360" y="50" width="280" height="100" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="500" y="74" font-size="14" font-weight="500" text-anchor="middle" fill="#26215C">RS 计算窗口</text>
+<text x="500" y="96" font-size="12" text-anchor="middle" fill="#534AB7">rswindow = 20</text>
+<text x="500" y="116" font-size="11" text-anchor="middle" fill="#534AB7">相对强度在 20 日内算</text>
+<text x="500" y="134" font-size="11" text-anchor="middle" fill="#7F77DD">配合 rs_excess_min=0.20</text>
+</g>
+<g>
+<rect x="40" y="190" width="280" height="72" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="180" y="214" font-size="14" font-weight="500" text-anchor="middle" fill="#2C2C2A">latedays = 4（死参数）</text>
+<text x="180" y="236" font-size="12" text-anchor="middle" fill="#5F5E5A">14 年回测 0 次触发</text>
+<text x="180" y="254" font-size="11" text-anchor="middle" fill="#888780">旋钮扫描已判定：可退役，保留占位</text>
+</g>
+<path d="M320 226 L360 226" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow6)"/>
+<g>
+<rect x="360" y="190" width="280" height="72" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="500" y="214" font-size="14" font-weight="500" text-anchor="middle" fill="#2C2C2A">结论</text>
+<text x="500" y="236" font-size="12" text-anchor="middle" fill="#5F5E5A">这两个是「噪声/死参数」</text>
+<text x="500" y="254" font-size="11" text-anchor="middle" fill="#888780">不影响主流程，仅登记占位</text>
+</g>
+</svg>
+</div>
+
+<h2>参数全景表（全部 38 键）</h2>
+<p class="note">按模块分组。右侧标注该参数是否已在上面六张图里体现。<span class="hl">红色「否」= 六张图未覆盖的参数</span>。经过场景四～六补遗后，38 键已全部画进图，下表「否」仅剩 `box.max_growth_days`（本库 off 态、未列 38 键内）。</p>
+
+<div class="mod">① 市场闸门（MA60）—— 三张图未覆盖</div>
+<table>
+<tr><th>键</th><th>值</th><th>含义</th><th>在图内</th></tr>
+<tr><td class="k">gate.ma60.mode</td><td class="v">stop</td><td>熊市止损模式</td><td><span class="tag on">是·场景四</span></td></tr>
+<tr><td class="k">gate.ma60.index</td><td class="v">sh000001</td><td>上证指数</td><td><span class="tag on">是·场景四</span></td></tr>
+</table>
+
+<div class="mod">② 体制识别（regime 牛熊判定）—— 三张图未覆盖</div>
+<table>
+<tr><th>键</th><th>值</th><th>含义</th><th>在图内</th></tr>
+<tr><td class="k">regime.breadth.window</td><td class="v">20</td><td>市场宽度窗口</td><td><span class="tag on">是·场景四</span></td></tr>
+<tr><td class="k">regime.breadth.bull_thresh</td><td class="v">0.55</td><td>牛市门槛</td><td><span class="tag on">是·场景四</span></td></tr>
+<tr><td class="k">regime.breadth.bear_thresh</td><td class="v">0.40</td><td>熊市门槛</td><td><span class="tag on">是·场景四</span></td></tr>
+<tr><td class="k">regime.breadth.confirm</td><td class="v">3</td><td>确认天数</td><td><span class="tag on">是·场景四</span></td></tr>
+<tr><td class="k">regime.breadth.min_history</td><td class="v">60</td><td>最少历史数据</td><td><span class="tag on">是·场景四</span></td></tr>
+</table>
+
+<div class="mod">③ 箱体成型 —— volmult 已画，其余未覆盖</div>
+<table>
+<tr><th>键</th><th>值</th><th>含义</th><th>在图内</th></tr>
+<tr><td class="k">box.min_width</td><td class="v">0.05</td><td>箱体最小宽度 5%</td><td><span class="tag on">是·场景四</span></td></tr>
+<tr><td class="k">box.volmult</td><td class="v">2.0</td><td>突破放量倍数</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">box.volwindow</td><td class="v">50</td><td>量能窗口</td><td><span class="tag on">是·场景四</span></td></tr>
+<tr><td class="k">pool.flatboxmax</td><td class="v">4</td><td>平箱上限</td><td><span class="tag on">是·场景四</span></td></tr>
+</table>
+
+<div class="mod">④ 候选筛选 —— rs_excess/turnover 已画，rswindow/latedays 未覆盖</div>
+<table>
+<tr><th>键</th><th>值</th><th>含义</th><th>在图内</th></tr>
+<tr><td class="k">screen.rs_excess_min</td><td class="v">0.20</td><td>RS 超额收益门槛</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">screen.rswindow</td><td class="v">20</td><td>RS 计算窗口</td><td><span class="tag on">是·场景六</span></td></tr>
+<tr><td class="k">screen.turnover</td><td class="v">50000000</td><td>成交额下限 5000 万</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">screen.latedays</td><td class="v">4</td><td>死参数（14 年 0 次触发）</td><td><span class="tag on">是·场景六</span></td></tr>
+</table>
+
+<div class="mod">⑤ 仓位 / 阶梯制 —— 基本已画，equity 三项未覆盖</div>
+<table>
+<tr><th>键</th><th>值</th><th>含义</th><th>在图内</th></tr>
+<tr><td class="k">pos.newhigh_ladder</td><td class="v">on</td><td>阶梯制启用</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">pos.newhigh.lookback</td><td class="v">252</td><td>52 周窗口</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">pos.newhigh.cutoff</td><td class="v">40</td><td>距新高 ≤40%</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">pos.newhigh.units.t1</td><td class="v">3</td><td>最近档 3 单位</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">pos.newhigh.units.t2</td><td class="v">2</td><td>次近档 2 单位</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">pos.newhigh.units.t3</td><td class="v">1</td><td>第三档 1 单位</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">pos.newhigh.units.t4</td><td class="v">0.5</td><td>最远档 0.5 单位</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">pos.unit</td><td class="v">0.02</td><td>1 单位 = 2% 权益</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">pos.single_limit</td><td class="v">0.08</td><td>单票上限 8%</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">pos.equity_limit</td><td class="v">0.5</td><td>权益预算上限 50%</td><td><span class="tag on">是·场景五</span></td></tr>
+<tr><td class="k">pos.equity_gate</td><td class="v">off</td><td>权益闸门（B-4 结论关闭）</td><td><span class="tag on">是·场景五</span></td></tr>
+</table>
+
+<div class="mod">⑥ 池管理</div>
+<table>
+<tr><th>键</th><th>值</th><th>含义</th><th>在图内</th></tr>
+<tr><td class="k">pool.max_hold</td><td class="v">14</td><td>最大持仓 14 只</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">pool.maxwatch</td><td class="v">8</td><td>观察池 8 只</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">pool.min_watch_days</td><td class="v">3</td><td>入池观察 3 天</td><td><span class="tag on">是</span></td></tr>
+</table>
+
+<div class="mod">⑦ 买入 / 撮合</div>
+<table>
+<tr><th>键</th><th>值</th><th>含义</th><th>在图内</th></tr>
+<tr><td class="k">buy.premium</td><td class="v">1.03</td><td>突破价 +3%</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">match.max_entry_gap</td><td class="v">1.05</td><td>触发价/现价 ≤1.05</td><td><span class="tag on">是·场景六</span></td></tr>
+<tr><td class="k">match.slippage</td><td class="v">0.002</td><td>滑点 0.2%</td><td><span class="tag on">是</span></td></tr>
+</table>
+
+<div class="mod">⑧ 出场</div>
+<table>
+<tr><th>键</th><th>值</th><th>含义</th><th>在图内</th></tr>
+<tr><td class="k">position.staledays</td><td class="v">2</td><td>无利时间止损 2 天</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">sell.discount</td><td class="v">0.97</td><td>止损折扣</td><td><span class="tag on">是</span></td></tr>
+</table>
+
+<div class="mod">⑨ 费用 —— 三张图未覆盖</div>
+<table>
+<tr><th>键</th><th>值</th><th>含义</th><th>在图内</th></tr>
+<tr><td class="k">fee.commission_rate</td><td class="v">0.00025</td><td>佣金 0.025%</td><td><span class="tag on">是·场景五</span></td></tr>
+<tr><td class="k">fee.commission_min</td><td class="v">5</td><td>最低佣金 5 元</td><td><span class="tag on">是·场景五</span></td></tr>
+<tr><td class="k">fee.stamp_tax</td><td class="v">0.001</td><td>印花税 0.1%</td><td><span class="tag on">是·场景五</span></td></tr>
+<tr><td class="k">fee.transfer_rate</td><td class="v">0.00001</td><td>过户费</td><td><span class="tag on">是·场景五</span></td></tr>
+</table>
+
+<div class="mod">⑩ P3-8 新增（默认 off，实验用）</div>
+<table>
+<tr><th>键</th><th>值</th><th>含义</th><th>在图内</th></tr>
+<tr><td class="k">buy.uptrend_only</td><td class="v">off</td><td>升势硬门槛</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">buy.highest_box_mode</td><td class="v">off</td><td>最高 Box 模式</td><td><span class="tag on">是</span></td></tr>
+<tr><td class="k">buy.highest_box_window</td><td class="v">120</td><td>趋势窗口</td><td><span class="tag on">是</span></td></tr>
+</table>
+
+<p class="note" style="margin-top:16px">注：`box.max_growth_days` 属 LB-4 已验证结论（最优 ≤6），此基线值 0 表示关闭，未在 38 键中（因本库为 off 态）。</p>
+
+</div>
+</body>
+</html>
