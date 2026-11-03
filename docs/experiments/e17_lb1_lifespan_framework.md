@@ -147,7 +147,7 @@ WHERE code=? AND date>=? AND date<=?
 
 **陷阱一：`entry_box_id` 在新基线库全为 NULL。** 实测 2015 库 80 笔 position 的 `entry_box_id` 全为 NULL。
 原因是 `internal/ledger/ledger.go:405` 的 `entryBox = reasonBoxID(order)` 从 `reason_json.box_id` 读，而
-`internal/planner/planner.go:630-637` 构造 reason 时**没有写 `box_id` 字段**（该字段在现行新基线二进制里是死代码路径）。
+`internal/planner/planner.go:630-637` 构造 reason 时**没有写 `box_id` 字段**（该字段在 10-31 当时的旧二进制里是死代码路径）。 **（时效注：2026-11-02 的 migration 0021 已修复此缺陷——planner 现已写 `box_id`、`entry_box_id` 会落库；本框架登记于 10-31，所描述的是当时旧二进制的状态，「反向匹配」是针对旧库的绕开方案，新基线重建后无需再用。）**
 **绕开方式**：用 `reason_json` 里确实存在的 `box_top` / `box_bottom` 两个价格 + `code` 三元组反向精确匹配 box 表
 （`ABS(top-?)<1e-6 AND ABS(bottom-?)<1e-6`），实测唯一命中（§3.4）。
 

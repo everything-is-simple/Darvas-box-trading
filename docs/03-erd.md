@@ -223,9 +223,11 @@ erDiagram
 
 > **✅ 交易对象追踪链已补（2026-11-02，migration 0021）**：`plan_order.source_signal_id`
 > 强引用 `signal.id`，突破事件到成交的精确回溯不再依赖 `reason_json`。`position.entry_box_id` 同步修复——
-> planner 的 reason_json 现已写真实 `box_id`，`ledger.applyBuy` 的 `reasonBoxID()` 据此落库（此前该函数早已就位，
-> 但 planner 从未写 box_id，导致 entry_box_id 全 NULL）。**历史行不回填、不伪造**：NULL = 早于 0021 的订单，
+> planner 的 reason_json 现已写真实 `box_id`（`planner.go:757` T2 追踪链），`ledger.applyBuy` 的 `reasonBoxID()`
+> 据此落库（有 `TestTrackingChain` 端到端测试覆盖）。**历史行不回填、不伪造**：NULL = 早于 0021 的订单，
 > 历史库分析继续用 `(code, box_top, box_bottom)` 反向匹配口径，新老口径在报告中必须显式声明。
+> （注：现存 `bt_baseA_*` 历史库 schema 停在迁移 0019，故其 `entry_box_id` 仍全 NULL——这是**旧二进制旧产物**，
+> 不是当前代码缺陷；新基线重建跑完迁移 0026 后该字段即非 NULL。）
 
 
 

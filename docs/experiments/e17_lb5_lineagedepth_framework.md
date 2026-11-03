@@ -147,7 +147,7 @@ SELECT prev_box_id FROM box WHERE id=?
 
 ### 3.3 两个必须绕开的陷阱
 
-**陷阱一：`entry_box_id` 在新基线库全为 NULL。** 与 LB-1/LB-2 同因（`ledger.go:405 reasonBoxID` 读的 `box_id` 字段在现行新基线二进制里是死代码路径，planner 没写）。
+**陷阱一：`entry_box_id` 在新基线库全为 NULL。** 与 LB-1/LB-2 同因（`ledger.go:405 reasonBoxID` 读的 `box_id` 字段在 10-31 当时的旧二进制里是死代码路径，planner 没写）。 **（时效注：2026-11-02 的 migration 0021 已修复此缺陷——planner 现已写 `box_id`、`entry_box_id` 会落库；本框架登记于 10-31，所描述的是当时旧二进制的状态，「反向匹配」是针对旧库的绕开方案，新基线重建后无需再用。）**
 **绕开方式**：用 `reason_json` 里的 `box_top` / `box_bottom` + `code` 三元组反向精确匹配 box 表（LB-1 已证唯一命中率 100%）。
 
 **陷阱二：`position.qty` 在平仓后被清零。** 成本一律从 `position_leg` 求和（`cost_basis = Σleg.qty×leg.price`），与 LB-1/LB-2/P2-5 同口径。

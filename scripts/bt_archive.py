@@ -5,7 +5,8 @@
 背景：单个回测库 4.15 GB 里 4.10 GB 是全历史行情副本（与 full_hist_10pct.db
 逐行相同），真正的结果只有 ~50 MB。I 盘（NVMe 工作盘）只留活跃库，跑完即归档。
 
-用法：
+    用法：
+    python scripts/bt_archive.py --files var/bt/p26/*.db        # 默认归档到 B:/Darvas-archive/p26
     python scripts/bt_archive.py --files var/bt/p26/*.db --dst A:/Darvas-archive/p26
     python scripts/bt_archive.py --files <库> --dst <目录> --delete      # 校验通过后删源
     python scripts/bt_archive.py --manifest                              # 打印归档台账
@@ -26,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DST = Path("A:/Darvas-archive")
+DEFAULT_DST = Path("B:/Darvas-archive")
 MANIFEST_HEADER = "time\tname\tsize_bytes\tsha256\tposition_n\tsum_pnl\tequity_n\tstaledays\tsrc\n"
 
 

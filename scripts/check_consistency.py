@@ -6,10 +6,11 @@ Darvas-box-trading 一致性检查（docs/06-consistency.md §2 防线一）。
 检查项：
   C1 枚举对齐：contract.go 的状态枚举常量集合  ==  DDL 的 CHECK(... IN (...)) 集合
   C2 表覆盖：  DDL 的 CREATE TABLE 列表  ⊇  docs/03-erd.md 的 Mermaid 实体列表
-  C3 参数键对齐：migrations 的 param 种子 INSERT 键集合  ==  docs/01 §6 参数表键集合
+  C3 参数键对齐：migrations 的 param 种子键集合  ⊆  docs/01 §6 参数表键集合
   C4 时刻表对齐：scheduler.go Schedule/WeeklyClock == docs/01 §4.1/§4.3 时刻表
      （2026-10-18 v1.3 起：时刻集中一处管理——§4 为唯一事实源，
       调度器/CLI/GUI/测试/一致性检查均由其派生，本项锁定代码与文档不漂移。）
+  C6 参数台账：docs/44 生成区台账  ==  代码实读键 + 迁移演化后的生效值（2026-11-03 新增）
 
 用法：python scripts/check_consistency.py [repo_root]
 退出码：0=全部一致；1=有漂移（CI应失败）。
@@ -18,12 +19,15 @@ import os, re, sys
 
 ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else
                        os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import param_ledger  # noqa: E402  （C3/C6 共用同一套 param 解析，避免两处口径打架）
 
 CONTRACT_GO = os.path.join(ROOT, "internal", "contract", "contract.go")
 SCHEDULER_GO = os.path.join(ROOT, "internal", "scheduler", "scheduler.go")
 MIGRATIONS_DIR = os.path.join(ROOT, "internal", "store", "migrations")
 ERD_MD = os.path.join(ROOT, "docs", "03-erd.md")
 REQ_MD = os.path.join(ROOT, "docs", "01-requirements.md")
+DOC44_MD = os.path.join(ROOT, "docs", "44-new-baseline-config.md")
 
 def fail(msg):
     print("✗", msg)
@@ -115,34 +119,60 @@ def check_c2_tables():
     return 0
 
 def check_c3_params():
-    """migrations param种子键 vs docs/01 §6 参数键
-    2026-10-18：合并全部迁移文件的 param INSERT 块（0003起参数种子分布在多个迁移）。
+    """migrations param 种子键 vs docs/01 §6 参数键
+
+    2026-11-03 起改用 param_ledger 的统一解析：迁移有四种写法
+    （`INSERT OR IGNORE` / 裸 `INSERT` / `ON CONFLICT DO UPDATE` / `UPDATE`），
+    旧版只匹配第一种，导致 0018 的 3 个种子、0025/0026 的 12 个注入项全被漏掉
+    （旧版一直报「26键」，真值是 40）。
     """
-    sql = ""
-    for fn in sorted(os.listdir(MIGRATIONS_DIR)):
-        if fn.endswith(".sql"):
-            sql += read(os.path.join(MIGRATIONS_DIR, fn)) + "\n"
-    # 取全部 INSERT INTO param 语句块（含多行 VALUES 列表），避免 CHECK IN 值污染。
-    # 容忍 `param(key,value)` 与 `param (key, value)` 两种写法（0012起带空格）。
-    blocks = re.findall(r"INSERT OR IGNORE INTO param\s*\(\s*key\s*,\s*value\s*\)\s*VALUES\s*(.*?);",
-                         sql, re.I | re.S)
-    if not blocks:
-        return fail("C3 找不到 param 种子 INSERT")
-    keys = set()
-    for b in blocks:
-        keys |= set(re.findall(r"\('([\w.]+)',\s*'", b))
-    # 0019 起：死参数用 DELETE 清理。DELETE 的键应从「种子累积键集合」中剔除，
-    # 否则 C3 会把「本应删除的键」误报为 docs/01 缺失。方向是：种子-删除 == docs/01 活参数。
-    dropped = set(re.findall(r"'([\w.]+)'", "\n".join(
-        re.findall(r"DELETE FROM param\s+WHERE key IN\s*\((.*?)\)", sql, re.I | re.S))))
-    keys -= dropped
+    eff, dropped, _ = param_ledger.scan_migrations()
+    keys = set(eff)
+    if not keys:
+        return fail("C3 找不到 param 种子")
     req = read(REQ_MD)
     doc_keys = set(re.findall(r"`([\w.]+)`", req))
     missing = keys - doc_keys
     if missing:
         return fail(f"C3 参数键DDL有但docs/01§6无: {missing}")
-    ok(f"C3 参数键对齐 ({len(keys)}键，清理死参数 {len(dropped)} 键)")
+    ok(f"C3 参数键对齐 ({len(keys)}键，已删死参数 {len(dropped)} 键)")
     return 0
+
+
+def check_c6_ledger():
+    """docs/44 生成区台账 vs 代码实读键+迁移生效值（2026-11-03 新增）。
+
+    动机：参数清单一直靠人维护，历史上一度出现 26/38/39 三个口径同时存在。
+    C6 把「基线包含哪些参数、值是多少」钉成机器可校验的事实。
+    """
+    led = param_ledger.build()
+    doc_path = doc44_path()
+    if not os.path.exists(doc_path):
+        return fail(f"C6 找不到 {doc_path}")
+    doc = param_ledger.extract_doc_rows(read(doc_path))
+    live = {r["key"]: r["value"] for r in led["rows"]}
+    missing = sorted(set(live) - set(doc))
+    extra = sorted(set(doc) - set(live))
+    diff = sorted(k for k in set(live) & set(doc) if str(live[k]) != str(doc[k]))
+    if missing:
+        return fail(f"C6 docs/44 漏 {len(missing)} 键: {', '.join(missing)}"
+                    f"  → 跑 python scripts/param_ledger.py --write")
+    if extra:
+        return fail(f"C6 docs/44 多 {len(extra)} 键（代码不读）: {', '.join(extra)}"
+                    f"  → 跑 python scripts/param_ledger.py --write")
+    if diff:
+        detail = "; ".join(f"{k}: 生效={live[k]} docs={doc[k]}" for k in diff)
+        return fail(f"C6 参数值漂移 → {detail}"
+                    f"  → 跑 python scripts/param_ledger.py --write")
+    ok(f"C6 参数台账对齐 ({len(live)}键 = 代码实读，docs/44 与迁移生效值一致)")
+    return 0
+
+
+def doc44_path():
+    if os.path.exists(DOC44_MD):
+        return DOC44_MD
+    # 允许用另一个根目录跑（CI/子目录场景）
+    return os.path.join(param_ledger.ROOT, "docs", "44-new-baseline-config.md")
 
 def check_c4_schedule():
     """scheduler.go Schedule/WeeklyClock vs docs/01 §4.1/§4.3 时刻表
@@ -184,6 +214,7 @@ def main():
     rc |= check_c2_tables()
     rc |= check_c3_params()
     rc |= check_c4_schedule()
+    rc |= check_c6_ledger()
     print("=" * 40)
     print("结果:", "全部一致 ✓" if rc == 0 else "存在漂移 ✗")
     sys.exit(rc)

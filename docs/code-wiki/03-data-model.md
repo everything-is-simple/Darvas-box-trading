@@ -304,8 +304,8 @@ security 1──N trade_fill / trade_review
 | `fee.*` | 万2.5 / 5 / 千1 / 万0.1 | match | 回测摩擦成本 |
 | `regime.breadth.*` | 20/0.55/0.40/3/60 | regime | 宽度法 |
 | `regime.a.lookback/up_bias/down_bias` | 60/1.002/0.998 | regime | A 判据（未种子化） |
-| `gate.ma60.mode` | `off` | planner | MA60 闸门实验（未种子化） |
-| `pos.newhigh_ladder` + `pos.newhigh.*` | `off` | planner | 52 周新高分档实验（未种子化） |
+| `gate.ma60.mode` | `stop`（0025） | planner | MA60 闸门（0025 已种子化） |
+| `pos.newhigh_ladder` + `pos.newhigh.*` | `on` / 252 / 40 / 3/2/1/0.5（0025/0026） | planner | **现行生产仓位 = 阶梯制**（距 52 周新高四档；A M1 已退役，docs/44 §一） |
 
 ### 6.2 历史/未读取参数（保留作对照或审计）
 
@@ -317,8 +317,8 @@ security 1──N trade_fill / trade_review
 | `regime.window/bull_thresh/bear_thresh`、`regime.mult.*`、`regime.indices` | 指数体制版退役 |
 | `screen.rsthreshold` | 比值法退役（超额收益取代） |
 | `pool.maxloss` | 两亏永久拉黑退役（track_level 取代） |
-| `pos.units.winner` | 分级阶段曾用；当前 planner 按 A 判据 2/1 单位，未读取该键 |
-| `pos.units.probe/main/reserve/per_stock_*` | 单位上限细分未接线 |
+| `pos.units.winner` | 分级阶段曾用；0019 已删（现行仓位=阶梯制 `pos.newhigh_ladder`） |
+| `pos.units.probe/main/reserve/per_stock_*` | 单位上限细分未接线，0019 已删 |
 | `screen.maxboxage` | 种子保留，当前无读取 |
 
 > 判断依据是 `GetFloat/GetInt/GetString` 的 grep 结果（`bd3028d`）。新增参数时，务必在迁移里种子化并在代码中给默认值。

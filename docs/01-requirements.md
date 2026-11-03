@@ -49,10 +49,21 @@
 
 | 数据 | 来源 | 说明 |
 |------|------|------|
-| 日线行情（OHLCV） | `H:\new_tdx64\vipdoc\{sh,sz}\lday\*.day` | 11942个文件，32字节/条，**已验证更新至2026-10-16**，用户通达信每日盘后更新 |
-| 备用日线 | `H:\2025炒股手训练软件\stockdata\day` | 备援数据源（P2接入） |
+| 日线行情（OHLCV） | `{D,H,I}:\new_tdx64\vipdoc\{sh,sz}\lday\*.day` | 11942 个文件，32 字节/条。**本机 D:，老机 H:**；代码自动探测，`DARVAS_TDX` 或 param `tdx.root` 可覆盖。必须指到 **vipdoc 一级**（指到 new_tdx64 会「日线能进、名称全空且不报错」） |
+| 真实除权除息记录 | 由 TdxQuant 导出后灌入 `dividend_event` 表（59,665 条 Type=1） | 撮合层识别除权**只查该表，不再用价格跌幅反推**（见下「价格口径」） |
+| 备用日线 | `H:\2025炒股手训练软件\stockdata\day` | 备援数据源（P2 接入，未启用） |
 | 参考库 | `H:\malf-data-old\*.duckdb` | 仅作对账参考，**不作为运行时依赖** |
 | 财务数据 | 无自动来源 | 基本面为人工复核项（见理论§6） |
+
+### 价格口径（2026-11-02 定稿，曾发生误判）
+
+- **系统全程使用原始价格（不复权）**。这不是理论偏好，而是「没有可靠免费复权数据」的现实约束；
+  用户口径：只要拿到好复权数据、能实战，口径可以改。
+- **除权识别只认 `dividend_event` 真实记录**。旧实现用价格跌幅反推（阈值 0.09）曾把**跌停误判成除权**：
+  四年 44 笔 `sim:dividend` 里 37 笔（84%）是跌停，贡献 +36.7 万假收益。**除权幅度是连续的（0%~65%），
+  阈值分不开跌停和除权**——这条教训不要再犯。
+- 详情与实测记录见 `docs/archive/42-tdxquant-integration.md`（2026-11-03 归档；
+  阶段二「复权后继续持有」已因上述 bug 证伪作废）。
 
 ### 数据同步需求
 
@@ -170,13 +181,20 @@
 
 ## 6. 仓位与风险参数（默认值，全部可调）
 
-> **2026-10-28 全量清点（对照 `internal/` 代码引用）**：原表 62 键，其中 **29 键代码不读（死参数）**，
-> 已从下表移除并集中登记于文末「已废除参数清单」。下表只列**代码实际读取**的参数。
+> **2026-10-28 全量清点（对照 `internal/` 代码引用）**：原表 62 键，其中 **28 键代码不读（死参数）**，
+> 已从下表移除并集中登记于文末「已废除参数清单」；另 1 键 `tdx.root` 是活参数但机器相关、故意不入库。
+> 下表只列**代码实际读取**的参数。**2026-11-03 起逐键生效值以 `docs/44` 台账为准（C6 校验）**。
 
 ### 6.0 活参数（代码实际读取）
 
+> **权威台账在 `docs/44-new-baseline-config.md` §二**（由 `scripts/param_ledger.py` 从代码+迁移自动生成，
+> `check_consistency` C6 强制校验）。本表是**需求视角**的说明与依据，键集必须与 44 台账一致；
+> 两表口径差 = C6 报错。当前基线共 **47 键**（种子 40 / 只走代码默认 7）。
+
 | 参数 | 键 | 默认 | 依据 |
 |------|-----|------|------|
+| 初始权益 | `equity.base` | 1000000 | 回放/滚雪球账本的复利起点（0026 种子化）；只影响口径，不是策略旋钮 |
+| 原始数据目录 | `tdx.root` | 自动探测 `D:/H:/I:/new_tdx64/vipdoc` | **机器相关、故意不入库**（0019 已删该行）。环境变量 `DARVAS_TDX` > 参数 > 自动探测；必须指到 vipdoc 一级（指到 new_tdx64 会「日线能进、名称全空且不报错」） |
 | 买入触发溢价 | `buy.premium` | ×1.03 | 突破确认（**A 类已验 2026-10-30**：3–8.14% 内无梯度，≥3% 认可不动；低端 0–3% 另案，见 docs/29 §七 P1-4） |
 | 卖出触发折价 | `sell.discount` | ×0.97 | 初始/箱体下轨止损的价格乘数；参数化默认，非已验证最优。专属梯度未验证；P2-6b 是条件性 trail% 方案（docs/29） |
 | 进场跳空上限 | `match.max_entry_gap` | 1.05 | P0-2：成交价/触发价 > 1.05 弃单（**梯度未验**） |
@@ -228,14 +246,18 @@
 
 ### 6.1 已废除参数（代码不读，2026-10-28 清点后移除）
 
-> 以下 29 键存在于历史库参数表，但 `internal/` 代码**零引用**。移出活参数表，仅留名备查。
+> 以下 **28 键**存在于历史库参数表，但 `internal/` 代码**零引用**，已由 migration 0019 删除。
 > 其中 `risk.*` = 金字塔加码整套（量化时代废除，docs/00 §4.1）；`pos.units.*` = 旧单位制；
 > `regime.mult.*` = 牛熊乘数（功能升级为「牛冲熊守」待立项，非参数）。
+>
+> ⚠️ **0019 的 DELETE 列表是 29 键，第 29 个 `tdx.root` 不是死参数**（代码仍在读，见 §6.0）——
+> 它被删是因为**值机器相关，不该写进库**。已改为代码自动探测 + `DARVAS_TDX` 环境变量覆盖。
+> 这是 2026-11-03 建参数台账时抓到的「误杀」，旧的 §6.1 把它当死参数是错的。
 
-- **加码整套（9）**：`risk.leg1 / risk.leg23 / risk.maxpos / risk.scale / risk.maxlegs / risk.addon_max_premium / risk.probe_min_shares / risk.probe_max_pct`
+- **加码整套（8）**：`risk.leg1 / risk.leg23 / risk.maxpos / risk.scale / risk.maxlegs / risk.addon_max_premium / risk.probe_min_shares / risk.probe_max_pct`
 - **旧单位制（9）**：`pos.units.main / pos.units_total / pos.units.reserve / pos.units.winner / pos.units.probe / pos.units.per_stock_main_max / pos.units.per_stock_main_step / pos.units.per_stock_probe_bear / pos.units.per_stock_probe_bull`
 - **牛熊乘数（7）**：`regime.bull_thresh / regime.bear_thresh / regime.window / regime.mult.bull / regime.mult.bear / regime.mult.range / regime.indices`
-- **单个（5）**：`pool.maxloss / pool.blacklist_months / screen.maxboxage / screen.rsthreshold / tdx.root`
+- **单个（4）**：`pool.maxloss / pool.blacklist_months / screen.maxboxage / screen.rsthreshold`
 
 ---
 
@@ -343,7 +365,8 @@
 
 > **库内铁证**：新基线库（`var/bt/base/bt_baseA_2010.db`）实际写入 **38 项**参数；
 > 老账本 `bt_e17_*` 为 62 项 → 0019 删除 29 死参数、新增 5 项闸门/预算键、改 1 项（`max_hold` 7→14）。
-> 38 项逐条清单见 §6；本节只记**决策与状态**。
+> 38 项是「baseA 快照口径」；**现行基线 47 键的逐键台账见 docs/44 §二**（C6 机器校验），
+> 本节 §6 只记**参数依据与决策状态**。
 
 | 设计项 | 参数键 | 新基线值 | 状态与依据 |
 |---|---|---:|---|

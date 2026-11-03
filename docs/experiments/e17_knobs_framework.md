@@ -1,6 +1,6 @@
 # E17 入场/池管理旋钮梯度扫描 · 框架（A 类零成本打包）
 
-> 实验：docs/29 §五 2.1 序 2「入场/池管理旋钮扫描」；docs/45 §一 P0 六项。
+> 实验：docs/29 §五 2.1 序 2「入场/池管理旋钮扫描」；docs/archive/45-verification-backlog.md §一 P0 六项。
 > 类型：**A 类零成本**——只读 `var/bt/base/bt_baseA_<year>.db` × 14（2005–2018），
 > 不改回测器、不建库、不占盘。框架先于跑数定稿。
 > 状态：**收官 2026-11-03**。六旋钮三死三活，无一项值得 B 类重跑，全登记维持现状。
@@ -126,7 +126,7 @@ A 类只回答「**已过门槛的样本内部还有无残余梯度**」+「**�
 | 生成器 | `scripts/e17_knobs.py`（含 `--check-only` 校准层） |
 | 校验器 | `scripts/e17_knobs_verify.py`（独立代码路径重算抽查） |
 | 报告 | `docs/experiments/e17_knobs_report.{html,md}` |
-| 登记 | docs/29 §四（结论）+ §五 2.1 序 2（标 ✅）+ docs/45 §一 P0（标 ✅） |
+| 登记 | docs/29 §四（结论）+ §五 2.1 序 2（标 ✅）+ docs/archive/45-verification-backlog.md §一 P0（标 ✅） |
 
 ---
 
@@ -135,7 +135,7 @@ A 类只回答「**已过门槛的样本内部还有无残余梯度**」+「**�
 1. 写生成器（读 14 年库，逐旋钮分带 + 反事实）。
 2. `--check-only` 校准层跑通。
 3. 分带出数 → 校验器独立重算抽查。
-4. 出报告，登记 docs/29 §四/§五 + docs/45。
+4. 出报告，登记 docs/29 §四/§五 + docs/archive/45-verification-backlog.md。
 
 ---
 
@@ -143,5 +143,5 @@ A 类只回答「**已过门槛的样本内部还有无残余梯度**」+「**�
 
 | # | 偏离 | 原因 |
 |---|---|---|
-| 1 | docs/29 序 2 写「5 个」旋钮，docs/45 写「6 项」 | `regime.a.*` 三键在 docs/29 被算作一项（A 判据），docs/45 拆成一项单独列。实质同一批 |
+| 1 | docs/29 序 2 写「5 个」旋钮，docs/archive/45-verification-backlog.md 写「6 项」 | `regime.a.*` 三键在 docs/29 被算作一项（A 判据），docs/archive/45-verification-backlog.md 拆成一项单独列。实质同一批 |
 | 2 | `regime.a.*` 原计划「分带 lookback 20/40/60/120」 | 跑数前代码级确认是新基线死参数（§3.1），分带无意义，改为登记「已失效」 |

@@ -6,7 +6,7 @@
 > 结果只进 `docs/experiments/e17_dividend_hold_report.{html,md}` + `_data.json`；运行元信息回填**附 A**。
 >
 > 上游：T3（`sell.discount` 梯度）结果催生的新立项；该文件现仅保留为已作废方案的审计记录，当前队列以 `docs/29` 为准；
-> 数据源：`docs/42-tdxquant-integration.md` 阶段二（真实除权除息记录，已实测打通）；
+> 数据源：`docs/archive/42-tdxquant-integration.md` 阶段二（真实除权除息记录，已实测打通）；
 > 历史撮合基线：`internal/match/match.go` §3.8 曾用价格跌幅反推除权；该逻辑已删除，当前实现查 `dividend_event`。
 
 ---
@@ -138,7 +138,7 @@
 ### 3.1 除权日的判定
 
 - 用 TdxQuant `get_divid_factors` 拉到的 `Type=1`（除权除息）记录，其 `Date` 作为**真实除权日**集合。
-- 落库表：`dividend_event(code TEXT, date TEXT, bonus_10 REAL, share_bonus_10 REAL, allot_10 REAL, allot_price REAL)`，`bonus_10` 等为**每 10 股口径**（已钉死，`docs/42` §5.2）。
+- 落库表：`dividend_event(code TEXT, date TEXT, bonus_10 REAL, share_bonus_10 REAL, allot_10 REAL, allot_price REAL)`，`bonus_10` 等为**每 10 股口径**（已钉死，`docs/archive/42-tdxquant-integration.md` §5.2）。
 - 引擎在撮合日若命中 `dividend_event` 的 `date`，走 B 档处置，**不再走 `isDividendGap` 价格反推**。
 
 ### 3.2 除权后的持仓调整（关键，逐条写死）
@@ -240,7 +240,7 @@
 |---|---|
 | 不在原实验队列 | T3 结果曾触发本方案；方案已因 84% 跌停误判作废，当前队列以 `docs/29` 为准 |
 | 复用 T3 097 档 4 库 | A 档（`force_close`）不重跑，直接复用，等价性由 §4 门槛 2 保证 |
-| 数据源引入 TdxQuant | 真实除权记录来自外部数据源，`docs/42` 已登记接入方案 |
+| 数据源引入 TdxQuant | 真实除权记录来自外部数据源，`docs/archive/42-tdxquant-integration.md` 已登记接入方案 |
 
 ---
 

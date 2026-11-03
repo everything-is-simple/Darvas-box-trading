@@ -11,7 +11,7 @@
 | 数据库Schema | `internal/store/migrations/*.sql` | docs/03-erd.md |
 | 模块接口/类型 | `internal/contract/contract.go` | docs/04-api-contract.md |
 | 每日时间表/任务ID | `internal/scheduler/scheduler.go`（`Schedule` 常量表 + `WeeklyClock`） | docs/01-requirements.md §4 |
-| 领域参数默认值 | `migrations/0001_init.sql` 的param种子 | docs/01-requirements.md §6 |
+| 领域参数默认值 | `migrations/*.sql` 的 param 种子（含 0018 裸 INSERT、0025/0026 ON CONFLICT） | docs/44 台账（生成）+ docs/01 §6（依据） |
 | 理论规则 | docs/00-darvas-theory.md（理论宪法） | 代码必须能指回条目 |
 
 **规则：文档永远不单独成为事实**——文档是给人看的释义，SQL/Go代码是给机器执行的事实，两者由机制强制同步。
@@ -27,10 +27,18 @@
 1. **枚举对齐**：抽取contract.go中的`BoxStatus/WatchStage/SignalType/OrderStatus`常量集合，与DDL的`CHECK(...IN(...))`集合做差集比较 → 不一致即失败
 2. **表覆盖**：解析DDL的CREATE TABLE列表 vs 03-erd.md的Mermaid实体列表 → 缺一即失败
 3. **任务ID对齐**：scheduler常量表 vs 01文档§4任务ID列表
-4. **参数键对齐**：param种子INSERT键集合 vs 01文档§6参数表键集合
+4. **参数键对齐**：param 种子键集合 ⊆ 01文档§6参数表键集合
    - ⚠️ **2026-10-28 修正口径**：对齐目标是「种子键 ⊇ 代码实际读取键」；**死参数（代码不读）应从
-     docs/01 §6 移除、从种子清理**，而非保留凑数。当前已清出 29 死键（`risk.*` 加码 / `pos.units.*`
+     docs/01 §6 移除、从种子清理**，而非保留凑数。当前已清出 28 真死键（`risk.*` 加码 / `pos.units.*`
      旧单位 / `regime.mult.*` 牛熊乘数等），见 docs/01 §6.1。
+   - ⚠️ **2026-11-03 修 bug**：旧实现只认 `INSERT OR IGNORE`，漏掉 0018 的裸 `INSERT` 与 0025/0026 的
+     `ON CONFLICT DO UPDATE`——「26 键」这个数字错了两个月，真值 40。现改为与 C6 共用
+     `scripts/param_ledger.py` 的统一解析（四种写法全吃）。
+5. **参数台账对齐（C6，2026-11-03 新增）**：`docs/44` 生成区台账 == 「代码实读键 + 迁移演化后的生效值」。
+   这是唯一回答「基线到底包含哪些参数、值是多少」的机器判据。
+   - 漂移时唯一修法：`python scripts/param_ledger.py --write`（改代码/migration 之后），**禁止手改表**。
+   - 键集来源 = `GetFloat/GetInt/GetString` 的字符串字面量，因此**新增参数只要写了代码就会被要求登记**，
+     人力维护的表不可能再漏。
 
 ### 防线二：Schema漂移检测（运行时）
 

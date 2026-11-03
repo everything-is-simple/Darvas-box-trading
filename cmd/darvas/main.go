@@ -172,7 +172,15 @@ func tdxRoot() string {
 	if root := os.Getenv("DARVAS_TDX"); root != "" {
 		return root
 	}
-	return "H:/new_tdx64/vipdoc" // 默认，可用 param tdx.root 覆盖
+	// 自动探测常见安装位置（本机 D:、老机 H:）——原先写死 H:/new_tdx64 在换机后会静默失效
+	// （0019 删掉了 param tdx.root，默认值就成了唯一来源）。必须指到 vipdoc 一级：
+	// 指到 new_tdx64 会让日线能进、股票名称全空且不报错。
+	for _, p := range []string{"D:/new_tdx64/vipdoc", "H:/new_tdx64/vipdoc", "I:/new_tdx64/vipdoc"} {
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			return p
+		}
+	}
+	return "D:/new_tdx64/vipdoc" // 都不存在时返回本机约定路径，由 ingest 报错暴露
 }
 
 func runIngest(db, since, date string) {
