@@ -759,6 +759,7 @@ func runBacktest(db, from, to, src, mode, paramSets string) {
 		ScratchDB:      "", // --db 默认值是生产 var/darvas.db，不可用作 scratch；显式传 --db 时才用
 		Mode:           backtest.Mode(mode),
 		ParamOverrides: parseParamOverrides(paramSets),
+		EngineVersion:  version,
 	}
 	if db != "" {
 		o.ScratchDB = db // Bootstrap 内置护栏：拒用 darvas.db / perf_test.db / 与源库同路径

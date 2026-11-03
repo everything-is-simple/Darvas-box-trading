@@ -24,7 +24,9 @@ package backtest
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -63,6 +65,7 @@ type Options struct {
 	ScratchDB      string // 单模式目标库；空则默认 var/bt/bt_<mode>.db；verify 模式忽略
 	Mode           Mode
 	ParamOverrides map[string]string // 仅写入 scratch，源库与生产参数不变
+	EngineVersion  string            // 语义版本（cmd/darvas 的 const version），写入 baseline 身份
 }
 
 // sixTasks 回放的六任务链（PROMPT.md「as-of 六任务链」；ingest 由引导替代——
@@ -117,6 +120,11 @@ func runOne(o Options, scratch string) error {
 	}
 	if err = Bootstrap(o.SrcDB, scratch, from, o.Mode == ModeProgressive); err != nil {
 		return err
+	}
+	// 记录基线身份（docs/49 §四 阶段 B）：迁移跑完、参数就绪后锚定指纹 + 引擎 hash，
+	// 供 C/D/E 跨年续跑对账。失败不阻断回测，仅告警（身份缺失不该让账本跑不出来）。
+	if err := recordBaseline(scratch, o); err != nil {
+		fmt.Printf("[bt] 记录基线身份失败（不阻断）: %v\n", err)
 	}
 	hashes, fails, err := Replay(scratch, days, dayBars)
 	if err != nil {
@@ -207,6 +215,9 @@ func runRegime(o Options) error {
 	if err = applyParamOverrides(scratch, o.ParamOverrides); err != nil {
 		return err
 	}
+	if err := recordBaseline(scratch, o); err != nil {
+		fmt.Printf("[bt] 记录基线身份失败（不阻断）: %v\n", err)
+	}
 	if _, fails, err := Replay(scratch, days, nil); err != nil {
 		return err
 	} else if len(fails) > 0 {
@@ -225,6 +236,41 @@ func runRegime(o Options) error {
 	}
 	fmt.Printf("[bt] regime 报告已生成: %s\n", path)
 	return nil
+}
+
+// recordBaseline 在 scratch 库迁移跑完后记录基线身份（docs/49 §四 阶段 B）。
+// 注意：必须在 applyParamOverrides 之后调用——参数覆盖会改 param 表，
+// 指纹要反映"本次回测实际用的参数"。
+func recordBaseline(scratch string, o Options) error {
+	st, err := store.Open(scratch)
+	if err != nil {
+		return fmt.Errorf("打开 scratch 记录身份: %w", err)
+	}
+	defer st.Close()
+	srcHash := ""
+	if fi, err := os.Stat(o.SrcDB); err == nil && !fi.IsDir() {
+		srcHash = fileSHA256(o.SrcDB)
+	}
+	id, err := st.RecordBaseline(o.EngineVersion, srcHash)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("[bt] 基线身份已记录: %s\n", id)
+	return nil
+}
+
+// fileSHA256 计算文件 sha256（源库锚，串起"这份账本从哪来"）。
+func fileSHA256(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func applyParamOverrides(scratch string, overrides map[string]string) error {

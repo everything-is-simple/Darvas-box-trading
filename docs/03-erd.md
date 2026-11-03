@@ -178,6 +178,17 @@ erDiagram
         DATETIME changed_at
         TEXT old_value
     }
+    baseline {
+        INTEGER id PK
+        TEXT baseline_id "重建身份，如 2026-11-04-newhigh-ladder-v1"
+        TEXT engine_version "语义版本 0.5.0-m8"
+        TEXT engine_sha256 "跑出账本的二进制 sha256（HARD① 锚）"
+        TEXT source_hash "源库 sha256（从哪来）"
+        TEXT param_fingerprint "(key,value) 排序序列 sha256"
+        TEXT params_json "参数快照 JSON"
+        DATETIME created_at
+        INTEGER latest "1=本库最新一次重建"
+    }
     security ||--o{ dividend_event : "除权除息事件"
     dividend_event {
         TEXT code FK

@@ -211,8 +211,9 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 	if err := one(`SELECT COUNT(*) FROM plan_order WHERE side='sell' AND order_kind='stop_sell'`).Scan(&nSell); err != nil || nSell < 1 {
 		t.Fatalf("ST1 止损卖单 = %d err=%v, 期望 ≥1（持仓期每日挂 initial_stop + time_stop）", nSell, err)
 	}
-	// 订单明细：buy/leg1/filled，执行日 t16，数量 1700（M8.8 单位制：1单位=20000元，
-	//   触发价 11.33 → 1单位股数=floor(20000/11.33/100)*100=1700）
+	// 订单明细：buy/leg1/filled，执行日 t16，数量 5100（阶梯制：1单位=20000元，
+	//   触发价 11.33 → 1单位股数=floor(20000/11.33/100)*100=1700；t15 收盘 11.5 距
+	//   52 周新高 11.8 为 2.5%<5% → t1 档 3 单位 → 1700×3=5100）
 	var oSide, oKind, oStatus string
 	var oQty, oLeg int
 	var oExec string
@@ -224,18 +225,18 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 	if oSide != "buy" || oKind != "stop_buy" || oLeg != 1 || oStatus != "filled" || oExec != d(16) {
 		t.Fatalf("plan_order = %s/%s/leg%d/%s/exec%s, 期望 buy/stop_buy/leg1/filled/exec%s", oSide, oKind, oLeg, oStatus, oExec, d(16))
 	}
-	if oQty != 1700 {
-		t.Fatalf("plan_order qty = %d, 期望 1700（M8.8 单位制：20000/11.33 取整手）", oQty)
+	if oQty != 5100 {
+		t.Fatalf("plan_order qty = %d, 期望 5100（阶梯制 t1 3单位：1700×3）", oQty)
 	}
 	if err := one(`SELECT COUNT(*) FROM equity_snapshot`).Scan(&nEq); err != nil || nEq != len(days) {
 		t.Fatalf("equity_snapshot = %d err=%v, 期望 %d", nEq, err, len(days))
 	}
 	var eq float64
-	if err := one(`SELECT total FROM equity_snapshot ORDER BY date DESC LIMIT 1`).Scan(&eq); err != nil || math.Abs(eq-999749.58) > 1 {
-		t.Fatalf("期末权益 = %v err=%v, 期望 ≈999749.58（t16 买 1700@11.33，B3 staledays=2 → t18 卖 1700@11.20 亏 250.42）", eq, err)
+	if err := one(`SELECT total FROM equity_snapshot ORDER BY date DESC LIMIT 1`).Scan(&eq); err != nil || math.Abs(eq-999250) > 1 {
+		t.Fatalf("期末权益 = %v err=%v, 期望 ≈999250（t16 买 5100@11.33，B3 staledays=2 → t18 卖 5100@11.20 亏 750）", eq, err)
 	}
 
-	// ⑥ 成交与持仓（M8.2 撮合 + B3 staledays=2）：t16 买 1700@11.33，t18 time_stop 卖 1700@11.20
+	// ⑥ 成交与持仓（M8.2 撮合 + B3 staledays=2）：t16 买 5100@11.33，t18 time_stop 卖 5100@11.20
 	var nFill int
 	if err := one(`SELECT COUNT(*) FROM trade_fill`).Scan(&nFill); err != nil || nFill != 2 {
 		t.Fatalf("trade_fill = %d err=%v, 期望 2（t16 buy + t18 time_stop sell）", nFill, err)
@@ -247,8 +248,8 @@ func assertMechanics(t *testing.T, scratch string, days []string) {
 		Scan(&fCode, &fSide, &fPx, &fQty); err != nil {
 		t.Fatalf("读 trade_fill: %v", err)
 	}
-	if fCode != "sh600001" || fSide != "buy" || fQty != 1700 || math.Abs(fPx-11.33) > 1e-6 {
-		t.Fatalf("fill = %s/%s/%d@%.4f, 期望 sh600001/buy/1700@11.33", fCode, fSide, fQty, fPx)
+	if fCode != "sh600001" || fSide != "buy" || fQty != 5100 || math.Abs(fPx-11.33) > 1e-6 {
+		t.Fatalf("fill = %s/%s/%d@%.4f, 期望 sh600001/buy/5100@11.33", fCode, fSide, fQty, fPx)
 	}
 	var nPos int
 	if err := one(`SELECT COUNT(*) FROM position WHERE status='open'`).Scan(&nPos); err != nil || nPos != 0 {

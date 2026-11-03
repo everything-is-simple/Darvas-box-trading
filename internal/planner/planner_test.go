@@ -13,8 +13,9 @@ import (
 	"darvas/internal/store"
 )
 
-// TestPlannerBreakoutUnitQtyBear A M1：非升势（震荡/无历史）日首买 1 单位股数
-// （默认权益100万、pos.unit=2%）。
+// TestPlannerBreakoutUnitQtyBear 阶梯制（pos.newhigh_ladder=on，现行生产基线）：
+// 非升势（震荡/无历史）日，信号收盘价 25 距 52 周新高（历史最高 24）距离 <5% → t1 档 3 单位。
+// （A M1「非升势 1 单位」已随阶梯制接管退役，见 docs/44 §一第 3 条。）
 func TestPlannerBreakoutUnitQtyBear(t *testing.T) {
 	st := newPlannerStore(t)
 	code := "sh600519"
@@ -42,9 +43,10 @@ func TestPlannerBreakoutUnitQtyBear(t *testing.T) {
 		t.Fatalf("orders=%d want 1", len(orders))
 	}
 	o := orders[0]
-	// trigger=24×1.03=24.72；unitValue=20000；1单位股数=floor(20000/24.72/100)*100=800。
-	if o.Qty != 800 {
-		t.Errorf("qty=%d want 800（1单位股）", o.Qty)
+	// trigger=24×1.03=24.72；unitValue=20000；1单位股数=floor(20000/24.72/100)*100=800；
+	// 阶梯制 t1（距新高<5%）=3单位 → 800×3=2400。
+	if o.Qty != 2400 {
+		t.Errorf("qty=%d want 2400（阶梯制 t1 3单位）", o.Qty)
 	}
 	if o.LegNo != 1 || o.Side != "buy" || o.OrderKind != "stop_buy" {
 		t.Errorf("order=%+v want leg1 stop_buy", o)
@@ -52,18 +54,20 @@ func TestPlannerBreakoutUnitQtyBear(t *testing.T) {
 	if stop, ok := o.Reason["stop"].(float64); !ok || !approx(stop, 23.28, 0.01) {
 		t.Errorf("reason.stop=%v want ≈23.28（首腿紧止损=上轨×0.97）", o.Reason["stop"])
 	}
-	if units, ok := o.Reason["units"].(float64); !ok || units != 1 {
-		t.Errorf("reason.units=%v want 1", o.Reason["units"])
+	if units, ok := o.Reason["units"].(float64); !ok || units != 3 {
+		t.Errorf("reason.units=%v want 3（阶梯制 t1）", o.Reason["units"])
 	}
-	if basis, ok := o.Reason["sizing_basis"].(string); !ok || basis != "default" {
-		t.Errorf("reason.sizing_basis=%v want default（非升势→1单位）", o.Reason["sizing_basis"])
+	if basis, ok := o.Reason["sizing_basis"].(string); !ok || basis != "newhigh_t1" {
+		t.Errorf("reason.sizing_basis=%v want newhigh_t1（距52周新高<5%%）", o.Reason["sizing_basis"])
 	}
 	if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "normal" {
 		t.Errorf("reason.budget_bucket=%v want normal", o.Reason["budget_bucket"])
 	}
 }
 
-// TestPlannerBreakoutUnitQtyBull A M1（2026-10-23）：A 判据升势日首买 2 单位股数。
+// TestPlannerBreakoutUnitQtyBull 阶梯制下 A 判据升势日（2026-10-16）：
+// 单位数不再由 A 判据决定（阶梯制接管），信号收盘价 25 距 52 周新高 <5% → t1 档 3 单位；
+// A 判据仍作为审计字段 regime=bull 记录，但不驱动 units。
 func TestPlannerBreakoutUnitQtyBull(t *testing.T) {
 	st := newPlannerStore(t)
 	code := "sh600519"
@@ -72,7 +76,7 @@ func TestPlannerBreakoutUnitQtyBull(t *testing.T) {
 	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
 		t.Fatal(err)
 	}
-	seedARegimeUp(t, st, "2026-10-16") // 60 日低点逐级抬升 → A 判据升势
+	seedARegimeUp(t, st, "2026-10-16") // 60 日低点逐级抬升 → A 判据升势（审计字段）
 	st.SignalRepo.AppendSignals([]contract.Signal{{
 		Date: "2026-10-16", Code: code, Type: contract.SignalBreakout,
 		BoxID: boxes[0].ID, ClosePx: 25, BoxLevel: 24,
@@ -91,18 +95,18 @@ func TestPlannerBreakoutUnitQtyBull(t *testing.T) {
 		t.Fatalf("orders=%d want 1", len(orders))
 	}
 	o := orders[0]
-	// A M1：升势日首买 2 单位。trigger=24×1.03=24.72；1单位=800股 → 2单位=1600股。
-	if o.Qty != 1600 {
-		t.Errorf("qty=%d want 1600（A M1：升势日首买2单位）", o.Qty)
+	// 阶梯制：距52周新高<5% → t1 3单位。trigger=24×1.03=24.72；1单位=800股 → 3单位=2400股。
+	if o.Qty != 2400 {
+		t.Errorf("qty=%d want 2400（阶梯制 t1 3单位）", o.Qty)
 	}
-	if units, ok := o.Reason["units"].(float64); !ok || units != 2 {
-		t.Errorf("reason.units=%v want 2（升势日2单位）", o.Reason["units"])
+	if units, ok := o.Reason["units"].(float64); !ok || units != 3 {
+		t.Errorf("reason.units=%v want 3（阶梯制 t1）", o.Reason["units"])
 	}
-	if basis, ok := o.Reason["sizing_basis"].(string); !ok || basis != "A_regime_up" {
-		t.Errorf("reason.sizing_basis=%v want A_regime_up", o.Reason["sizing_basis"])
+	if basis, ok := o.Reason["sizing_basis"].(string); !ok || basis != "newhigh_t1" {
+		t.Errorf("reason.sizing_basis=%v want newhigh_t1", o.Reason["sizing_basis"])
 	}
 	if r, ok := o.Reason["regime"].(string); !ok || r != "bull" {
-		t.Errorf("reason.regime=%v want bull（A 判据升势）", o.Reason["regime"])
+		t.Errorf("reason.regime=%v want bull（A 判据升势，审计字段保留）", o.Reason["regime"])
 	}
 }
 
@@ -149,9 +153,8 @@ func TestPlannerNoPyramidOnHolding(t *testing.T) {
 	}
 }
 
-// TestPlannerNoWinnerBoost D1+A M1（2026-10-23）：winner 池不再 5x 加仓——
-// 即使 A 判据升势日，winner 也只首买 2 单位（与普通池同档），budget_bucket 退为 normal。
-// track_level 仍记录为 winner（审计字段保留），但不驱动 units。
+// TestPlannerNoWinnerBoost 阶梯制：winner 池不再 5x 加仓——与普通池同档（距52周新高<5% → t1 3 单位），
+// budget_bucket 退为 normal。track_level 仍记录为 winner（审计字段保留），但不驱动 units。
 func TestPlannerNoWinnerBoost(t *testing.T) {
 	st := newPlannerStore(t)
 	code := "sh600519"
@@ -160,7 +163,7 @@ func TestPlannerNoWinnerBoost(t *testing.T) {
 	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
 		t.Fatal(err)
 	}
-	// 标记为赢家池（D1 前 winner 首买 5 单位；A M1 后 winner 不再放大）
+	// 标记为赢家池（D1 前 winner 首买 5 单位；阶梯制下 winner 不再放大）
 	if err := st.SecRepo.SetTrackLevel(code, contract.TrackWinner, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -183,15 +186,15 @@ func TestPlannerNoWinnerBoost(t *testing.T) {
 		t.Fatalf("orders=%d want 1", len(orders))
 	}
 	o := orders[0]
-	// winner 池 A M1 升势日：首买 2 单位（不是 5）= 1600 股。
-	if o.Qty != 1600 {
-		t.Errorf("qty=%d want 1600（D1：winner 不再 5x，A M1 升势 2 单位）", o.Qty)
+	// winner 池阶梯制：距52周新高<5% → t1 3 单位（不是 5）= 2400 股。
+	if o.Qty != 2400 {
+		t.Errorf("qty=%d want 2400（winner 不再 5x，阶梯制 t1 3单位）", o.Qty)
 	}
-	if units, ok := o.Reason["units"].(float64); !ok || units != 2 {
-		t.Errorf("reason.units=%v want 2（winner 不再 5x）", o.Reason["units"])
+	if units, ok := o.Reason["units"].(float64); !ok || units != 3 {
+		t.Errorf("reason.units=%v want 3（winner 不再放大）", o.Reason["units"])
 	}
-	if basis, ok := o.Reason["sizing_basis"].(string); !ok || basis != "A_regime_up" {
-		t.Errorf("reason.sizing_basis=%v want A_regime_up", o.Reason["sizing_basis"])
+	if basis, ok := o.Reason["sizing_basis"].(string); !ok || basis != "newhigh_t1" {
+		t.Errorf("reason.sizing_basis=%v want newhigh_t1", o.Reason["sizing_basis"])
 	}
 	if bucket, ok := o.Reason["budget_bucket"].(string); !ok || bucket != "normal" {
 		t.Errorf("reason.budget_bucket=%v want normal（winner 档退役）", o.Reason["budget_bucket"])
@@ -872,9 +875,11 @@ func gateTestSetup(t *testing.T) *store.Store {
 	return st
 }
 
-// TestGateMA60OffNoReasonField：默认 off 不写入 gate_ma60（保与历史基线逐单等价）。
+// TestGateMA60OffNoReasonField：off 模式不写入 gate_ma60（保与历史基线逐单等价）。
+// 注意：0025 起 gate.ma60.mode 已种子化为 stop，故必须显式设 off 才能测 off 行为。
 func TestGateMA60OffNoReasonField(t *testing.T) {
 	st := gateTestSetup(t)
+	setGateMode(t, st, "off")
 	seedIndexDecline(t, st, "2026-10-16") // 即使指数在跌，off 也不得生效
 	p := New(st)
 	res, err := p.Build(context.Background(), "2026-10-16")
@@ -891,8 +896,8 @@ func TestGateMA60OffNoReasonField(t *testing.T) {
 	if _, ok := orders[0].Reason["gate_ma60"]; ok {
 		t.Errorf("off 模式不应写 gate_ma60，got %v", orders[0].Reason["gate_ma60"])
 	}
-	if units, _ := orders[0].Reason["units"].(float64); units != 1 {
-		t.Errorf("off 模式 units=%v want 1（A判据降势→1单位，闸门不生效）", units)
+	if units, _ := orders[0].Reason["units"].(float64); units != 3 {
+		t.Errorf("off 模式 units=%v want 3（阶梯制 t1，闸门不生效）", units)
 	}
 }
 
@@ -917,8 +922,8 @@ func TestGateMA60Half(t *testing.T) {
 	if units, _ := o.Reason["units"].(float64); units != 0.5 {
 		t.Errorf("units=%v want 0.5（half 闸门）", units)
 	}
-	if basis, _ := o.Reason["sizing_basis"].(string); basis != "default|ma60_half" {
-		t.Errorf("sizing_basis=%v want default|ma60_half", basis)
+	if basis, _ := o.Reason["sizing_basis"].(string); basis != "newhigh_t1|ma60_half" {
+		t.Errorf("sizing_basis=%v want newhigh_t1|ma60_half", basis)
 	}
 	if o.Qty != 400 { // 800 股/单位 × 0.5 = 400
 		t.Errorf("qty=%d want 400", o.Qty)
@@ -975,8 +980,8 @@ func TestGateMA60StopRisingNotTriggered(t *testing.T) {
 	if below, _ := g["below"].(bool); below {
 		t.Errorf("gate_ma60.below=%v want false（上涨指数）", g["below"])
 	}
-	if units, _ := orders[0].Reason["units"].(float64); units != 2 {
-		t.Errorf("units=%v want 2（升势日 A M1 2 单位，闸门不触发）", units)
+	if units, _ := orders[0].Reason["units"].(float64); units != 3 {
+		t.Errorf("units=%v want 3（阶梯制 t1，闸门不触发）", units)
 	}
 }
 
