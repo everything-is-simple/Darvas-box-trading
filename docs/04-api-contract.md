@@ -389,10 +389,13 @@ type PlanParams struct {
 }
 ```
 
-> **A 判据查询路径**（planner → regime）：`regimeLabel(planDate)` → `regime.ClassifyDateA(st, date)`
-> 读 sh000001 最近 61 根 low（`BarRepo.BarsWindow(DefaultIndex, date, 61)`），算
-> `cur=min(末60根) / prev=min(前60根)`，`cur>prev×1.002`→升势(Bull)。零未来信息。
-> M8.8 宽度法 `ClassifyDate` 不再被 planner 调用，仅分体制报告 `regime.Run` 保留。
+> **⚠️ 体制识别与仓位的实际接线（2026-11-04 实读代码钉死，修正旧文档「M8.8 宽度法判定市场体制」的偏差）**：
+> 系统里有三套体制识别，**在新基线下没有一套接到总仓位**——这是 docs/48 §一「缺的不是识别器，是传导」的代码证据：
+> - **M8.8 宽度法 `ClassifyDate`**：读 `BreadthAgg`（全市场 broken_up/broken_down 事件流）。**从未被 planner 调用于仓位**，仅分体制报告 `regime.Run` 保留（旧 planner 注释 `planner.go:328` 已声明「M8.8 宽度法已不参与仓位」）。
+> - **A 判据 `ClassifyDateA`**（60 日低点相邻比）：`regimeLabel(planDate)` 曾调用它做「升势 2 单位/其余 1 单位」——但新基线 `pos.newhigh_ladder=on`（阶梯制）后**该分支走不到**，A 判据同样不参与仓位。
+> - **阶梯距高 `pos.newhigh.*`**：新基线唯一决定「买多少」的机制（t1=3/t2=2/t3=1/t4=0.5 单位），但它只做**单票**分档，没有一条线接到**总仓位/暴露**。
+>
+> 综上：三套识别器都「识别」出了状态，但**「状态 → 总仓位暴露」的传导链空缺**，攻防转换（docs/48）补的正是这条链。
 
 ### 4.6 账本（ledger）
 

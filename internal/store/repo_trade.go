@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -531,13 +530,9 @@ func (r *TradeRepo) applyTrackTransition(posID int64, date string) error {
 		Scan(&lv); err != nil {
 		return err
 	}
-	months := 12
-	var pv string
-	if err := r.db.QueryRow(`SELECT value FROM param WHERE key = 'pool.blacklist_months'`).Scan(&pv); err == nil && pv != "" {
-		if m, err := strconv.Atoi(pv); err == nil {
-			months = m
-		}
-	}
+	// 0031：改走三件套口径（param_ledger.py 扫 Get* 字面量，直读 SQL 是盲区）。
+	// 0019 误删此行后代码走默认 12 恰等于 0017 种子值，行为不变但台账漏登、Set 静默失败、指纹噪声。
+	months := NewParamRepo(r.db).GetInt("pool.blacklist_months", 12)
 	switch {
 	case pnl > 0:
 		// 盈利 → winner

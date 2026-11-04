@@ -1222,3 +1222,16 @@ func TestIsHighestBoxTrend(t *testing.T) {
 	}
 }
 
+
+// TestRegimeScaleMultStub 攻防转换传导接口桩（0030）：mode=off 恒 1.0（与基线逐单等价）；
+// mode=on 尚未实现 L1 状态机，暂也返回 1.0（不改变任何输出）。这是「缺传导」链在代码里的
+// 物理挂点——验证它存在且默认等价，留待后复权（docs/53）+ 新基线账本后接入真实乘数。
+func TestRegimeScaleMultStub(t *testing.T) {
+	if got := regimeScaleMult(regimeScaleState{mode: "off"}); got != 1.0 {
+		t.Errorf("off 乘数=%v want 1.0（恒等，等价性锚）", got)
+	}
+	// on 尚未接状态机：现阶段也必须恒等，否则会污染新基线账本。
+	if got := regimeScaleMult(regimeScaleState{mode: "on"}); got != 1.0 {
+		t.Errorf("on（未实现）乘数=%v want 1.0（挂点占位，不改变输出）", got)
+	}
+}

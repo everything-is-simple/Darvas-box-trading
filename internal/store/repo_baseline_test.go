@@ -16,12 +16,9 @@ func TestRecordBaseline(t *testing.T) {
 	}
 	defer st.Close()
 
-	// 灌两个参数，保证指纹可算
-	if err := st.ParamRepo.Set("a.key", "1"); err != nil {
-		t.Fatalf("set param: %v", err)
-	}
-	if err := st.ParamRepo.Set("b.key", "2"); err != nil {
-		t.Fatalf("set param: %v", err)
+	// 灌两个参数，保证指纹可算（0031 加固后 Set 对不存在的键报错，改用 INSERT）
+	if _, err := st.DB().Exec(`INSERT INTO param(key,value) VALUES('a.key','1'),('b.key','2')`); err != nil {
+		t.Fatalf("seed param: %v", err)
 	}
 
 	id1, err := st.RecordBaseline("0.5.0-test", "")

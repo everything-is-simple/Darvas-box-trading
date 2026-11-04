@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"strconv"
 )
 
@@ -50,11 +51,17 @@ func (r *ParamRepo) GetString(key string, def string) string {
 }
 
 // Set 写参数，old_value留痕审计（docs/06-consistency.md §3.1）。
+// 0031 加固：key 不存在时 RowsAffected=0 → 报错（不再静默成功）。
+// 改值须先种子化（migration）或用回测 --set（INSERT ON CONFLICT）。
 func (r *ParamRepo) Set(key, value string) error {
-	_, err := r.db.Exec(`UPDATE param SET old_value = value, value = ?, changed_at = datetime('now','localtime')
+	res, err := r.db.Exec(`UPDATE param SET old_value = value, value = ?, changed_at = datetime('now','localtime')
 		WHERE key = ?`, value, key)
 	if err != nil {
 		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("param: key %q 不存在，Set 失败（改值须先种子化或用回测 --set 注入）", key)
 	}
 	return nil
 }

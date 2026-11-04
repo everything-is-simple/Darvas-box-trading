@@ -1,0 +1,21 @@
+-- 0031: 重新种子化 pool.blacklist_months = 12
+-- 背景：0019 把它当死参数删了，但 repo_trade.go:applyTrackTransition 仍在读它
+--   （每次清仓亏损时定黑名单冷却月数）。0019 删行后代码走默认 12，恰好等于
+--   0017 的种子值，行为不变——但这是纯运气。
+--
+-- 问题面（2026-11-04 实查）：
+--   1. param_ledger.py 只扫 GetString/GetFloat/GetInt 字面量，直读 SQL 是盲区
+--      → docs/44 台账 48 键漏登（实际 49 键）
+--   2. docs/01 §6.1 把它列进「0019 已删死参数」清单——与代码事实不符
+--   3. ParamRepo.Set（UPDATE）对不存在的 key 静默成功（RowsAffected=0 不报错）
+--   4. 0027 参数指纹含/不含此行的库指纹不同，虽行为等价（都走 12），但对账噪声
+--
+-- 修复：
+--   repo_trade.go 已改为 GetString 三件套口径（进 param_ledger.py 扫描范围），
+--   本 migration 把种子值重新灌回 = 12，与代码默认值对齐。
+--   ParamRepo.Set 同时加固：key 不存在时报错。
+--
+-- 值依据：0017 种子值 = 12，代码默认 = 12，生产库 var/darvas.db（v18）现值 = 12。
+--   E16「无冷却」对照臂走 --set pool.blacklist_months=0 注入，不经种子。
+INSERT INTO param(key, value) VALUES ('pool.blacklist_months', '12')
+    ON CONFLICT(key) DO UPDATE SET value = '12';

@@ -189,7 +189,7 @@
 
 > **权威台账在 `docs/44-new-baseline-config.md` §二**（由 `scripts/param_ledger.py` 从代码+迁移自动生成，
 > `check_consistency` C6 强制校验）。本表是**需求视角**的说明与依据，键集必须与 44 台账一致；
-> 两表口径差 = C6 报错。当前基线共 **47 键**（种子 40 / 只走代码默认 7）。
+> 两表口径差 = C6 报错。当前基线共 **49 键**（种子 42 / 只走代码默认 7）。
 
 | 参数 | 键 | 默认 | 依据 |
 |------|-----|------|------|
@@ -214,14 +214,14 @@
 | 单笔最低佣金 | `fee.commission_min` | 5元 | 券商最低收费 |
 | 印花税 | `fee.stamp_tax` | 千1 | 卖出单边 |
 | 过户费 | `fee.transfer_rate` | 万0.1 | 双向简化 |
-| 宽度窗口 | `regime.breadth.window` | 20 | M8.8 滚动窗口交易日 |
-| 牛触发阈值 | `regime.breadth.bull_thresh` | 0.55 | 连续 3 日 ≥ 触发牛 |
-| 熊标记阈值 | `regime.breadth.bear_thresh` | 0.40 | 仅日志区分 |
-| 确认日数 | `regime.breadth.confirm` | 3 | 与三日法则同构 |
-| 次新过滤 | `regime.breadth.min_history` | 60 | 个股最少 60 根日线才计事件 |
-| A 判据回看 | `regime.a.lookback` | 60 | 代码默认值（**未种子化**，取默认即生效） |
-| A 升势阈值 | `regime.a.up_bias` | 1.002 | 升势→首买 2 单位（**未调过**） |
-| A 降势阈值 | `regime.a.down_bias` | 0.998 | 降势→1 单位（**未调过**） |
+| 宽度窗口 | `regime.breadth.window` | 20 | M8.8 滚动窗口交易日（**仅分体制报告 regime.Run 用，新基线不接仓位**） |
+| 牛触发阈值 | `regime.breadth.bull_thresh` | 0.55 | 连续 3 日 ≥ 触发牛（**同上，仅报告**） |
+| 熊标记阈值 | `regime.breadth.bear_thresh` | 0.40 | 仅日志区分（**同上，仅报告**） |
+| 确认日数 | `regime.breadth.confirm` | 3 | 与三日法则同构（**同上，仅报告**） |
+| 次新过滤 | `regime.breadth.min_history` | 60 | 个股最少 60 根日线才计事件（**同上，仅报告**） |
+| A 判据回看 | `regime.a.lookback` | 60 | 代码默认值（**未种子化**，取默认即生效）（**新基线 `newhigh_ladder=on` 时该分支走不到，不参与仓位**） |
+| A 升势阈值 | `regime.a.up_bias` | 1.002 | 升势→首买 2 单位（**未调过**）（**同上，新基线不生效**） |
+| A 降势阈值 | `regime.a.down_bias` | 0.998 | 降势→1 单位（**未调过**）（**同上，新基线不生效**） |
 | 单位市值 | `pos.unit` | 0.02 | 1 单位 = 2% 权益 |
 | 阶梯开关 | `pos.newhigh_ladder` | on | ✅ **2026-11-03 种子化（0025）**：M9.0 第 5 维落地，按距 52 周高点分档给单位 |
 | 阶梯回看 | `pos.newhigh.lookback` | 252 | 52 周（交易日） |
@@ -230,6 +230,7 @@
 | 阶梯单位 t2 | `pos.newhigh.units.t2` | 2 | 5–10% |
 | 阶梯单位 t3 | `pos.newhigh.units.t3` | 1 | 10–20% |
 | 阶梯单位 t4 | `pos.newhigh.units.t4` | 0.5 | 20–40% |
+| 攻防传导开关 | `pos.regime_scale.mode` | off | 0030 接口桩：off 恒等（与基线逐单等价）；on 读 L1 状态机（宽度+距高双确认）映射单位乘数，**留待后复权 + 新基线账本重算**（docs/48 特征二） |
 | 跟踪池活跃上限 | `pool.maxwatch` | 8 | 软参考：不再拒绝入池，仅日志告警 |
 | 同时持仓上限 | `pool.max_hold` | **14** | ✅ **2026-11-03 种子化（0025）**：新基线用 14（牛市铺满 60–70%）；原 0=废止、7=旧账本语义。20 档待验证，未采纳 |
 | 权益闸门开关 | `pos.equity_gate` | **off** | ✅ **2026-11-03 种子化（0025）**：B-4 ③ 否决 → 新基线关闭；on 仅作对照保留 |
@@ -246,18 +247,24 @@
 
 ### 6.1 已废除参数（代码不读，2026-10-28 清点后移除）
 
-> 以下 **28 键**存在于历史库参数表，但 `internal/` 代码**零引用**，已由 migration 0019 删除。
+> 以下 **27 键**存在于历史库参数表，但 `internal/` 代码**零引用**，已由 migration 0019 删除。
 > 其中 `risk.*` = 金字塔加码整套（量化时代废除，docs/00 §4.1）；`pos.units.*` = 旧单位制；
 > `regime.mult.*` = 牛熊乘数（功能升级为「牛冲熊守」待立项，非参数）。
 >
-> ⚠️ **0019 的 DELETE 列表是 29 键，第 29 个 `tdx.root` 不是死参数**（代码仍在读，见 §6.0）——
-> 它被删是因为**值机器相关，不该写进库**。已改为代码自动探测 + `DARVAS_TDX` 环境变量覆盖。
-> 这是 2026-11-03 建参数台账时抓到的「误杀」，旧的 §6.1 把它当死参数是错的。
+> ⚠️ **0019 的 DELETE 列表是 29 键，实际 27 真死 + 2 误杀**：
+> - **`tdx.root`**（代码仍在读，见 §6.0）——被删是因为**值机器相关，不该写进库**。
+>   已改为代码自动探测 + `DARVAS_TDX` 环境变量覆盖。
+> - **`pool.blacklist_months`**（`repo_trade.go:applyTrackTransition` 仍在读，定亏损清仓后的黑名单冷却月数）——
+>   0019 删行后代码走默认 12，恰等于 0017 种子值，**行为不变是纯运气**。
+>   0031 已重新种子化 `=12`，代码改走 `GetInt` 三件套口径（进 param_ledger.py 扫描范围，台账 48→49 键）；
+>   `ParamRepo.Set` 同步加固：key 不存在时报错（不再静默成功）。
+>
+> 以上两项是 2026-11-04 建参数台账时抓到的「误杀」，旧的 §6.1 把它们当死参数是错的。
 
 - **加码整套（8）**：`risk.leg1 / risk.leg23 / risk.maxpos / risk.scale / risk.maxlegs / risk.addon_max_premium / risk.probe_min_shares / risk.probe_max_pct`
 - **旧单位制（9）**：`pos.units.main / pos.units_total / pos.units.reserve / pos.units.winner / pos.units.probe / pos.units.per_stock_main_max / pos.units.per_stock_main_step / pos.units.per_stock_probe_bear / pos.units.per_stock_probe_bull`
 - **牛熊乘数（7）**：`regime.bull_thresh / regime.bear_thresh / regime.window / regime.mult.bull / regime.mult.bear / regime.mult.range / regime.indices`
-- **单个（4）**：`pool.maxloss / pool.blacklist_months / screen.maxboxage / screen.rsthreshold`
+- **单个（3）**：`pool.maxloss / screen.maxboxage / screen.rsthreshold`
 
 ---
 
@@ -365,7 +372,7 @@
 
 > **库内铁证**：新基线库（`var/bt/base/bt_baseA_2010.db`）实际写入 **38 项**参数；
 > 老账本 `bt_e17_*` 为 62 项 → 0019 删除 29 死参数、新增 5 项闸门/预算键、改 1 项（`max_hold` 7→14）。
-> 38 项是「baseA 快照口径」；**现行基线 47 键的逐键台账见 docs/44 §二**（C6 机器校验），
+> 38 项是「baseA 快照口径」；**现行基线 49 键的逐键台账见 docs/44 §二**（C6 机器校验），
 > 本节 §6 只记**参数依据与决策状态**。
 
 | 设计项 | 参数键 | 新基线值 | 状态与依据 |

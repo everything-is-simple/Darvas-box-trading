@@ -108,6 +108,11 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		}
 	}
 
+	// 攻防转换（docs/48 特征二）传导接口桩（0030）：mode=off 恒等，mode=on 才读 L1 状态机。
+	// 现仅落参数 + 挂点，on 的实现留待后复权（docs/53）后的新宽度序列，判据基准须新基线重算。
+	regimeScale := regimeScaleState{mode: p.st.ParamRepo.GetString("pos.regime_scale.mode", "off")}
+	regimeScale.mult = regimeScaleMult(regimeScale)
+
 	// 组合级约束：同时持仓数上限（A M1 升势 2 单位 × maxHold 只 ≈ 权益 28%，远低于 70%）。
 	// 不再有「试探/主力」分桶预算——不加码，仓位只有首买一档，组合风险由「持仓数」管。
 	// docs/33 §2.2（2026-10-27）：预算必须含未成交买单——挂单在生成时预占名额，
@@ -192,7 +197,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 			}
 			// A M1（2026-10-23）：首买单位由 A 判据升势决定（升势 2 / 其余 1），winner 5x 退役。
 			o := p.buyOrder(s, box, market, unitValue,
-				buyPrem, sellDisc, posByCode, budget, eqb, plannedQty, planDate, executeDate, maxEntryGap, ladder, gate, maxGrowthDays)
+				buyPrem, sellDisc, posByCode, budget, eqb, plannedQty, planDate, executeDate, maxEntryGap, ladder, gate, maxGrowthDays, regimeScale)
 			if o != nil {
 				orders = append(orders, *o)
 			}
@@ -364,6 +369,24 @@ type gateState struct {
 func (b *holdBudget) canOpen() bool { return b.max <= 0 || b.open < b.max }
 
 func (b *holdBudget) take() { b.open++ }
+
+// regimeScaleState 攻防转换（docs/48 特征二）传导接口桩状态（0030）。
+// mode=off 时 mult=1.0，buyOrder 的乘法是恒等——与历史基线逐单等价；
+// mode=on 时才把 L1 状态机（宽度 b50 + 距高 dd52 双确认，含滞回）映射为乘数（留待后复权）。
+type regimeScaleState struct {
+	mode string  // off | on
+	mult float64 // 单位乘数；off=1.0，on=attack_mult(2.0)/1.0/defend_mult(0.5)
+}
+
+// regimeScaleMult 由 mode 解析单位乘数。接口桩阶段：off 恒 1.0；on 暂未实现（返回 1.0，
+// 待后复权 + 新基线账本后接入 L1 状态机）。签名预留，避免未来改动波及 buyOrder 调用方。
+func regimeScaleMult(s regimeScaleState) float64 {
+	if s.mode == "on" {
+		// TODO(特征二，待新基线)：读 L1 状态机（宽度+距高双确认+滞回）→ attack_mult/1.0/defend_mult。
+		return 1.0
+	}
+	return 1.0
+}
 
 // equityBudget A′ 权益预算（docs/00 §5.6.9，2026-10-27 拍板）：
 // 永久留 50% 现金，总仓位（持仓市值 + 未成交买单名义）≤ 50% 权益；
@@ -611,7 +634,7 @@ func (p *Planner) isHighestBox(box *contract.Box, mode string, windowN int, plan
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
 	buyPrem, sellDisc float64, posByCode map[string]*contract.Position,
 	budget *holdBudget, eqb *equityBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64,
-	ladder newHighLadder, gate gateState, maxGrowthDays int) *contract.PlanOrder {
+	ladder newHighLadder, gate gateState, maxGrowthDays int, regimeScale regimeScaleState) *contract.PlanOrder {
 	trigger := box.Top * buyPrem
 	// 初始止损（B2 校订 2026-10-22，原书 §4.1 + §3.4）：=被突破箱体上轨（突破点）下方
 	// ——紧止损。原书 §3.4「新箱体下轨 ≈ 前一箱体上轨（±3%容差）」，故「新箱体下轨下方」
@@ -688,6 +711,13 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	if gate.mode == "half" && gate.ok && gate.below && units > 0.5 {
 		units = 0.5
 		basis = basis + "|ma60_half"
+	}
+
+	// 攻防转换传导挂点（docs/48 §四 L3，0030 接口桩）：mode=off 恒等，不改变任何输出；
+	// mode=on 时才把 L1 状态机映射为乘数乘到 units（留待后复权 + 新基线账本重算）。
+	if regimeScale.mult > 0 && regimeScale.mult != 1.0 {
+		units *= regimeScale.mult
+		basis = basis + "|regime_scale"
 	}
 
 	// 组合约束：同时持仓数上限（含未成交买单预占）。

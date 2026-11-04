@@ -94,6 +94,8 @@ VERIFIED: dict[str, tuple[str, str]] = {
     "regime.a.lookback": ("未验", "A 判据回看；**不再决定仓位单位**（阶梯制已接管）"),
     "regime.a.up_bias": ("未验", "A 判据升势阈值，从未调过"),
     "regime.a.down_bias": ("未验", "A 判据降势阈值，从未调过"),
+    "pos.regime_scale.mode": ("未验", "攻防转换传导开关（0030 接口桩）：off 恒等；on 读 L1 状态机，留待后复权 + 新基线账本重算（docs/48 特征二）"),
+    "pool.blacklist_months": ("维持", "亏损清仓后黑名单冷却月数；0017 种子=12，0019 误删，0031 重新种子化=12（代码默认对齐）"),
     "buy.uptrend_only": ("否决", "P3-8 2026-11-03 定稿否决，仅回测注入，不种子化"),
     "buy.highest_box_mode": ("否决", "P3-8 2026-11-03 定稿否决（alltime/trend 三档全否）"),
     "buy.highest_box_window": ("否决", "随 highest_box_mode 否决；trend 模式专用"),
