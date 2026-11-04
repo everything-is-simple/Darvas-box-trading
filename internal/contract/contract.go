@@ -57,6 +57,7 @@ type Box struct {
 	Status          BoxStatus
 	PrevBoxID       int64 // 阶梯链：前一箱体ID（0=无）
 	BrokenDate      string
+	DeadDate        string // 死亡日（broken_down/invalid 当天；broken_up 无死亡日，NULL）
 }
 
 // SignalType 信号类型（四类，封闭集合）

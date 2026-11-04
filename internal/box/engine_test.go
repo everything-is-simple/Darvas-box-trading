@@ -222,6 +222,10 @@ func TestTooNarrowBoxInvalidates(t *testing.T) {
 	if boxes[0].Status != contract.BoxInvalid {
 		t.Fatalf("narrow box status=%s want invalid", boxes[0].Status)
 	}
+	// invalid 的死亡日 = 作废当天（d(6)）
+	if boxes[0].DeadDate != d(6) {
+		t.Fatalf("narrow box dead_date=%q want %s (作废当天)", boxes[0].DeadDate, d(6))
+	}
 	// 应已重启第二个箱体（forming）
 	if len(boxes) < 2 || boxes[1].Status != contract.BoxForming {
 		t.Fatalf("should restart a new forming box after invalidation, got %+v", boxes)

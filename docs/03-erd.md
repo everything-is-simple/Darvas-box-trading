@@ -59,6 +59,8 @@ erDiagram
         DATE bottom_confirmed "下轨3日确认日"
         TEXT status "forming/confirmed/broken_up/broken_down/invalid"
         INTEGER prev_box_id FK "阶梯链"
+        DATE broken_date "突破/跌破日期"
+        DATE dead_date "死亡日(broken_down/invalid当天,0028)"
         DATE created_at
     }
     candidate {
@@ -222,6 +224,12 @@ erDiagram
 | confirmed → broken_down | 收盘<bottom | 触发stop信号 |
 | forming → invalid | 下轨确立前创新高 / 宽度校验失败（top≤bottom 或 (top−bottom)/top<box.min_width） | 当根K线即重启新箱体（见下一行）；invalid 不计入阶梯（prev 锚点=最近 confirmed 箱体） |
 | invalid → forming | invalidateAndRestart：从触发作废的当根 K 线重启（docs/00 §3.2.4 / §3.5） | 每根 K 线必属且仅属一个箱体（2026-10-29 对照 engine.go 校正） |
+
+> **✅ 死亡日已补（2026-11-04，migration 0028）**：新增 `dead_date` 记箱体「死亡日」= `broken_down`（向下破位）
+> 或 `invalid`（作废）当天。`broken_date` 语义保持不动（仍同时承载 broken_up / broken_down 事件日期，
+> 供 regime 牛熊识别与 BreadthAgg 市场宽度法读取）。`broken_up` 箱体的生命周期终点即「突破日」，
+> 无额外死亡日（`dead_date` 为 NULL）。补齐 docs/49 §五之二 特征一的
+> 「出生(bottom_confirmed) → 突破(broken_date) → 死亡(dead_date) → 卖出(closed_date) → 继任(prev_box_id)」链条。
 
 > **⚠️ 生命周期证据缺口（2026-10-29 生命周期审计登记；仅注记，不改 SQL）**：
 > `box` 表无 `start_date`（逻辑出生日——`created_at` 是行插入时间，二者不可混用）、

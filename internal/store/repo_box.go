@@ -74,15 +74,15 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 	ids := make([]int64, 0, len(boxes))
 	reused := make(map[int64]bool, len(existing))
 
-	updStmt, err := tx.Prepare(`UPDATE box SET top_confirmed=?, bottom_confirmed=?, status=?, prev_box_id=?, broken_date=?
+	updStmt, err := tx.Prepare(`UPDATE box SET top_confirmed=?, bottom_confirmed=?, status=?, prev_box_id=?, broken_date=?, dead_date=?
 		WHERE id = ?`)
 	if err != nil {
 		return nil, err
 	}
 	defer updStmt.Close()
 	insStmt, err := tx.Prepare(`INSERT INTO box
-		(code, top, bottom, top_confirmed, bottom_confirmed, status, prev_box_id, broken_date)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+		(code, top, bottom, top_confirmed, bottom_confirmed, status, prev_box_id, broken_date, dead_date)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return nil, err
 	}
@@ -104,14 +104,14 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 			reused[dbID] = true
 			if _, err := updStmt.Exec(
 				nullEmpty(b.TopConfirmed), nullEmpty(b.BottomConfirmed),
-				string(b.Status), prevVal, nullEmpty(b.BrokenDate), dbID); err != nil {
+				string(b.Status), prevVal, nullEmpty(b.BrokenDate), nullEmpty(b.DeadDate), dbID); err != nil {
 				return nil, fmt.Errorf("update box %s #%d: %w", b.Code, dbID, err)
 			}
 		} else {
 			res, err := insStmt.Exec(
 				b.Code, b.Top, b.Bottom,
 				nullEmpty(b.TopConfirmed), nullEmpty(b.BottomConfirmed),
-				string(b.Status), prevVal, nullEmpty(b.BrokenDate),
+				string(b.Status), prevVal, nullEmpty(b.BrokenDate), nullEmpty(b.DeadDate),
 			)
 			if err != nil {
 				return nil, fmt.Errorf("insert box %s: %w", b.Code, err)
@@ -155,13 +155,13 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 // 含 forming 暂态行——供 GUI/报告展示「当前形成中状态」；决策逻辑请用 LatestNonFormingBox。
 func (r *BoxRepo) LatestBox(code string) (*contract.Box, error) {
 	var b contract.Box
-	var topC, botC, broken sql.NullString
+	var topC, botC, broken, dead sql.NullString
 	var prev sql.NullInt64
 	var status string
 	err := r.db.QueryRow(`SELECT id, code, top, bottom,
-		CAST(top_confirmed AS TEXT), CAST(bottom_confirmed AS TEXT), status, prev_box_id, CAST(broken_date AS TEXT)
+		CAST(top_confirmed AS TEXT), CAST(bottom_confirmed AS TEXT), status, prev_box_id, CAST(broken_date AS TEXT), CAST(dead_date AS TEXT)
 		FROM box WHERE code = ? ORDER BY id DESC LIMIT 1`, code).
-		Scan(&b.ID, &b.Code, &b.Top, &b.Bottom, &topC, &botC, &status, &prev, &broken)
+		Scan(&b.ID, &b.Code, &b.Top, &b.Bottom, &topC, &botC, &status, &prev, &broken, &dead)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -171,6 +171,7 @@ func (r *BoxRepo) LatestBox(code string) (*contract.Box, error) {
 	b.TopConfirmed = topC.String
 	b.BottomConfirmed = botC.String
 	b.BrokenDate = broken.String
+	b.DeadDate = dead.String
 	if prev.Valid {
 		b.PrevBoxID = prev.Int64
 	}
@@ -186,14 +187,14 @@ func (r *BoxRepo) LatestBox(code string) (*contract.Box, error) {
 // spuriously 触发 stop 信号。
 func (r *BoxRepo) LatestNonFormingBox(code string) (*contract.Box, error) {
 	var b contract.Box
-	var topC, botC, broken sql.NullString
+	var topC, botC, broken, dead sql.NullString
 	var prev sql.NullInt64
 	var status string
 	err := r.db.QueryRow(`SELECT id, code, top, bottom,
-		CAST(top_confirmed AS TEXT), CAST(bottom_confirmed AS TEXT), status, prev_box_id, CAST(broken_date AS TEXT)
+		CAST(top_confirmed AS TEXT), CAST(bottom_confirmed AS TEXT), status, prev_box_id, CAST(broken_date AS TEXT), CAST(dead_date AS TEXT)
 		FROM box WHERE code = ? AND status IN ('confirmed','broken_up','broken_down')
 		ORDER BY id DESC LIMIT 1`, code).
-		Scan(&b.ID, &b.Code, &b.Top, &b.Bottom, &topC, &botC, &status, &prev, &broken)
+		Scan(&b.ID, &b.Code, &b.Top, &b.Bottom, &topC, &botC, &status, &prev, &broken, &dead)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -203,6 +204,7 @@ func (r *BoxRepo) LatestNonFormingBox(code string) (*contract.Box, error) {
 	b.TopConfirmed = topC.String
 	b.BottomConfirmed = botC.String
 	b.BrokenDate = broken.String
+	b.DeadDate = dead.String
 	if prev.Valid {
 		b.PrevBoxID = prev.Int64
 	}
@@ -214,7 +216,7 @@ func (r *BoxRepo) LatestNonFormingBox(code string) (*contract.Box, error) {
 // 调用方按需过滤 invalid（invalid 不计入可视阶梯，docs/00 §3.3）。
 func (r *BoxRepo) Ladder(code string) ([]contract.Box, error) {
 	rows, err := r.db.Query(`SELECT id, code, top, bottom,
-		CAST(top_confirmed AS TEXT), CAST(bottom_confirmed AS TEXT), status, prev_box_id, CAST(broken_date AS TEXT)
+		CAST(top_confirmed AS TEXT), CAST(bottom_confirmed AS TEXT), status, prev_box_id, CAST(broken_date AS TEXT), CAST(dead_date AS TEXT)
 		FROM box WHERE code = ? ORDER BY id ASC`, code)
 	if err != nil {
 		return nil, err
@@ -224,15 +226,16 @@ func (r *BoxRepo) Ladder(code string) ([]contract.Box, error) {
 	for rows.Next() {
 		var b contract.Box
 		var status string
-		var topC, botC, broken sql.NullString
+		var topC, botC, broken, dead sql.NullString
 		var prev sql.NullInt64
 		if err := rows.Scan(&b.ID, &b.Code, &b.Top, &b.Bottom,
-			&topC, &botC, &status, &prev, &broken); err != nil {
+			&topC, &botC, &status, &prev, &broken, &dead); err != nil {
 			return nil, err
 		}
 		b.TopConfirmed = topC.String
 		b.BottomConfirmed = botC.String
 		b.BrokenDate = broken.String
+		b.DeadDate = dead.String
 		if prev.Valid {
 			b.PrevBoxID = prev.Int64
 		}

@@ -99,6 +99,51 @@ func TestUpsertBoxesEmpty(t *testing.T) {
 	}
 }
 
+// TestUpsertBoxesDeadDate dead_date（死亡日）读写往返：broken_down/invalid 写值，
+// broken_up/confirmed 留空，读回一致（docs/49 §五之二 特征一，migration 0028）。
+func TestUpsertBoxesDeadDate(t *testing.T) {
+	st := newTestStore(t)
+	seedSecs(t, st, "sh600519")
+	boxes := []contract.Box{
+		{ID: 1, Code: "sh600519", Top: 24, Bottom: 17, Status: contract.BoxBrokenUp,
+			BrokenDate: "2026-10-10", DeadDate: ""},
+		{ID: 2, Code: "sh600519", Top: 27, Bottom: 24, Status: contract.BoxBrokenDown,
+			BrokenDate: "2026-10-20", DeadDate: "2026-10-20"},
+		{ID: 3, Code: "sh600519", Top: 30, Bottom: 28, Status: contract.BoxInvalid,
+			BrokenDate: "", DeadDate: "2026-10-25"},
+	}
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	ladder, err := st.BoxRepo.Ladder("sh600519")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ladder) != 3 {
+		t.Fatalf("ladder len=%d want 3", len(ladder))
+	}
+	// broken_up：死亡日应为空（生命周期终点即突破日，无额外死亡日）
+	if ladder[0].DeadDate != "" {
+		t.Errorf("broken_up box dead_date=%q want empty", ladder[0].DeadDate)
+	}
+	// broken_down：死亡日 = 破位当天
+	if ladder[1].DeadDate != "2026-10-20" {
+		t.Errorf("broken_down dead_date=%q want 2026-10-20", ladder[1].DeadDate)
+	}
+	// invalid：死亡日 = 作废当天
+	if ladder[2].DeadDate != "2026-10-25" {
+		t.Errorf("invalid dead_date=%q want 2026-10-25", ladder[2].DeadDate)
+	}
+	// LatestBox 也读回 dead_date（最新 = invalid 那个）
+	lb, err := st.BoxRepo.LatestBox("sh600519")
+	if err != nil || lb == nil {
+		t.Fatalf("LatestBox err=%v lb=%v", err, lb)
+	}
+	if lb.DeadDate != "2026-10-25" {
+		t.Errorf("LatestBox dead_date=%q want 2026-10-25", lb.DeadDate)
+	}
+}
+
 // TestLadderIncludesInvalid 阶梯含 invalid（调用方负责过滤）。
 func TestLadderIncludesInvalid(t *testing.T) {
 	st := newTestStore(t)

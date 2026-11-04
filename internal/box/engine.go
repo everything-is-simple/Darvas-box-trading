@@ -75,6 +75,7 @@ type boxState struct {
 	status             contract.BoxStatus
 	prevBoxID          int64
 	brokenDate         string
+	deadDate           string // 死亡日：broken_down/invalid 当天；broken_up 保持空
 }
 
 // step 处理第 i 根 K 线，推进当前箱体状态机。
@@ -141,6 +142,7 @@ func (s *scanner) step(i int, bars []contract.DailyBar) {
 	if b.Close < cur.bottom {
 		cur.status = contract.BoxBrokenDown
 		cur.brokenDate = b.Date
+		cur.deadDate = b.Date
 		s.emit(cur)
 		s.startBox(i, b)
 		return
@@ -173,6 +175,7 @@ func (s *scanner) startBox(i int, b contract.DailyBar) {
 // invalidateAndRestart 把当前箱体标记为 invalid 并立即从当前 K 线重启新箱体。
 func (s *scanner) invalidateAndRestart(i int, b contract.DailyBar) {
 	s.cur.status = contract.BoxInvalid
+	s.cur.deadDate = b.Date
 	s.emit(s.cur)
 	s.startBox(i, b)
 }
@@ -189,6 +192,7 @@ func (s *scanner) emit(cur *boxState) {
 		Status:          cur.status,
 		PrevBoxID:       cur.prevBoxID,
 		BrokenDate:      cur.brokenDate,
+		DeadDate:        cur.deadDate,
 	})
 }
 
