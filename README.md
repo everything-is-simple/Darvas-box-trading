@@ -110,7 +110,7 @@ darvas version
 
 ## 文档体系（按此顺序读）
 
-> **完整索引与治理规则见 [docs/README.md](docs/README.md)**。顶层保留 11 份必要文档；历史里程碑、旧代码导读、旧实验纲领与一次性审计均已归档。
+> **完整索引与治理规则见 [docs/README.md](docs/README.md)**。顶层保留 12 份必要文档；历史里程碑、旧代码导读、旧实验纲领与一次性审计均已归档。
 
 | 文档 | 内容 |
 |------|------|
@@ -121,7 +121,8 @@ darvas version
 | [docs/29-box-gradient-experiment-plan.md](docs/29-box-gradient-experiment-plan.md) | **当前执行队列**：新基线依赖顺序、验收、已裁定结论与判定口径 |
 | [docs/44-new-baseline-config.md](docs/44-new-baseline-config.md) | **唯一参数事实源**：49 键逐键生效值（`param_ledger.py` 生成 + C6 校验） |
 | [docs/49-baseline-rebuild-charter.md](docs/49-baseline-rebuild-charter.md) | **新基线重建纲领**：SOP、验收 V1–V7、身份、两项硬特征 |
-| [docs/53-data-spec-new-baseline.md](docs/53-data-spec-new-baseline.md) | **后复权数据目标规格**（待实施，当前运行时仍使用原始价） |
+| [docs/53-data-spec-new-baseline.md](docs/53-data-spec-new-baseline.md) | **后复权数据规格**：`daily_bar_adj` 已落地（`full_hist_adj.db`，`adj_ready=1`），生产 `serve` 仍走原始价 |
+| [docs/55-adj-experiment-replay-matrix.md](docs/55-adj-experiment-replay-matrix.md) | **adj 实验重做矩阵（22 项）+ Q1–Q5 裁定 + 执行契约**：旧结论加横幅保留、新结果 `_adj` 并存、B 类只与新基线比、2019+ 不解冻 |
 
 ---
 
@@ -153,7 +154,7 @@ internal/
   pipeline/            # 盘后流水线编排 + 备份轮转
   reporter/            # HTML日报
   gui/                 # 本地HTTP UI（embed静态+JSON API）
-docs/                  # 11 份必要文档 + README 索引：00-04、06、29、44、48、49、53
+docs/                  # 12 份必要文档 + README 索引：00-04、06、29、44、48、49、53、55
 docs/archive/          # 历史档案（非事实源，原稿留痕）
 scripts/               # 一致性检查脚本
 var/                   # 运行时（db/备份/报告）

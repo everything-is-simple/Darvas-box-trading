@@ -108,7 +108,7 @@ def db_complete(path, min_end):
         return False
 
 
-def run_one(year, mirror, force=False):
+def run_one(year, mirror, force=False, src=SRC, exe=EXE):
     idx, name = MIRRORS[mirror]
     db = OUT / f"bt_base{mirror}_{year}.db"
     logp = OUT / f"bt_base{mirror}_{year}.log"
@@ -124,7 +124,7 @@ def run_one(year, mirror, force=False):
             if p.exists():
                 p.unlink()
     sa = setargs(mirror)
-    cmd = [str(EXE), "backtest", "--src", str(SRC),
+    cmd = [str(exe), "backtest", "--src", str(src),
            "--from", f"{year}-01-01", "--to", f"{year}-12-31",
            "--mode", "regime", "--db", str(db), "--set", sa]
     log(f"START {year} {mirror}({name}) idx={idx} → {db.name}", logp)
@@ -140,13 +140,14 @@ def run_one(year, mirror, force=False):
     return 0
 
 
-def run_cont(mirror, from_date, to_date, force=False, resume=False):
+def run_cont(mirror, from_date, to_date, force=False, resume=False, src=SRC, exe=EXE, db=None):
     """连续单库（docs/50 阶段 C）：一次跑完 [from, to] 一条真实资金约束的账本，
     替代"单年库 + 事后链式复利"。复用 regime 模式 + COMMON 参数，只改窗口推导。
-    resume=True 时断点续跑（docs/51 阶段 D）：保留已跑库，交给 darvas --resume-run 从断点续。"""
+    resume=True 时断点续跑（docs/51 阶段 D）：保留已跑库，交给 darvas --resume-run 从断点续。
+    db 覆盖输出库路径（如 adj 重跑输出 bt_baseA_cont_adj.db，与 raw 隔离）。"""
     idx, name = MIRRORS[mirror]
-    db = OUT / f"bt_base{mirror}_cont.db"
-    logp = OUT / f"bt_base{mirror}_cont.log"
+    db = db or (OUT / f"bt_base{mirror}_cont.db")
+    logp = db.with_suffix(".log")
     # 完整判据（docs/archive/54 #10）：终点 = to_date 前推 35 天（覆盖年末 12-01
     # 等价判据与 smoke 短窗口两种场景）。
     to_dt = datetime.strptime(to_date, "%Y-%m-%d")
@@ -162,7 +163,7 @@ def run_cont(mirror, from_date, to_date, force=False, resume=False):
             if p.exists():
                 p.unlink()
     sa = setargs(mirror)
-    cmd = [str(EXE), "backtest", "--src", str(SRC),
+    cmd = [str(exe), "backtest", "--src", str(src),
            "--from", from_date, "--to", to_date,
            "--mode", "regime", "--db", str(db), "--set", sa]
     if resume:
@@ -211,17 +212,26 @@ def main():
                     help="连续模式断点续跑（docs/51 阶段 D）：保留已跑库，交给 darvas --resume-run 从断点续")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--src", default=str(SRC),
+                    help=f"源库路径（默认 {SRC.name}；adj 重跑传 full_hist_adj.db）")
+    ap.add_argument("--exe", default=str(EXE),
+                    help=f"回放二进制（默认 {EXE.name}）")
+    ap.add_argument("--db", default=None,
+                    help="连续模式输出库路径（默认 bt_base{mirror}_cont.db；adj 重跑可传 bt_baseA_cont_adj.db）")
     a = ap.parse_args()
+    src = Path(a.src)
+    exe = Path(a.exe)
+    db_out = Path(a.db) if a.db else None
     mirrors = [m for m in a.mirrors.split(",")]
     for m in mirrors:
         if m not in MIRRORS:
             raise SystemExit(f"未知镜子 {m}，可选 {sorted(MIRRORS)}")
     OUT.mkdir(parents=True, exist_ok=True)
-    if not a.dry_run and not EXE.exists():
-        raise SystemExit(f"二进制不存在：{EXE}（须先编译 darvas_base.exe）")
+    if not a.dry_run and not exe.exists():
+        raise SystemExit(f"二进制不存在：{exe}（须先编译 darvas_base.exe）")
     if a.cont:
         if a.dry_run:
-            print(f"二进制 {EXE.name}  源库 {SRC.name}")
+            print(f"二进制 {exe.name}  源库 {src.name}")
             for m in mirrors:
                 idx, name = MIRRORS[m]
                 tag = " [resume]" if a.resume else ""
@@ -232,14 +242,14 @@ def main():
         for m in mirrors:
             tag = " [resume]" if a.resume else ""
             print(f"\n=== 连续单库 [{a.from_date}~{a.to_date}] {m}{tag} ===", flush=True)
-            if run_cont(m, a.from_date, a.to_date, a.force, a.resume) != 0:
+            if run_cont(m, a.from_date, a.to_date, a.force, a.resume, src, exe, db_out) != 0:
                 print(f"失败即停：连续 {m}", flush=True)
                 return 1
         print("\n连续单库全部完成")
         return 0
     years = parse_years(a.years)
     if a.dry_run:
-        print(f"二进制 {EXE.name}  源库 {SRC.name}")
+        print(f"二进制 {exe.name}  源库 {src.name}")
         for y in years:
             for m in mirrors:
                 idx, name = MIRRORS[m]
@@ -253,7 +263,7 @@ def main():
         for m in mirrors:
             i += 1
             print(f"\n=== [{i}/{total}] {y} {m} ===", flush=True)
-            if run_one(y, m, a.force) != 0:
+            if run_one(y, m, a.force, src, exe) != 0:
                 print(f"失败即停：{y} {m}", flush=True)
                 return 1
     print("\n全部完成")

@@ -16,7 +16,8 @@
 | [44-new-baseline-config.md](44-new-baseline-config.md) | **唯一参数事实源**；49 键生成台账，C6 校验 |
 | [48-regime-attack-defense-design.md](48-regime-attack-defense-design.md) | 攻防转换设计；当前为待实现/待验证，不是生产能力 |
 | [49-baseline-rebuild-charter.md](49-baseline-rebuild-charter.md) | 连续基线重建、身份链、永续化和验收标准 |
-| [53-data-spec-new-baseline.md](53-data-spec-new-baseline.md) | 后复权数据目标规格；实现前必须标为待实施 |
+| [53-data-spec-new-baseline.md](53-data-spec-new-baseline.md) | 后复权数据规格；数据侧已实施验收（`adj_ready=1`），生产 `serve` 未切换 |
+| [55-adj-experiment-replay-matrix.md](55-adj-experiment-replay-matrix.md) | **adj 口径全量实验重做矩阵（22 项）+ Q1–Q5 裁定 + 执行契约**；决定旧结论如何处置、B 类对照基准、样本外纪律 |
 
 ## 目录
 
@@ -34,7 +35,8 @@
 - 参数：迁移生效值与代码实读键；生成台账：`44`。
 - 一致性检查：`scripts/check_consistency.py`、`scripts/param_ledger.py`；规则：`06`。
 - 新基线流程与验收：`49`；当前执行队列：`29`。
-- 后复权设计：`53`。当前运行时仍有未切换的原始 `daily_bar` 路径，不能据 `53` 宣称后复权已上线。
+- 后复权设计：`53`。`daily_bar_adj` 已落地（`full_hist_adj.db`，`adj_ready=1`），生产 `serve` 仍走 raw，不能据 `53` 宣称生产已切后复权。
+- 实验口径与重做裁定：`55`（旧结论一律加横幅保留，新结果 `_adj` 并存；B 类只与新基线比；2019+ 不解冻）。
 
 ## 引用规则
 
