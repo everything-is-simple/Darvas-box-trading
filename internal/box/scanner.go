@@ -64,13 +64,16 @@ func (s *Scanner) rescanOne(ctx context.Context, code, date string) (int, error)
 
 // boxParams 从 param 表读箱体参数（与 0001_init.sql 种子一致）。
 // MinBoxWidth 走 box.min_width（0015 参数化），兜底默认 0.05（A2 校订：工程假设，非原书规则）。
+// ConfirmDays 不在 param 台账（docs/54 #4 拍板：冻结为引擎常量 3 日，不加参数键——
+// 少一个键少一份漂移；改它=换引擎，engine_sha256 已纳入基线身份即可捕获）。
+// 故从 DefaultParams() 起手再覆盖可调字段，避免工厂构造漏填退化成零值。
 func (s *Scanner) boxParams() contract.BoxParams {
-	return contract.BoxParams{
-		VolMultiplier: s.st.ParamRepo.GetFloat("box.volmult", 2.0),
-		VolWindow:     s.st.ParamRepo.GetInt("box.volwindow", 50),
-		BreakPremium:  s.st.ParamRepo.GetFloat("buy.premium", 1.03),
-		MinBoxWidth:   s.st.ParamRepo.GetFloat("box.min_width", 0.05),
-	}
+	p := DefaultParams()
+	p.VolMultiplier = s.st.ParamRepo.GetFloat("box.volmult", 2.0)
+	p.VolWindow = s.st.ParamRepo.GetInt("box.volwindow", 50)
+	p.BreakPremium = s.st.ParamRepo.GetFloat("buy.premium", 1.03)
+	p.MinBoxWidth = s.st.ParamRepo.GetFloat("box.min_width", 0.05)
+	return p
 }
 
 // RescanAll 全市场箱体重算（docs/02 §6 全量路径，首次/参数变更时）。

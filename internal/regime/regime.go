@@ -408,14 +408,13 @@ func Run(ctx context.Context, st *store.Store, from, to, outDir string) (string,
 		return "", fmt.Errorf("读 sh000001 日线: %w", err)
 	}
 	// 箱体法：复用 boxscan 的箱体参数（判断市场与判断个股用同一套工具，单一理论）
-	// docs/54 #14：MinBoxWidth 读 box.min_width（与 boxscan 引擎同一参数），
-	// 改参时 regime 箱体识别与个股引擎不分叉；默认 0.05 与历史行为一致。
-	params := contract.BoxParams{
-		VolMultiplier: st.ParamRepo.GetFloat("box.volmult", 2.0),
-		VolWindow:     st.ParamRepo.GetInt("box.volwindow", 50),
-		BreakPremium:  st.ParamRepo.GetFloat("buy.premium", 1.03),
-		MinBoxWidth:   st.ParamRepo.GetFloat("box.min_width", 0.05),
-	}
+	// docs/54 #4/#14：从 box.DefaultParams() 起手（ConfirmDays 冻结为 3，不进 param 台账），
+	// MinBoxWidth 读 box.min_width、VolWindow 读 box.volwindow，与个股引擎不分叉。
+	params := box.DefaultParams()
+	params.VolMultiplier = st.ParamRepo.GetFloat("box.volmult", 2.0)
+	params.VolWindow = st.ParamRepo.GetInt("box.volwindow", 50)
+	params.BreakPremium = st.ParamRepo.GetFloat("buy.premium", 1.03)
+	params.MinBoxWidth = st.ParamRepo.GetFloat("box.min_width", 0.05)
 	labels := LabelBoxes(bars, params)
 
 	equities, err := st.TradeRepo.EquityRange(from, to)

@@ -432,12 +432,12 @@ func runLadder(db, code string) {
 	defer st.Close()
 
 	// 从 param 表读箱体参数（与 0001_init.sql 种子一致；MinBoxWidth 走 box.min_width，A2 校订）
-	params := contract.BoxParams{
-		VolMultiplier: st.ParamRepo.GetFloat("box.volmult", 2.0),
-		VolWindow:     st.ParamRepo.GetInt("box.volwindow", 50),
-		BreakPremium:  st.ParamRepo.GetFloat("buy.premium", 1.03),
-		MinBoxWidth:   st.ParamRepo.GetFloat("box.min_width", 0.05),
-	}
+	// ConfirmDays 冻结为引擎常量（docs/54 #4），故从 DefaultParams() 起手再覆盖可调字段。
+	params := box.DefaultParams()
+	params.VolMultiplier = st.ParamRepo.GetFloat("box.volmult", 2.0)
+	params.VolWindow = st.ParamRepo.GetInt("box.volwindow", 50)
+	params.BreakPremium = st.ParamRepo.GetFloat("buy.premium", 1.03)
+	params.MinBoxWidth = st.ParamRepo.GetFloat("box.min_width", 0.05)
 
 	// 读全部 K 线（endDate 取远期，n 取大值以取尽）
 	bars, err := st.BarRepo.BarsWindow(code, "2999-12-31", 100000)
