@@ -254,12 +254,12 @@ erDiagram
 > 其余状态不把 `dead_date` 纳入键，避免 `confirmed → broken_down` 时键漂移导致旧行被误删。
 > 回归测试 `TestUpsertBoxesInvalidIdentity`。
 >
-> 剩余缺口（未改，须待 docs/29 §五第 0 项 A0/A1 轨迹验证结论）：
+> 剩余缺口（未改，须待 docs/archive/29-box-gradient-experiment-plan-2026-11-04.md §五第 0 项 A0/A1 轨迹验证结论）：
 > 无 `start_date`（逻辑出生日——`created_at` 是行插入时间，二者不可混用）、
 > 无 `invalidated_date` / `invalid_reason`（invalid 无结构化失效时间与原因）、无 append-only 迁移事件账。
 > 持久层保存的仍是**重算后的状态投影**，未被任何外键引用的陈旧行可被删除。
 > **是否补 append-only 事件表，须先写 migration 方案并同 commit 更新 03/04/06；禁止直接改已发布 migration。**
-> 详见 docs/00 §3.7 第 1.1/6 点与 docs/29 §七前置段。
+> 详见 docs/00 §3.7 第 1.1/6 点与 docs/archive/29-box-gradient-experiment-plan-2026-11-04.md §七前置段。
 
 > **✅ 交易对象追踪链已补（2026-11-02，migration 0021）**：`plan_order.source_signal_id`
 > 强引用 `signal.id`，突破事件到成交的精确回溯不再依赖 `reason_json`。`position.entry_box_id` 同步修复——

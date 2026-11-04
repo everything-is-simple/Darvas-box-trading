@@ -11,7 +11,7 @@
 
 **职责**：集中定义所有跨包 DTO、枚举与接口，纯类型无业务实现，只依赖标准库。是模块之间唯一的编译期契约。
 
-**文件**：[contract.go](../../internal/contract/contract.go)
+**文件**：[contract.go](../../../internal/contract/contract.go)
 
 ### 1.1 关键类型
 
@@ -49,7 +49,7 @@
 
 **职责**：解析 `vipdoc` 下的 `.day` 日线文件与 `.tnf` 名称表，不触碰数据库。
 
-**文件**：[reader.go](../../internal/datasource/tdx/reader.go)、[names.go](../../internal/datasource/tdx/names.go)
+**文件**：[reader.go](../../../internal/datasource/tdx/reader.go)、[names.go](../../../internal/datasource/tdx/names.go)
 
 | 函数 | 说明 |
 | --- | --- |
@@ -68,7 +68,7 @@
 
 **职责**：把 TDX 文件写入 `daily_bar`/`security`，并提供新鲜度与更新量校验。
 
-**文件**：[ingest.go](../../internal/ingest/ingest.go)
+**文件**：[ingest.go](../../../internal/ingest/ingest.go)
 
 | 函数 | 说明 |
 | --- | --- |
@@ -128,7 +128,7 @@ forming(确认上轨) --3日无新高--> forming(确认下轨) --3日无新低+�
 
 **职责**：对活跃 A 股逐只打分，写入 `candidate` 快照。
 
-**文件**：[screener.go](../../internal/screener/screener.go)
+**文件**：[screener.go](../../../internal/screener/screener.go)
 
 | 条件 | 判定 | 分值 |
 | --- | --- | --- |
@@ -156,7 +156,7 @@ forming(确认上轨) --3日无新高--> forming(确认下轨) --3日无新低+�
 
 **职责**：候选入池、当前箱体更新、跌破/连箱淘汰、黑名单解禁、条件挂起恢复。
 
-**文件**：[pool.go](../../internal/pool/pool.go)
+**文件**：[pool.go](../../../internal/pool/pool.go)
 
 | 函数 | 说明 |
 | --- | --- |
@@ -186,7 +186,7 @@ forming(确认上轨) --3日无新高--> forming(确认下轨) --3日无新低+�
 
 **职责**：对在池股票产生当日首次状态迁移信号，append-only。
 
-**文件**：[signal.go](../../internal/signal/signal.go)
+**文件**：[signal.go](../../../internal/signal/signal.go)
 
 | 函数 | 说明 |
 | --- | --- |
@@ -209,7 +209,7 @@ forming(确认上轨) --3日无新高--> forming(确认下轨) --3日无新低+�
 
 **职责**：信号 + 持仓 + 权益 + 参数 → 下一交易日 `trade_plan` / `plan_order`。
 
-**文件**：[planner.go](../../internal/planner/planner.go)
+**文件**：[planner.go](../../../internal/planner/planner.go)
 
 | 函数/类型 | 说明 |
 | --- | --- |
@@ -252,7 +252,7 @@ forming(确认上轨) --3日无新高--> forming(确认下轨) --3日无新低+�
 
 **职责**：成交解析、持仓状态机、权益重算、恒等式审计。
 
-**文件**：[ledger.go](../../internal/ledger/ledger.go)
+**文件**：[ledger.go](../../../internal/ledger/ledger.go)
 
 | 函数/类型 | 说明 |
 | --- | --- |
@@ -280,7 +280,7 @@ forming(确认上轨) --3日无新高--> forming(确认下轨) --3日无新低+�
 
 **职责**：按日撮合 `pending` 停损单，处理跳空、滑点、涨跌停、除权与费用。
 
-**文件**：[match.go](../../internal/match/match.go)
+**文件**：[match.go](../../../internal/match/match.go)
 
 | 函数 | 说明 |
 | --- | --- |

@@ -83,7 +83,7 @@ commit message约定：`feat(box): ...` / `feat(contract): ...`（contract前缀
 | 订单 trigger 与现价偏离上限 | `planner` 生成订单前校验 `abs(trigger/close - 1) < gap上限违反直接拒单 + `match` 成交后校验 `abs(fill/trigger - 1) ≤ max_entry_gap`（默认 1.05） | archive/18 P0-2 |
 | 同仓位同批次不产两张卖单 | `planner.pendingSell` 生成卖单后立即回写 `true`（修复后） | archive/18 P0-3/P0-5 |
 
-**Box 生命周期不变量（2026-10-29 生命周期审计登记；前四条为 A0 验证清单，见 docs/29 §五 第 0 项 / §七前置段，零策略变更）**：
+**Box 生命周期不变量（2026-10-29 生命周期审计登记；前四条为 A0 验证清单，见 docs/archive/29-box-gradient-experiment-plan-2026-11-04.md §五 第 0 项 / §七前置段，零策略变更）**：
 
 | 不变量 / 验证项 | 保障机制 | 状态 |
 |--------|---------|------|
@@ -173,17 +173,17 @@ scripts/
 
 月末「文档对账」追加以下检查：
 
-- docs/00 §3.6 十一维总表的"当前实现状态"列与实际代码一致（`internal/box` 是否加了 box.period 参数化、`reason_json` 是否加了 volume_ratio 等）。
+- docs/00 §3.6 的实现状态与实际代码一致；`ConfirmDays=3` 是冻结引擎常量，不再检查已作废的 `box.period` 参数化待办。
 - docs/01 §10.3 档位定义与 `internal/planner` 的 sizing_basis 分档逻辑一致。
 - docs/03 §6.1 已落地字段清单与**实际 `reason_json` 键集合**一致（2026-10-26 已补入 `regime` 缺项；对账方法：任取一年库 `SELECT reason_json FROM plan_order WHERE leg_no=1 LIMIT 100`，求键的并集与清单比对）。
-- docs/05 M9/M10 各子里程碑状态与 `var/bt/e17_years_status.json` + `e17_metrics.csv` 一致。
+- 当前执行状态以 docs/29 为准；docs/archive/05-task-breakdown.md 与 E17 状态文件仅作为历史证据，不再维护为现行队列。
 
 ### 6.5 研究产物的版本纪律
 
 - `var/bt/e17_annual_tier_report.html` 每年跑完自动重建（覆盖旧版），不保留历史版本——研究结论是迭代的，最新版即权威版。
 - `var/bt/e17_metrics.csv` append-only，不得删除或修改已有行（已汇报年份的事实源）。
 - `var/bt/e17_reported_years.txt` append-only，已汇报年份不得移除（避免重复汇报）。
-- 跨年结论定型后，写入 `docs/29`+ 或 `docs/experiments/`，不直接改 docs/00-06 的研究框架结构（框架是宪法，结论是案例）；方法论见 docs/05 M10.5。
+- 跨年结论及证据沉淀于 `docs/experiments/`，当前执行裁定更新 `docs/29`；涉及规则变化时同步对应 SSoT，不另建队列。旧方法论见 docs/archive/05-task-breakdown.md M10.5。
 
 ## 7. 统计口径一致性（2026-10-27 立项，C5）
 

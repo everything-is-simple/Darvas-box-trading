@@ -113,7 +113,7 @@ DDL。`params_json` 存参数快照，`latest=1` 标记最新一次重建；同�
 
 > 效果：两个库是不是同一基线，比一下指纹就知道（呼应 HARD①：跨二进制不可横比，必须先有身份才谈对账）。
 
-**引擎常量的归属（docs/54 #4 拍板，2026-11-04）**：`box` 箱体确认 `ConfirmDays=3` **冻结为引擎常量，
+**引擎常量的归属（2026-11-04 定案；历史审计见 docs/archive/54-new-baseline-audit.md #4）**：`box` 箱体确认 `ConfirmDays=3` **冻结为引擎常量，
 不设 param 键**——少一个键少一份漂移。理由是它已被 `engine_sha256` 覆盖：改这个数必须改代码，
 二进制 hash 必变，续跑/HARD① 立刻拒绝。三处生产构造（`scanner.boxParams`、`regime` 标定、
 `cmd/darvas`）统一从 `box.DefaultParams()` 起手再覆盖可调字段，杜绝「漏填退化成零值」。
@@ -291,6 +291,6 @@ v29+ 修复只在新跑的库上生效。等后复权（docs/53）一起重跑�
 - 参数值 → `docs/44-new-baseline-config.md`（唯一参数事实源，49 键，C6 校验）
 - 怎么试 → `docs/29-box-gradient-experiment-plan.md`（实验纲领）
 - 一致性机制 → `docs/06-consistency.md`（C1–C6）
-- 归档纪律 → `B:/Darvas-archive/README.md`
+- 文档归档纪律 → [文档索引](README.md)；历史稿保存在 `docs/archive/`，不作为现行事实源。
 - **牛熊识别/攻防转换（新基线特征二，B 类待跑）→ `docs/48-regime-attack-defense-design.md`**
 - DarvasBox 身份链（新基线特征一）→ 本文 §五之二；数据模型见 `docs/03-erd.md`（box / position 表）

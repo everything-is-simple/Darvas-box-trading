@@ -2,8 +2,8 @@
 
 > **📌 历史定位（2026-11-04 文档治理补注）**：本文 M1–M10 是**里程碑历史记录**（均已完成或已并入 29 队列），
 > **不是当前工作清单**。当前任务队列、优先级与判定标准一律以
-> [`docs/29-box-gradient-experiment-plan.md`](29-box-gradient-experiment-plan.md) 为准；
-> 基线重建进度见 [`docs/49-baseline-rebuild-charter.md`](49-baseline-rebuild-charter.md) §六。
+> [现行执行纲领](../29-box-gradient-experiment-plan.md) 为准；
+> 基线重建进度见 [49](../49-baseline-rebuild-charter.md) §六。
 > 正文保留作"哪些里程碑在哪个 commit 完成"的追溯索引。
 
 > 版本：v1.0（2026-10-17）

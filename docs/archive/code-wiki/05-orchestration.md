@@ -10,7 +10,7 @@
 
 **职责**：严格串行执行七个任务，每步写 `daily_run` 心跳；尾部自动备份。
 
-**文件**：[pipeline.go](../../internal/pipeline/pipeline.go)、[backup.go](../../internal/pipeline/backup.go)
+**文件**：[pipeline.go](../../../internal/pipeline/pipeline.go)、[backup.go](../../../internal/pipeline/backup.go)
 
 | 函数 | 说明 |
 | --- | --- |
@@ -37,7 +37,7 @@
 
 **职责**：交易日固定时刻触发任务链；启动补跑；周六周报。
 
-**文件**：[scheduler.go](../../internal/scheduler/scheduler.go)
+**文件**：[scheduler.go](../../../internal/scheduler/scheduler.go)
 
 | 类型/函数 | 说明 |
 | --- | --- |
@@ -63,7 +63,7 @@
 
 **职责**：把任务心跳、候选、信号、计划、持仓渲染为离线 HTML。
 
-**文件**：[reporter.go](../../internal/reporter/reporter.go)、[weekly.go](../../internal/reporter/weekly.go)
+**文件**：[reporter.go](../../../internal/reporter/reporter.go)、[weekly.go](../../../internal/reporter/weekly.go)
 
 | 函数 | 说明 |
 | --- | --- |
@@ -81,7 +81,7 @@
 
 **职责**：`embed` 单页前端 + 8 个只读 JSON API。
 
-**文件**：[gui.go](../../internal/gui/gui.go)、`internal/gui/static/index.html`
+**文件**：[gui.go](../../../internal/gui/gui.go)、`internal/gui/static/index.html`
 
 | 组件 | 说明 |
 | --- | --- |
@@ -104,7 +104,7 @@
 
 **职责**：在独立 scratch 库重放生产任务链，用于验证与参数实验。
 
-**文件**：[backtest.go](../../internal/backtest/backtest.go)
+**文件**：[backtest.go](../../../internal/backtest/backtest.go)
 
 | 类型/函数 | 说明 |
 | --- | --- |
@@ -132,7 +132,7 @@
 
 **职责**：三种互相独立的标签能力 + 分体制报告。
 
-**文件**：[regime.go](../../internal/regime/regime.go)
+**文件**：[regime.go](../../../internal/regime/regime.go)
 
 | 函数 | 用途 |
 | --- | --- |
@@ -155,7 +155,7 @@
 
 **职责**：对箱体五参数做全网格 + 邻域稳定性 + 分年度收益评估，生成 HTML 报告。
 
-**文件**：[sweep.go](../../internal/regimesweep/sweep.go)
+**文件**：[sweep.go](../../../internal/regimesweep/sweep.go)
 
 | 函数/类型 | 说明 |
 | --- | --- |
@@ -173,7 +173,7 @@
 
 ## 8. `cmd/darvas` — CLI 入口
 
-**文件**：[main.go](../../cmd/darvas/main.go)
+**文件**：[main.go](../../../cmd/darvas/main.go)
 
 ### 8.1 子命令分发
 

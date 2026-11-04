@@ -110,7 +110,7 @@ darvas version
 
 ## 文档体系（按此顺序读）
 
-> **完整索引与治理规则见 [`docs/README.md`](docs/README.md)**（谁是事实源、什么已归档）。下面只列必读六份。
+> **完整索引与治理规则见 [docs/README.md](docs/README.md)**。顶层保留 11 份必要文档；历史里程碑、旧代码导读、旧实验纲领与一次性审计均已归档。
 
 | 文档 | 内容 |
 |------|------|
@@ -118,11 +118,10 @@ darvas version
 | [docs/01-requirements.md](docs/01-requirements.md) | 需求：每日时间表（唯一时刻源）、价格口径、验收标准 |
 | [docs/02-architecture.md](docs/02-architecture.md) | 架构：分层、数据流、回放链路 |
 | [docs/03-erd.md](docs/03-erd.md) / [docs/04-api-contract.md](docs/04-api-contract.md) | ERD 与模块契约（事实源：`migrations/` / `contract.go`） |
-| [docs/29-box-gradient-experiment-plan.md](docs/29-box-gradient-experiment-plan.md) | **唯一实验纲领**：基线、结论登记、待做队列、判定标准 |
+| [docs/29-box-gradient-experiment-plan.md](docs/29-box-gradient-experiment-plan.md) | **当前执行队列**：新基线依赖顺序、验收与研究纪律 |
 | [docs/44-new-baseline-config.md](docs/44-new-baseline-config.md) | **唯一参数事实源**：49 键逐键生效值（`param_ledger.py` 生成 + C6 校验） |
 | [docs/49-baseline-rebuild-charter.md](docs/49-baseline-rebuild-charter.md) | **新基线重建纲领**：SOP、验收 V1–V7、身份、两项硬特征 |
-| [docs/53-data-spec-new-baseline.md](docs/53-data-spec-new-baseline.md) | **后复权数据规格**（当前主线） |
-| [docs/54-new-baseline-audit.md](docs/54-new-baseline-audit.md) | 设计与实现差异审查（只列未完成项） |
+| [docs/53-data-spec-new-baseline.md](docs/53-data-spec-new-baseline.md) | **后复权数据目标规格**（待实施，当前运行时仍使用原始价） |
 
 ---
 
@@ -154,7 +153,7 @@ internal/
   pipeline/            # 盘后流水线编排 + 备份轮转
   reporter/            # HTML日报
   gui/                 # 本地HTTP UI（embed静态+JSON API）
-docs/                  # 15 份现役文档（索引见 docs/README.md）：00-06 SSoT + 29/44/48/49/53/54 + 36 + 46
+docs/                  # 11 份必要文档 + README 索引：00-04、06、29、44、48、49、53
 docs/archive/          # 历史档案（非事实源，原稿留痕）
 scripts/               # 一致性检查脚本
 var/                   # 运行时（db/备份/报告）
@@ -170,7 +169,7 @@ var/                   # 运行时（db/备份/报告）
 - ✅ **仓位现行 = 阶梯制**（`pos.newhigh_ladder=on`，距 52 周高点四档 3/2/1/0.5 单位）；已退役的 **A M1**（升势 2 单位/其余 1 单位）仅存在于实验史，定稿见 `docs/00 §5.6.7`，事实见 `docs/29`
 - 🚧 **新基线重建中**（`docs/49`）：B–F 已完成（身份 0027 / 连续单库 / 断点续跑 / 日追加 / 完整身份链 0028-0029），G（攻防转换）只有接口桩（`mode=off`）
 - 🚧 **主线**：后复权灌库（`docs/53`）→ `daily_bar_adj` 切表 → 14 年连续单库重跑 → 三项硬标准（永续化 / 身份链 / 攻防）在同一条账本上验收。**旧连续库 `bt_baseA_cont.db` 是 schema v28 产物，不是新基线**
-- 📌 设计与实现剩余差异清单见 `docs/54`（只列未完成项）
+- 📌 当前未完成项与验收顺序见 [执行纲领](docs/29-box-gradient-experiment-plan.md)；历史审计见 [归档快照](docs/archive/54-new-baseline-audit.md)。
 
 数据源状态：TDX vipdoc 增量更新可用；回测源库 `var/bt/full_hist_10pct.db`（2005–2026）。
 

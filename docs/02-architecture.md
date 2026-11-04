@@ -278,5 +278,5 @@ docs/experiments/<实验>_framework.md (零结果纯规则) + _report.{html,md} 
 | 第 1 维 box 宽度 | 无（3 日固定） | ❌ 需参数化 box 周期长度多轮跑 |
 | 第 10 维 头寸 regime | `reason_json.regime`（= C3@plan_date）+ 上证 MA20/MA60 + 指数 52 周高点回撤 | ✅ **A 类已完成（P0-3，M10.0）**。⚠️ `regime` 是 plan_date 标签，与建仓日错 1 日（2014 年一致 86/100），归因须按建仓日重算；账户回撤逐年重置且 `>10%` 档 0 天，登记「不可检验」。详见 `docs/experiments/e17_regime_attribution_framework.md` |
 
-> 解锁第 1/4/6/7 维的代码改动清单见 docs/05 M9/M10。
+> 历史代码改动清单见 docs/archive/05-task-breakdown.md M9/M10；当前执行顺序只认 docs/29。
 

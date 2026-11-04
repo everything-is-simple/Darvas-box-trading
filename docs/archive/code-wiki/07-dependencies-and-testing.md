@@ -113,7 +113,7 @@ go test ./internal/planner -count=1
 
 ## 3. 一致性检查
 
-脚本：[check_consistency.py](../../scripts/check_consistency.py)
+脚本：[check_consistency.py](../../../scripts/check_consistency.py)
 
 ```powershell
 python scripts\check_consistency.py
