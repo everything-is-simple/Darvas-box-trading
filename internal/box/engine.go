@@ -74,8 +74,8 @@ type boxState struct {
 	bottom             float64 // 下轨确认值
 	status             contract.BoxStatus
 	prevBoxID          int64
-	brokenDate         string
-	deadDate           string // 死亡日：broken_down/invalid 当天；broken_up 保持空
+	brokenDate         string // 向上突破日：仅 broken_up 有值（触发买入的那个事件）
+	deadDate           string // 死亡日：broken_down/invalid 当天；broken_up/forming/confirmed 保持空
 }
 
 // step 处理第 i 根 K 线，推进当前箱体状态机。
@@ -141,7 +141,8 @@ func (s *scanner) step(i int, bars []contract.DailyBar) {
 	// 先判跌破（更严格：收盘价<下轨即止损信号）
 	if b.Close < cur.bottom {
 		cur.status = contract.BoxBrokenDown
-		cur.brokenDate = b.Date
+		// 向下破位不是「突破」，只记死亡日。broken_date 严格保留给向上突破（docs/49 §五之二 特征一）：
+		// 一格只表一件事，才能从库上直接回答「何时生 → 何时破 → 何时死」。
 		cur.deadDate = b.Date
 		s.emit(cur)
 		s.startBox(i, b)

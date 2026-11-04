@@ -658,7 +658,8 @@ func Replay(scratch string, days []string, dayBars map[string][]contract.DailyBa
 func boxStateHash(st *store.Store) (uint64, error) {
 	rows, err := st.DB().Query(`SELECT id, code, top, bottom,
 		COALESCE(CAST(top_confirmed AS TEXT),''), COALESCE(CAST(bottom_confirmed AS TEXT),''),
-		status, COALESCE(prev_box_id,0), COALESCE(CAST(broken_date AS TEXT),'')
+		status, COALESCE(prev_box_id,0), COALESCE(CAST(broken_date AS TEXT),''),
+		COALESCE(CAST(dead_date AS TEXT),'')
 		FROM box ORDER BY id`)
 	if err != nil {
 		return 0, err
@@ -667,13 +668,13 @@ func boxStateHash(st *store.Store) (uint64, error) {
 	h := fnvNew()
 	for rows.Next() {
 		var id, prev int64
-		var code, topC, botC, status, broken string
+		var code, topC, botC, status, broken, dead string
 		var top, bot float64
-		if err := rows.Scan(&id, &code, &top, &bot, &topC, &botC, &status, &prev, &broken); err != nil {
+		if err := rows.Scan(&id, &code, &top, &bot, &topC, &botC, &status, &prev, &broken, &dead); err != nil {
 			return 0, err
 		}
-		h = fnvWrite(h, fmt.Sprintf("%d|%s|%s|%s|%s|%s|%s|%d|%s\n",
-			id, code, fnum(top), fnum(bot), topC, botC, status, prev, broken))
+		h = fnvWrite(h, fmt.Sprintf("%d|%s|%s|%s|%s|%s|%s|%d|%s|%s\n",
+			id, code, fnum(top), fnum(bot), topC, botC, status, prev, broken, dead))
 	}
 	return h, rows.Err()
 }
@@ -806,8 +807,9 @@ func dumpDecisionState(db *sql.DB) ([]string, error) {
 	}
 	if err := dump("box", `SELECT id, code, top, bottom,
 		COALESCE(CAST(top_confirmed AS TEXT),''), COALESCE(CAST(bottom_confirmed AS TEXT),''),
-		status, COALESCE(prev_box_id,0), COALESCE(CAST(broken_date AS TEXT),'')
-		FROM box ORDER BY id`, 9); err != nil {
+		status, COALESCE(prev_box_id,0), COALESCE(CAST(broken_date AS TEXT),''),
+		COALESCE(CAST(dead_date AS TEXT),'')
+		FROM box ORDER BY id`, 10); err != nil {
 		return nil, err
 	}
 	if err := dump("candidate", `SELECT CAST(screen_date AS TEXT), code, score, reasons_json, fundamental_flag

@@ -40,19 +40,35 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 
 	code := boxes[0].Code
 
-	// 既有箱体：(top,bottom) → 可复用的 DB id 队列（同形箱体按 id 序复用）
+	// 既有箱体：身份键 → 可复用的 DB id 队列（按 id 序复用）。
+	// 身份键 = (top, bottom, bottom_confirmed)（0029，docs/49 §五之二 特征一）：
+	// 旧键只用 (top,bottom)，同一只股票在不同生命周期重现同价箱体时会复用到同一行，
+	// 把买入当时的 status/broken_date 覆盖掉 —— 实测导致 34 笔持仓早于其箱体突破日、
+	// 11 笔买入挂在 broken_down 箱体上。加入下轨确认日后，不同生命周期的同价箱体不再撞键，
+	// 被 position 引用的旧行还会被 stale 删除逻辑永久保留，历史事实不再被重算改写。
+	//
+	// invalid 例外：作废箱体可能在下轨确认前就死（bottom=0、bottom_confirmed 为空），
+	// 身份退化成只剩 top，不同年份同样 top 的作废箱会撞在一起（实测 124 组）。
+	// 故 invalid 的身份再追加 dead_date——它是终态、重算不变，加入后唯一且稳定；
+	// 其余状态（forming/confirmed/broken_up/broken_down）dead_date 或为空或将变，
+	// 不参与键，避免「confirmed → broken_down」时键漂移导致旧行被误删。
 	type exBox struct {
 		id       int64
 		top, bot float64
+		botC     string
+		dead     string
+		status   string
 	}
-	rows, err := tx.Query(`SELECT id, top, bottom FROM box WHERE code = ? ORDER BY id`, code)
+	rows, err := tx.Query(`SELECT id, top, bottom, COALESCE(CAST(bottom_confirmed AS TEXT),''),
+		COALESCE(CAST(dead_date AS TEXT),''), status
+		FROM box WHERE code = ? ORDER BY id`, code)
 	if err != nil {
 		return nil, err
 	}
 	var existing []exBox
 	for rows.Next() {
 		var e exBox
-		if err := rows.Scan(&e.id, &e.top, &e.bot); err != nil {
+		if err := rows.Scan(&e.id, &e.top, &e.bot, &e.botC, &e.dead, &e.status); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -60,12 +76,15 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 	}
 	rows.Close()
 
-	boxKey := func(top, bot float64) string {
-		return fmt.Sprintf("%.6f|%.6f", top, bot)
+	boxKey := func(top, bot float64, botC, dead, status string) string {
+		if status == string(contract.BoxInvalid) {
+			return fmt.Sprintf("%.6f|%.6f|%s|%s", top, bot, botC, dead)
+		}
+		return fmt.Sprintf("%.6f|%.6f|%s", top, bot, botC)
 	}
 	avail := map[string][]int64{}
 	for _, e := range existing {
-		k := boxKey(e.top, e.bot)
+		k := boxKey(e.top, e.bot, e.botC, e.dead, e.status)
 		avail[k] = append(avail[k], e.id)
 	}
 
@@ -97,10 +116,11 @@ func (r *BoxRepo) UpsertBoxes(boxes []contract.Box) ([]int64, error) {
 			}
 		}
 		var dbID int64
-		if q := avail[boxKey(b.Top, b.Bottom)]; len(q) > 0 {
+		k := boxKey(b.Top, b.Bottom, b.BottomConfirmed, b.DeadDate, string(b.Status))
+		if q := avail[k]; len(q) > 0 {
 			// 复用既有箱体（保外键引用稳定）
 			dbID = q[0]
-			avail[boxKey(b.Top, b.Bottom)] = q[1:]
+			avail[k] = q[1:]
 			reused[dbID] = true
 			if _, err := updStmt.Exec(
 				nullEmpty(b.TopConfirmed), nullEmpty(b.BottomConfirmed),
@@ -256,16 +276,22 @@ func (r *BoxRepo) BreadthAgg(from, to string, minHistory int) (upByDate, downByD
 	minDays := float64(minHistory) * 1.5
 	// 次新股过滤用相关子查询按 code 求首根K线日期——借助 idx_daily_bar_code_date
 	// （migration 0011）每次索引定位 O(1)；旧写法 JOIN+GROUP BY 会扫全表分组（11s+）。
+	// 事件日期按状态取列（docs/49 §五之二 特征一，0029）：
+	//   broken_up   → broken_date（向上突破日）
+	//   broken_down → dead_date  （向下破位日；broken_date 已不再记破位）
+	// COALESCE 兜底旧库（0029 之前 broken_down 只有 broken_date），保证口径切换前后结果一致。
 	rows, err := r.db.Query(`WITH ev AS (
-			SELECT b.code, CAST(b.broken_date AS TEXT) AS d, b.status
+			SELECT b.code, b.status,
+			       CAST(CASE WHEN b.status = 'broken_up' THEN b.broken_date
+			                 ELSE COALESCE(b.dead_date, b.broken_date) END AS TEXT) AS d
 			FROM box b
 			JOIN security s ON s.code = b.code AND s.kind = 'stock'
 			WHERE b.status IN ('broken_up','broken_down')
-			  AND b.broken_date >= ? AND b.broken_date <= ?
 		)
 		SELECT ev.d, ev.status, COUNT(*)
 		FROM ev
-		WHERE (JULIANDAY(ev.d) - JULIANDAY((
+		WHERE ev.d >= ? AND ev.d <= ?
+		  AND (JULIANDAY(ev.d) - JULIANDAY((
 			SELECT MIN(fd.date) FROM daily_bar fd WHERE fd.code = ev.code)) + 1) >= ?
 		GROUP BY ev.d, ev.status`, from, to, minDays)
 	if err != nil {

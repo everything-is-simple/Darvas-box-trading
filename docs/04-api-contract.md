@@ -298,12 +298,17 @@ type BoxScanner interface {
 - `Scan`不做任何IO，只吃K线吐箱体 → 单元测试即规范（含书中案例断言）
 - 突破当日成交量必须≥`VolWindow日均量×VolMultiplier`，否则不算broken_up
 
-> **持久化边界（2026-10-29 生命周期审计登记）**：`Scan` 的输出是**本窗口输入推导出的箱体序列**
+> **持久化边界（2026-10-29 生命周期审计登记；2026-11-04 身份键更新）**：`Scan` 的输出是**本窗口输入推导出的箱体序列**
 > （零 IO、确定性、运行状态不跨调用保存）；`UpsertBoxes` 落库的是**重算后的状态投影**——
-> 按上下轨价格对（6 位小数）复用数据库 ID，非 append-only 生命史事件账（`box` 表无
-> start_date / invalidated_date / 迁移事件）。因此「数据库 ID」不是受契约保证的逻辑 Box 身份，
-> 「created_at」不是市场中的出生时间。引用 Box 身份/事件日期的研究（如止损上移统计）须先过
+> 按 `(top, bottom, bottom_confirmed)` 三元组（价格 6 位小数）复用数据库 ID
+> （`invalid` 箱体追加 `dead_date`），非 append-only 生命史事件账
+> （`box` 表无 start_date / invalidated_date / 迁移事件）。因此「数据库 ID」不是受契约保证的逻辑 Box 身份，
+> 「created_at」不是市场中的出生时间。被 position/watch/signal 引用的旧行永久保留，其状态不再被重算改写。
+> 引用 Box 身份/事件日期的研究（如止损上移统计）须先过
 > A0/A1 轨迹验证（docs/29 §五 第 0 项）；若未来扩展 schema，须走 03/04/06 同步变更协议（docs/06 §2 防线三）。
+>
+> 日期字段：`broken_date` 只表向上突破（仅 broken_up 有值），`dead_date` 表死亡（broken_down/invalid 当天，
+> migration 0028 + 0029）。
 
 ### 4.2 初选器（screener）
 

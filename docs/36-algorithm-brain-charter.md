@@ -56,7 +56,7 @@ top、bottomCandidate、bottomCount、确认日期与前驱引用。**只看 sta
 ```
 截至交易日 T 的 OHLCV
   → Engine.Scan            重建 Box 序列（确定性、零 IO 纯函数）
-  → BoxRepo.UpsertBoxes    保存状态投影（按上下轨价格对复用 ID）
+  → BoxRepo.UpsertBoxes    保存状态投影（按 (top, bottom, bottom_confirmed) 复用 ID）
   → Signal.Evaluate        只检查跟踪池 watch（watching/pending/holding）
   → signal 事件             breakout / stop / failed_breakout
   → Planner.Build          生成 T+1 计划与订单（观察期/持仓拦截/预算/价格偏离）
@@ -157,16 +157,22 @@ premium 3% 是入场触发加价，不是止损距离；两者相差近一倍。
 **重新计算**，不是从数据库恢复上一次 Box 的内部计数器后逐步更新。scanner 运行状态不跨
 Scan 调用保存。
 
-**法定事实 6.2（保存的是状态投影，不是事件账）**：UpsertBoxes 按上下轨价格对（格式化到
-六位小数）寻找可复用 ID 后更新状态与前驱引用；`prev_box_id` 是当前重算序列的阶梯关系，
-**不是独立追加、永不改写的生命谱系日志**。没有匹配且未被引用的旧记录可能被删除。
+**法定事实 6.2（保存的是状态投影，不是事件账）**：UpsertBoxes 按
+`(top, bottom, bottom_confirmed)` 三元组（价格格式化到六位小数）寻找可复用 ID 后更新状态与前驱引用；
+`invalid` 箱体因下轨可能未确认，身份追加 `dead_date`（终态、重算不变）以保证唯一。
+`prev_box_id` 是当前重算序列的阶梯关系，
+**不是独立追加、永不改写的生命谱系日志**。没有匹配的旧记录若被 position/watch/signal 引用则永久保留
+（历史事实不可删），否则被删除。（身份键 2026-11-04 由 `(top,bottom)` 升级，migration 0029：
+旧键会让同价但不同生命周期的箱体复用同一行，覆盖买入当时的突破记录。）
 
 **法定事实 6.3（时间字段语义）**：`created_at` 是数据库行插入时间，**不是市场中的 Box
-出生时间**；`broken_date` 可证明突破/跌破日期；invalid 无独立结构化失效时间/原因。
+出生时间**；`broken_date` **只表向上突破日**（仅 `broken_up` 有值，即触发买入的那个事件），
+`dead_date` 表死亡日（`broken_down`/`invalid` 当天，migration 0028+0029）；
+invalid 仍无结构化失效**原因**字段。一格只表一件事，不得让 `broken_date` 再承载破位日。
 扫描结束时仍存活的 forming/confirmed 是「截至输入末尾的状态」，不是已死亡对象。
 
-**法定事实 6.4（身份复用）**：数据库 ID 不是受契约保证的永久 Box 实例身份；相同上下轨
-价格对可能参与 ID 复用。逻辑实例键与数据库代理主键必须区分表述。
+**法定事实 6.4（身份复用）**：数据库 ID 不是受契约保证的永久 Box 实例身份；相同
+`(top, bottom, bottom_confirmed)` 可能参与 ID 复用。逻辑实例键与数据库代理主键必须区分表述。
 
 ---
 

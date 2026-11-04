@@ -105,8 +105,8 @@ func TestA0IDsStrictlyConsecutive(t *testing.T) {
 	}
 }
 
-// A0②(c) 终止当根即开新箱：broken 箱体的 brokenDate 当日，前缀扫描已含 ID+1 的
-// 新 tail（forming，身份 (0,0)）。
+// A0②(c) 终止当根即开新箱：终止箱体事件当日（broken_up→broken_date，broken_down→dead_date），
+// 前缀扫描已含 ID+1 的新 tail（forming，身份 (0,0)）。
 func TestA0NewBoxStartsOnBrokenDay(t *testing.T) {
 	series := mixedTerminalSeries()
 	boxes := scan(series)
@@ -118,11 +118,20 @@ func TestA0NewBoxStartsOnBrokenDay(t *testing.T) {
 		if b.Status != contract.BoxBrokenUp && b.Status != contract.BoxBrokenDown {
 			continue
 		}
-		p := dateIdx[b.BrokenDate] + 1 // 前缀含至 brokenDate 当根
+		// 0029 语义分离：向上突破读 broken_date，向下破位读 dead_date。
+		termDate := b.BrokenDate
+		if b.Status == contract.BoxBrokenDown {
+			termDate = b.DeadDate
+		}
+		if termDate == "" {
+			t.Fatalf("box%d(%s) 终止日为空（broken_up 应有 broken_date，broken_down 应有 dead_date）",
+				k+1, b.Status)
+		}
+		p := dateIdx[termDate] + 1 // 前缀含至终止日当根
 		pre := scan(series[:p])
 		if len(pre) != k+2 {
-			t.Fatalf("box%d(%s) brokenDate=%s: 前缀长度 %d want %d（终止当根必须且只能开一个新箱）",
-				k+1, b.Status, b.BrokenDate, len(pre), k+2)
+			t.Fatalf("box%d(%s) 终止日=%s: 前缀长度 %d want %d（终止当根必须且只能开一个新箱）",
+				k+1, b.Status, termDate, len(pre), k+2)
 		}
 		tail := pre[len(pre)-1]
 		if tail.ID != b.ID+1 || tail.Status != contract.BoxForming || tail.Top != 0 || tail.Bottom != 0 {

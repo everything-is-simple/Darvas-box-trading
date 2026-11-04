@@ -170,6 +170,27 @@ D 日之后能**日追加**，中断能**断点续跑**。
   死亡（dead_date）→ 卖出（position.closed_date）→ 继任（下一箱体 prev_box_id 指回它）**，
   全程可追、无需 `(code, top, bottom)` 兜底匹配。
 
+**落地结果（2026-11-04，0028 + 0029；实库 bt_baseA_cont 跑到 2011-11-29 验收）**：
+
+| 项 | 结果 |
+|---|---|
+| `dead_date` | 104,836 箱体：`broken_down` 57,046 全有值 / `invalid` 20,403 全有值 / `broken_up` 25,150 全空 / `forming`+`confirmed` 全空；5 条一致性断言 0 违规 |
+| `entry_box_id` | **556/556 = 100% 非空**（旧库全 NULL 确为旧二进制产物，代码无需再改）；指向不存在箱体 0 笔、跨股票错配 0 笔 |
+| `broken_date` 收紧 | 0028 首版仍双写（`broken_down` 两列同值 100%，占全部箱体 54.4%），0029 改为破位只写 `dead_date`；`BreadthAgg` 按状态取列，因旧库两列同值故聚合结果不变 |
+
+**验收中发现并修复的第二处缺陷（原文未预见）**：`UpsertBoxes` 的身份键原为 `(top, bottom)`，
+同价但不同生命周期的箱体会复用同一行，把买入当时的 `status`/`broken_date` 覆盖掉。
+实测后果：**34 笔**持仓 `opened_date` 早于其箱体 `broken_date`（最多早 86 天）、**11 笔**买入挂在
+`broken_down` 箱体上、`broken_date` 非空却非 `broken_up` 的箱体占 54.4%。
+具体案例 sz000049：`signal` 2005-03-11 `breakout` 写 `box_id=49678`，该箱体现已是 `broken_down`、
+`broken_date` 被改写为 2005-03-22，买入时的突破记录只剩死亡。
+→ 0029 起身份键改为 **`(top, bottom, bottom_confirmed)`**（`invalid` 再追加 `dead_date`——
+作废箱下轨未确认时身份会退化到只剩 `top`，实测 124 组撞键），
+被 `position`/`watch`/`signal` 引用的旧行由 stale 逻辑永久保留，历史事实不再被重算改写；
+回归测试 `TestUpsertBoxesIdentityStable` / `TestUpsertBoxesInvalidIdentity`。
+
+残留缺口：仍无 append-only 生命周期事件账、无 `start_date`/`invalidated_date`，详见 docs/03 §2.1 注记。
+
 ### 特征二：牛熊识别 + 攻防转换（牛市加满 / 熊市撤退）
 
 > 详见 `docs/48-regime-attack-defense-design.md`（已立项、B 类待跑）。本文只规定**它作为新基线特征的验收地位**。

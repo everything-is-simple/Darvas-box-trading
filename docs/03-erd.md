@@ -59,7 +59,7 @@ erDiagram
         DATE bottom_confirmed "下轨3日确认日"
         TEXT status "forming/confirmed/broken_up/broken_down/invalid"
         INTEGER prev_box_id FK "阶梯链"
-        DATE broken_date "突破/跌破日期"
+        DATE broken_date "向上突破日(仅broken_up有值,0029)"
         DATE dead_date "死亡日(broken_down/invalid当天,0028)"
         DATE created_at
     }
@@ -225,19 +225,40 @@ erDiagram
 | forming → invalid | 下轨确立前创新高 / 宽度校验失败（top≤bottom 或 (top−bottom)/top<box.min_width） | 当根K线即重启新箱体（见下一行）；invalid 不计入阶梯（prev 锚点=最近 confirmed 箱体） |
 | invalid → forming | invalidateAndRestart：从触发作废的当根 K 线重启（docs/00 §3.2.4 / §3.5） | 每根 K 线必属且仅属一个箱体（2026-10-29 对照 engine.go 校正） |
 
-> **✅ 死亡日已补（2026-11-04，migration 0028）**：新增 `dead_date` 记箱体「死亡日」= `broken_down`（向下破位）
-> 或 `invalid`（作废）当天。`broken_date` 语义保持不动（仍同时承载 broken_up / broken_down 事件日期，
-> 供 regime 牛熊识别与 BreadthAgg 市场宽度法读取）。`broken_up` 箱体的生命周期终点即「突破日」，
-> 无额外死亡日（`dead_date` 为 NULL）。补齐 docs/49 §五之二 特征一的
-> 「出生(bottom_confirmed) → 突破(broken_date) → 死亡(dead_date) → 卖出(closed_date) → 继任(prev_box_id)」链条。
+> **✅ 突破/死亡语义已分离（2026-11-04，migration 0028 + 0029）**：
+> `broken_date` **只表向上突破**（仅 `broken_up` 有值，触发买入的那个事件）；
+> `dead_date` 表「死亡」= `broken_down`（向下破位）或 `invalid`（宽度不足作废）当天。
+> `broken_up` 箱体的生命周期终点即「突破日」，无额外死亡日（`dead_date` 为 NULL）。
+> 一格只表一件事，从库上可直接回答 docs/49 §五之二 特征一要求的
+> 「出生(bottom_confirmed) → 突破(broken_date) → 死亡(dead_date) → 卖出(position.closed_date) → 继任(prev_box_id)」链条。
+>
+> 0028 首版曾让 `broken_date` 同时承载破位日（实测 100% 的 `broken_down` 两列同值，
+> 占全部箱体 54.4%），0029 将其收紧为突破专用：存量 `broken_down` 行的 `broken_date` 清空
+> （仅清 `dead_date` 已存在的行，老库无 `dead_date` 时保留原值）。
+> 下游 `BreadthAgg` 改为按状态取列（`broken_up`→`broken_date`，`broken_down`→`COALESCE(dead_date, broken_date)`），
+> 因旧库两列同值，切换前后宽度法聚合结果完全一致；`regime.LabelBoxes` 读内存且按 status 分流；
+> `signal`/`screener` 均显式要求 `status='broken_up'`，无裸读依赖。
 
-> **⚠️ 生命周期证据缺口（2026-10-29 生命周期审计登记；仅注记，不改 SQL）**：
-> `box` 表无 `start_date`（逻辑出生日——`created_at` 是行插入时间，二者不可混用）、
-> 无 `invalidated_date` / `invalid_reason`（invalid 无结构化失效时间与原因）、无 append-only 迁移事件账——
-> 持久层保存的是**重算后的状态投影**：`UpsertBoxes` 按上下轨价格对（6 位小数）复用数据库 ID，
-> 未被业务外键引用的陈旧行可被删除。因此「数据库 ID」不是受契约保证的逻辑 Box 身份。
-> **是否补生命周期 schema（start_date / invalidated_date / 事件表），须待 docs/29 §五第 0 项
-> A0/A1 轨迹验证给出结论后，先写 migration 方案并同 commit 更新 03/04/06；禁止直接改已发布 migration。**
+> **✅ 箱体身份已稳定（2026-11-04，0029）／⚠️ 仍有剩余缺口**：
+> `UpsertBoxes` 的身份键原为上下轨价格对 `(top, bottom)`（6 位小数），同一只股票在不同生命周期
+> 重现同价箱体时会复用到同一行，把买入当时的 `status`/`broken_date` 覆盖掉。实库实测后果：
+> 34 笔持仓 `opened_date` 早于其箱体 `broken_date`（最多早 86 天）、11 笔买入挂在 `broken_down` 箱体上、
+> `broken_date` 非空却非 `broken_up` 的箱体占 54.4%。
+> 0029 起身份键改为 **`(top, bottom, bottom_confirmed)`**，不同生命周期的同价箱体不再撞键；
+> 被 `position`/`watch`/`signal` 引用的旧行仍由 stale 删除逻辑永久保留，历史事实不再被重算改写。
+> 回归测试 `TestUpsertBoxesIdentityStable` 覆盖此场景。
+>
+> **`invalid` 例外**：作废箱可能在下轨确认前就死（`bottom=0`、`bottom_confirmed` 为空），
+> 身份会退化成只剩 `top`，不同年份同样 `top` 的作废箱撞在一起（实测 124 组）。
+> 故 `invalid` 的身份再追加 `dead_date`——它是终态、重算不变，加入后唯一且稳定；
+> 其余状态不把 `dead_date` 纳入键，避免 `confirmed → broken_down` 时键漂移导致旧行被误删。
+> 回归测试 `TestUpsertBoxesInvalidIdentity`。
+>
+> 剩余缺口（未改，须待 docs/29 §五第 0 项 A0/A1 轨迹验证结论）：
+> 无 `start_date`（逻辑出生日——`created_at` 是行插入时间，二者不可混用）、
+> 无 `invalidated_date` / `invalid_reason`（invalid 无结构化失效时间与原因）、无 append-only 迁移事件账。
+> 持久层保存的仍是**重算后的状态投影**，未被任何外键引用的陈旧行可被删除。
+> **是否补 append-only 事件表，须先写 migration 方案并同 commit 更新 03/04/06；禁止直接改已发布 migration。**
 > 详见 docs/00 §3.7 第 1.1/6 点与 docs/29 §七前置段。
 
 > **✅ 交易对象追踪链已补（2026-11-02，migration 0021）**：`plan_order.source_signal_id`
