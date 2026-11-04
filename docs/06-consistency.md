@@ -230,3 +230,32 @@ scripts/
 |---|---|---|---|---|---|
 | TD-1 | `internal/backtest/backtest.go` `runVerify` progressive 路径 | 逐日 `RescanIncremental` 对池内全部股票「读 800 根 K 线 → 全量重扫」，池子随回放推进变大 → 单日 boxscan 从 ~1 分钟涨到数十分钟，2013 年 64 日窗口跑不完（实测 21/64 日即终止，CPU 886s、WAL 1.5GB）。另 `Bootstrap` 整库 4.4GB 拷贝 × 2 份 | **仅影响 `--mode verify` 工具的可用性**；不影响任何回测结论（verify 是冗余印证，主证据在 E17-A0 §三 box 层三路全等 + A0③ 引擎幂等） | ① 池内票复用前日 box 状态、只增量推进（与生产 `RescanIncremental` 同语义）；② Bootstrap 改 `VACUUM INTO` / `ATTACH`+`INSERT SELECT` 按窗口裁剪重建，避免整库拷贝 | 2026-10-29（E17-A0/A1 §六 终止时登记） |
 
+
+---
+
+## 8. 研究纪律机检（2026-11-05 立项，C7）
+
+> 来自 `docs/55` 的 Q1/Q4 裁定。这两条的共同点：**破坏时不会报错，只会安静地给出错误结论**，所以必须机检。
+
+### 8.1 判据窗口纪律（Q4：2019+ 不解冻）
+
+- 判据计算窗口锁定 **2005-01-01 — 2018-12-31**。参数在 2005–2018 上选定，样本外不得参与选参。
+- 2019–2026 数据仅可用于：①事后稳定性抽检（不计入判据）②异常排查。**任何报告引用 2019+ 结果作判据，视为违约。**
+- 机检实现：扫描 `scripts/*.py` 中赋给窗口型名称（`START/END/FROM/TO/SAMPLE_START/SAMPLE_END/…_date/…_time`）的日期字面量，年份 > 2018 即失败。
+- 白名单（生产实时链路，窗口本就是「当前交易日」）：`backfill_window.py`。
+- 注释里的决策日期（如「2026-11-03 定案」）**不参与检查**——只认代码字面量，避免噪声。
+
+### 8.2 口径横幅（Q1：旧结论加横幅保留）
+
+- 一切读取 raw（不复权）库**个股价格或交易账本**的报告，必须在标题下带「已作废」横幅。
+- 施加方式：**`python scripts/apply_caliber_banner.py`**（幂等）。为什么不能手改：报告由 `scripts/e17_*.py` 生成并 `OUT_MD.write_text(...)` 覆写，手改会在下次重生成时被静默覆盖。
+- 清单唯一事实源：`scripts/apply_caliber_banner.py` 的 `TARGETS`（报告族）与 `EXEMPT`（🟢 免做 + 理由）。新增实验报告须同步登记，否则 C7 抓不到。
+- 🟢 免做不加：`e17_a0_determinism_report`（引擎三路重建，与价格口径无关）、`e17_market_index_report`（只读指数，指数不复权）。
+
+### 8.3 修法
+
+| 触发 | 修法 |
+|---|---|
+| C7 报「判据窗口越界」 | 把该脚本窗口端点改回 ≤2018-12-31；确需跑全历史（如数据装载/验收）→ 加进 `WINDOW_WHITELIST` 并写明理由 |
+| C7 报「口径横幅缺失」 | 跑 `python scripts/apply_caliber_banner.py`（可在重生成报告后链式调用） |
+| 新增实验报告 | 在 `apply_caliber_banner.py` 的 `TARGETS` 或 `EXEMPT` 登记，二者必居其一 |

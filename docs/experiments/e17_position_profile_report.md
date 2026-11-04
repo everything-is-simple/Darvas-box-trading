@@ -1,5 +1,9 @@
 # E17 14 年真实仓位画像（2005–2018）
 
+> ⚠️ **口径横幅：本报告基于 raw（不复权）数据，已作废，不得作为现行依据。**
+> 除权日价格腰斩 → box 边界、距新高距离、MFE、出口分布全部被污染。
+> adj 口径重做结果见同目录 `*_adj` 版本；裁定见 `docs/55` §5-Q1。
+
 > 生成器：`scripts/e17_position_profile.py`（只读 28 库的 equity_snapshot / position / plan_order，零回测）
 > 仓位占用率 = 每日 `market_value / total`；持仓只数按 `position` 开关日期重建；单笔建仓比例 = `qty × trigger_price / 当日权益`
 > 大盘三态 = sh000001 60 日低点相邻日比（生产 A 判据同口径）

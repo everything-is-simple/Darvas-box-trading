@@ -11,7 +11,7 @@
 | [02-architecture.md](02-architecture.md) | 分层架构、生产数据流、回放和实验产物结构 |
 | [03-erd.md](03-erd.md) | 数据模型、状态机、数据库字段和研究字段 |
 | [04-api-contract.md](04-api-contract.md) | 模块接口、CLI、撮合及研究字段契约 |
-| [06-consistency.md](06-consistency.md) | SSoT、C1–C6 一致性机制和变更协议 |
+| [06-consistency.md](06-consistency.md) | SSoT、C1–C7 一致性机制和变更协议 |
 | [29-box-gradient-experiment-plan.md](29-box-gradient-experiment-plan.md) | **当前实验与新基线执行纲领**；下一步、依赖顺序、验收、已知未修缺陷挂账、**已裁定结论（只追加）与判定口径** |
 | [44-new-baseline-config.md](44-new-baseline-config.md) | **唯一参数事实源**；49 键生成台账，C6 校验 |
 | [48-regime-attack-defense-design.md](48-regime-attack-defense-design.md) | 攻防转换设计；当前为待实现/待验证，不是生产能力 |
@@ -33,7 +33,7 @@
 - Schema：`internal/store/migrations/`；释义：`03`。
 - 接口与类型：`internal/contract/contract.go`；释义：`04`。
 - 参数：迁移生效值与代码实读键；生成台账：`44`。
-- 一致性检查：`scripts/check_consistency.py`、`scripts/param_ledger.py`；规则：`06`。
+- 一致性检查：`scripts/check_consistency.py`、`scripts/param_ledger.py`、`scripts/apply_caliber_banner.py`；规则：`06`（C1–C7）。
 - 新基线流程与验收：`49`；当前执行队列：`29`。
 - 后复权设计：`53`。`daily_bar_adj` 已落地（`full_hist_adj.db`，`adj_ready=1`），生产 `serve` 仍走 raw，不能据 `53` 宣称生产已切后复权。
 - 实验口径与重做裁定：`55`（旧结论一律加横幅保留，新结果 `_adj` 并存；B 类只与新基线比；2019+ 不解冻）。

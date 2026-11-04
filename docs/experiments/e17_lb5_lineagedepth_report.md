@@ -1,5 +1,9 @@
 # LB-5 Box 谱系深度梯度 · 2005–2018
 
+> ⚠️ **口径横幅：本报告基于 raw（不复权）数据，已作废，不得作为现行依据。**
+> 除权日价格腰斩 → box 边界、距新高距离、MFE、出口分布全部被污染。
+> adj 口径重做结果见同目录 `*_adj` 版本；裁定见 `docs/55` §5-Q1。
+
 > A 类后验、零回测。框架：`docs/experiments/e17_lb5_lineagedepth_framework.md`（零结果纯规则）。
 
 生成时间：2026-10-31 20:51:28 · 生成器 `scripts/e17_lb5_lineagedepth.py` sha256 `2f1914ab0b877684`

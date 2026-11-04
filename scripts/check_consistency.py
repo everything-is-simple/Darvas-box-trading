@@ -11,16 +11,18 @@ Darvas-box-trading 一致性检查（docs/06-consistency.md §2 防线一）。
      （2026-10-18 v1.3 起：时刻集中一处管理——§4 为唯一事实源，
       调度器/CLI/GUI/测试/一致性检查均由其派生，本项锁定代码与文档不漂移。）
   C6 参数台账：docs/44 生成区台账  ==  代码实读键 + 迁移演化后的生效值（2026-11-03 新增）
+  C7 研究纪律：判据窗口 ≤2018-12-31（2019+ 不解冻）+ raw 报告口径横幅齐全（2026-11-05 新增，docs/55）
 
 用法：python scripts/check_consistency.py [repo_root]
 退出码：0=全部一致；1=有漂移（CI应失败）。
 """
-import os, re, sys
+import os, pathlib, re, sys
 
 ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else
                        os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import param_ledger  # noqa: E402  （C3/C6 共用同一套 param 解析，避免两处口径打架）
+import apply_caliber_banner  # noqa: E402  （C7 横幅清单唯一事实源，避免两处口径打架）
 
 CONTRACT_GO = os.path.join(ROOT, "internal", "contract", "contract.go")
 SCHEDULER_GO = os.path.join(ROOT, "internal", "scheduler", "scheduler.go")
@@ -28,6 +30,19 @@ MIGRATIONS_DIR = os.path.join(ROOT, "internal", "store", "migrations")
 ERD_MD = os.path.join(ROOT, "docs", "03-erd.md")
 REQ_MD = os.path.join(ROOT, "docs", "01-requirements.md")
 DOC44_MD = os.path.join(ROOT, "docs", "44-new-baseline-config.md")
+
+# ── C7 配置（docs/55 §6.4）──────────────────────────────────────────
+SCRIPTS_DIR = os.path.join(ROOT, "scripts")
+WINDOW_MAX_YEAR = 2018
+# 只认「整行赋值给窗口型名称」的日期字面量；不碰注释、不碰决策日期
+WINDOW_PAT = re.compile(
+    r"\b(START|END|FROM|TO|BEGIN|FINISH|SAMPLE_START|SAMPLE_END|DATA_START|DATA_END"
+    r"|start_time|end_time|start_date|end_date|from_date|to_date)"
+    r"\s*=\s*[\"'](\d{4})-\d{2}-\d{2}[\"']")
+# 白名单：生产实时链路，窗口本就是「当前日期」，不属于判据计算
+WINDOW_WHITELIST = {
+    "backfill_window.py": "生产补数，窗口=当前交易日",
+}
 
 def fail(msg):
     print("✗", msg)
@@ -207,6 +222,47 @@ def check_c4_schedule():
         ok(f"C4 时刻表对齐 ({len(go_pairs)}任务 + weekly {wm.group(1)})")
     return rc
 
+def check_c7_research_discipline():
+    """C7 研究窗口纪律 + 口径横幅完整性（docs/55 §6.1 / §6.4，2026-11-05 新增）。
+
+    两条都是「会静默失效」的规则，所以必须机检：
+    ① 窗口纪律：2019+ 不解冻 → 任何脚本把判据窗口端点硬编码到 2018 之后即违约
+       （docs/55 §6.4）。只查窗口型变量/参数，不查注释里的「2026-11-03 定案」这类日期。
+    ② 口径横幅：raw 口径报告必须带「已作废」横幅（docs/55 §6.1）。报告由 e17_*.py
+       生成、重生成即回退，靠人记必漏 → 交给 apply_caliber_banner.py 统一施加。
+    """
+    rc = 0
+    bad = []
+    for name in sorted(os.listdir(SCRIPTS_DIR)):
+        if not name.endswith(".py") or name in WINDOW_WHITELIST:
+            continue
+        path = os.path.join(SCRIPTS_DIR, name)
+        if not os.path.exists(path):
+            continue
+        text = read(path)
+        for m in WINDOW_PAT.finditer(text):
+            if int(m.group(2)) > WINDOW_MAX_YEAR:
+                line = text[: m.start()].count("\n") + 1
+                bad.append(f"{name}:{line} {m.group(0)}")
+    if bad:
+        detail = "; ".join(bad[:6]) + (" …" if len(bad) > 6 else "")
+        rc = fail(f"C7 判据窗口越界 {len(bad)} 处（2019+ 不解冻）→ {detail}"
+                  f"  → 见 docs/55 §6.4")
+    else:
+        ok(f"C7 判据窗口 ≤{WINDOW_MAX_YEAR}-12-31（{len(WINDOW_WHITELIST)} 个生产脚本白名单）")
+
+    # 允许用另一个根目录跑（CI/子目录场景）：横幅清单的目录随之切换
+    apply_caliber_banner.EXP = pathlib.Path(ROOT) / "docs" / "experiments"
+    miss = apply_caliber_banner.missing_banners()
+    if miss:
+        rc = fail(f"C7 口径横幅缺失 {len(miss)} 份 → {', '.join(miss[:6])}"
+                  f"{' …' if len(miss) > 6 else ''}"
+                  f"  → 跑 python scripts/apply_caliber_banner.py")
+    else:
+        ok(f"C7 口径横幅齐全（{len(apply_caliber_banner.TARGETS)} 份 raw 报告族）")
+    return rc
+
+
 def main():
     rc = 0
     print("== Darvas-box-trading 一致性检查 ==")
@@ -215,6 +271,7 @@ def main():
     rc |= check_c3_params()
     rc |= check_c4_schedule()
     rc |= check_c6_ledger()
+    rc |= check_c7_research_discipline()
     print("=" * 40)
     print("结果:", "全部一致 ✓" if rc == 0 else "存在漂移 ✗")
     sys.exit(rc)

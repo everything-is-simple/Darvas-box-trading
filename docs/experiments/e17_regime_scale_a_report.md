@@ -1,5 +1,9 @@
 # E17 · 攻防转换 A 类零成本后验 —— 市场状态决定「每一单位」的赚钱效率吗？
 
+> ⚠️ **口径横幅：本报告基于 raw（不复权）数据，已作废，不得作为现行依据。**
+> 除权日价格腰斩 → box 边界、距新高距离、MFE、出口分布全部被污染。
+> adj 口径重做结果见同目录 `*_adj` 版本；裁定见 `docs/55` §5-Q1。
+
 > Darvas 箱体量化系统 · 十维 #10（买多少）· **A 类零成本**（只读库，不跑回测）
 > 生成：2026-11-03 · 数据源 `var/bt/base/bt_baseA_2005~2018.db`（新基线 14 年，1481 笔已平仓）
 > 复现：`python scripts/e17_breadth_build.py` → `python scripts/e17_regime_scale_a.py --json docs/experiments/e17_regime_scale_a_data.json`
