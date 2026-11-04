@@ -15,6 +15,7 @@ MA60 闸门镜子 = 上证 sh000001（单镜；换镜已证伪，双镜擂台已
   python scripts/base_run.py --years 2007 --mirrors A           # 冒烟：上证
   python scripts/base_run.py --years 2007,2010,2013,2018 --mirrors A   # 代表年
   python scripts/base_run.py --years 2005..2018 --mirrors A     # 全量 14 年（单镜）
+  python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A  # 连续单库（docs/50 阶段 C）
 """
 import argparse
 import subprocess
@@ -119,6 +120,38 @@ def run_one(year, mirror, force=False):
     return 0
 
 
+def run_cont(mirror, from_date, to_date, force=False):
+    """连续单库（docs/50 阶段 C）：一次跑完 [from, to] 一条真实资金约束的账本，
+    替代"单年库 + 事后链式复利"。复用 regime 模式 + COMMON 参数，只改窗口推导。"""
+    idx, name = MIRRORS[mirror]
+    db = OUT / f"bt_base{mirror}_cont.db"
+    logp = OUT / f"bt_base{mirror}_cont.log"
+    if not force and db_complete(db):
+        log(f"跳过（已完整）：{db.name}", logp)
+        return 0
+    if db.exists() and not force:
+        log(f"发现不完整连续库，删除重跑：{db.name}", logp)
+        for ext in ("", "-wal", "-shm"):
+            p = Path(str(db) + ext)
+            if p.exists():
+                p.unlink()
+    sa = setargs(mirror)
+    cmd = [str(EXE), "backtest", "--src", str(SRC),
+           "--from", from_date, "--to", to_date,
+           "--mode", "regime", "--db", str(db), "--set", sa]
+    log(f"START CONT {from_date}~{to_date} {mirror}({name}) idx={idx} → {db.name}", logp)
+    log(f"  set: {sa}", logp)
+    t0 = time.time()
+    with logp.open("a", encoding="utf-8") as f:
+        rc = subprocess.call(cmd, stdout=f, stderr=subprocess.STDOUT)
+    dt = time.time() - t0
+    if rc != 0:
+        log(f"FAILED CONT {mirror} rc={rc} 耗时 {dt/60:.1f}min", logp)
+        return rc
+    log(f"DONE CONT {mirror} 耗时 {dt/60:.1f}min", logp)
+    return 0
+
+
 def parse_years(spec):
     """解析年份参数：支持 "2007,2010" 与 "2005..2018" 两种写法（可混用）。"""
     out = []
@@ -139,17 +172,39 @@ def main():
     ap.add_argument("--years", default="2007",
                     help="逗号分隔或区间，如 2007,2010,2013,2018 或 2005..2018")
     ap.add_argument("--mirrors", default="A", help="A=上证 B=中证500（B 已随换镜证伪搁置），逗号分隔")
+    ap.add_argument("--cont", action="store_true",
+                    help="连续单库模式（docs/50 阶段 C）：一次跑完 --from~--to 一条真实资金约束账本")
+    ap.add_argument("--from", dest="from_date", default="2005-01-01",
+                    help="连续模式窗口起点（默认 2005-01-01）")
+    ap.add_argument("--to", dest="to_date", default="2018-12-31",
+                    help="连续模式窗口终点（默认 2018-12-31）")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    years = parse_years(a.years)
     mirrors = [m for m in a.mirrors.split(",")]
     for m in mirrors:
         if m not in MIRRORS:
             raise SystemExit(f"未知镜子 {m}，可选 {sorted(MIRRORS)}")
     OUT.mkdir(parents=True, exist_ok=True)
-    if not EXE.exists():
+    if not a.dry_run and not EXE.exists():
         raise SystemExit(f"二进制不存在：{EXE}（须先编译 darvas_base.exe）")
+    if a.cont:
+        if a.dry_run:
+            print(f"二进制 {EXE.name}  源库 {SRC.name}")
+            for m in mirrors:
+                idx, name = MIRRORS[m]
+                print(f"\n连续单库 {a.from_date}~{a.to_date} {m}({name}) idx={idx}")
+                for kv in setargs(m).split(","):
+                    print(f"   {kv}")
+            return 0
+        for m in mirrors:
+            print(f"\n=== 连续单库 [{a.from_date}~{a.to_date}] {m} ===", flush=True)
+            if run_cont(m, a.from_date, a.to_date, a.force) != 0:
+                print(f"失败即停：连续 {m}", flush=True)
+                return 1
+        print("\n连续单库全部完成")
+        return 0
+    years = parse_years(a.years)
     if a.dry_run:
         print(f"二进制 {EXE.name}  源库 {SRC.name}")
         for y in years:
