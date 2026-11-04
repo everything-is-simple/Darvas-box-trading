@@ -118,7 +118,7 @@ darvas version
 | [docs/01-requirements.md](docs/01-requirements.md) | 需求：每日时间表（唯一时刻源）、价格口径、验收标准 |
 | [docs/02-architecture.md](docs/02-architecture.md) | 架构：分层、数据流、回放链路 |
 | [docs/03-erd.md](docs/03-erd.md) / [docs/04-api-contract.md](docs/04-api-contract.md) | ERD 与模块契约（事实源：`migrations/` / `contract.go`） |
-| [docs/29-box-gradient-experiment-plan.md](docs/29-box-gradient-experiment-plan.md) | **当前执行队列**：新基线依赖顺序、验收与研究纪律 |
+| [docs/29-box-gradient-experiment-plan.md](docs/29-box-gradient-experiment-plan.md) | **当前执行队列**：新基线依赖顺序、验收、已裁定结论与判定口径 |
 | [docs/44-new-baseline-config.md](docs/44-new-baseline-config.md) | **唯一参数事实源**：49 键逐键生效值（`param_ledger.py` 生成 + C6 校验） |
 | [docs/49-baseline-rebuild-charter.md](docs/49-baseline-rebuild-charter.md) | **新基线重建纲领**：SOP、验收 V1–V7、身份、两项硬特征 |
 | [docs/53-data-spec-new-baseline.md](docs/53-data-spec-new-baseline.md) | **后复权数据目标规格**（待实施，当前运行时仍使用原始价） |

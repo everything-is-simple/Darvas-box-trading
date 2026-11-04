@@ -12,7 +12,7 @@
 | [03-erd.md](03-erd.md) | 数据模型、状态机、数据库字段和研究字段 |
 | [04-api-contract.md](04-api-contract.md) | 模块接口、CLI、撮合及研究字段契约 |
 | [06-consistency.md](06-consistency.md) | SSoT、C1–C6 一致性机制和变更协议 |
-| [29-box-gradient-experiment-plan.md](29-box-gradient-experiment-plan.md) | **当前实验与新基线执行纲领**；下一步、依赖顺序、验收、已知未修缺陷挂账与研究纪律 |
+| [29-box-gradient-experiment-plan.md](29-box-gradient-experiment-plan.md) | **当前实验与新基线执行纲领**；下一步、依赖顺序、验收、已知未修缺陷挂账、**已裁定结论（只追加）与判定口径** |
 | [44-new-baseline-config.md](44-new-baseline-config.md) | **唯一参数事实源**；49 键生成台账，C6 校验 |
 | [48-regime-attack-defense-design.md](48-regime-attack-defense-design.md) | 攻防转换设计；当前为待实现/待验证，不是生产能力 |
 | [49-baseline-rebuild-charter.md](49-baseline-rebuild-charter.md) | 连续基线重建、身份链、永续化和验收标准 |
