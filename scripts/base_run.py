@@ -70,21 +70,38 @@ def setargs(mirror):
     return ",".join(f"{k}={v}" for k, v in sorted(p.items()))
 
 
-def db_complete(path):
-    """库是否「完整可用」：存在 + 能正常读 + equity_snapshot 非空。
+def db_complete(path, min_end):
+    """库是否「完整可用」（docs/54 #10 加固判据）。
 
-    只看文件存在会把「被中断的半成品」误判为已完成（2026-10-29 踩过：
-    强杀进程留下 malformed 库，导致全量静默跳过该年）。
-    判据用 equity_snapshot（每个交易日一条，回放跑过就必有）——比
-    integrity_check 快得多（后者对 4.4GB 库要数十秒），损坏库在查询时
-    同样抛 malformed，判据等价。"""
+    旧判据只看 equity_snapshot 非空——合成库插 1 行即可骗过（审查实测复现）。
+    新判据三条同时满足才算完整：
+      1. equity_snapshot 非空（覆盖 2026-10-29 malformed 库踩坑）；
+      2. max(date) ≥ min_end（年末终点条件，等价 docs/53 的 ≥12-01；
+         连续库 smoke 窗口时传 --to 前推）；
+      3. 逐日六任务链：不存在「boxscan/screen/poolsync/signal/plan/report 任一
+         非 ok 或缺失」的日期（回放每日六任务全 ok 才算该日跑完，
+         堵住「末日成功但中间缺日」的跨洞半成品）。
+    损坏库查询即抛错 → 返回 False，同旧行为。"""
     if not path.exists():
         return False
     try:
         import sqlite3
         c = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         try:
-            return c.execute("SELECT COUNT(*) FROM equity_snapshot").fetchone()[0] > 0
+            n = c.execute("SELECT COUNT(*) FROM equity_snapshot").fetchone()[0]
+            if n == 0:
+                return False
+            maxd = c.execute("SELECT MAX(date) FROM equity_snapshot").fetchone()[0]
+            if maxd is None or str(maxd) < min_end:
+                return False
+            bad = c.execute(
+                "SELECT COUNT(*) FROM equity_snapshot es WHERE es.date NOT IN ("
+                " SELECT date FROM daily_run"
+                " WHERE task IN ('boxscan','screen','poolsync','signal','plan','report')"
+                " GROUP BY date"
+                " HAVING SUM(CASE WHEN status='ok' THEN 1 ELSE 0 END) = 6)"
+            ).fetchone()[0]
+            return bad == 0
         finally:
             c.close()
     except Exception:
@@ -95,11 +112,13 @@ def run_one(year, mirror, force=False):
     idx, name = MIRRORS[mirror]
     db = OUT / f"bt_base{mirror}_{year}.db"
     logp = OUT / f"bt_base{mirror}_{year}.log"
-    if not force and db_complete(db):
+    # 完整判据（docs/54 #10）：年末终点 + 逐日六任务全 ok（min_end=12-01，
+    # 等价 docs/53 判据；该年 12 月后段必在窗口内）。
+    if not force and db_complete(db, f"{year}-12-01"):
         log(f"跳过（已完整）：{db.name}", logp)
         return 0
     if db.exists() and not force:
-        log(f"发现不完整库（损坏或无 metrics），删除重跑：{db.name}", logp)
+        log(f"发现不完整库（年末终点/逐日六任务不满足），删除重跑：{db.name}", logp)
         for ext in ("", "-wal", "-shm"):
             p = Path(str(db) + ext)
             if p.exists():
@@ -128,7 +147,12 @@ def run_cont(mirror, from_date, to_date, force=False, resume=False):
     idx, name = MIRRORS[mirror]
     db = OUT / f"bt_base{mirror}_cont.db"
     logp = OUT / f"bt_base{mirror}_cont.log"
-    if not force and not resume and db_complete(db):
+    # 完整判据（docs/54 #10）：终点 = to_date 前推 35 天（覆盖年末 12-01
+    # 等价判据与 smoke 短窗口两种场景）。
+    to_dt = datetime.strptime(to_date, "%Y-%m-%d")
+    min_end = (to_dt.replace(month=12, day=1) if to_dt.month == 12
+               else to_dt.fromordinal(to_dt.toordinal() - 35)).strftime("%Y-%m-%d")
+    if not force and not resume and db_complete(db, min_end):
         log(f"跳过（已完整）：{db.name}", logp)
         return 0
     if db.exists() and not force and not resume:

@@ -340,8 +340,9 @@ func TestResumeRejectsNoBaseline(t *testing.T) {
 	}
 }
 
-// TestResumeRejectsParamConflict 续跑安全闸（docs/51 V6-3）：带 --set 且与库内已生效值
-// 冲突时拒绝续跑，防"用户以为改了参数、实际静默忽略"的串基线。
+// TestResumeRejectsParamConflict 续跑安全闸（docs/51 V6-3 + docs/54 #8 加固）：
+// 续跑一律不允许 --set——哪怕值与库内一致也拒绝。旧实现只比对库内已存在的键，
+// 七个 default-only 键（无种子行）会被静默跳过。
 func TestResumeRejectsParamConflict(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src.db")
@@ -370,17 +371,20 @@ func TestResumeRejectsParamConflict(t *testing.T) {
 	}
 	days := []string{d(1), d(2), d(3)}
 	if _, err := resumeRegime(o, scratch, days); err == nil {
-		t.Fatal("参数冲突的续跑应报错，得到 nil")
+		t.Fatal("带 --set 的续跑应报错，得到 nil")
+	} else if !strings.Contains(err.Error(), "--set") {
+		t.Fatalf("错误信息应点明 --set，得到 %v", err)
 	}
 
-	// 与库内一致的 --set 应越过参数冲突校验（不再报"参数冲突"，而是走到后续
-	// "读断点"——本 scratch 未跑过回放，daily_run 为空，报"无完整回放日"即证明
-	// 参数冲突闸门已放行）。
+	// docs/54 #8：与库内一致的 --set 同样拒绝（旧实现会放行），
+	// 不存在于 param 表的 default-only 键也拒绝。
 	o.ParamOverrides = map[string]string{"pool.max_hold": "14"}
 	if _, err := resumeRegime(o, scratch, days); err == nil {
-		t.Fatal("应报'无完整回放日'（证明越过了参数冲突闸门），得到 nil")
-	} else if !strings.Contains(err.Error(), "无任何完整回放日") {
-		t.Fatalf("一致参数应越过冲突校验、卡在断点读取，得到 %v", err)
+		t.Fatal("一致值的 --set 续跑也应拒绝（docs/54 #8），得到 nil")
+	}
+	o.ParamOverrides = map[string]string{"equity.base": "2000000"} // default-only 键
+	if _, err := resumeRegime(o, scratch, days); err == nil {
+		t.Fatal("default-only 键的 --set 续跑也应拒绝（docs/54 #8），得到 nil")
 	}
 }
 

@@ -123,9 +123,10 @@ func runOne(o Options, scratch string) error {
 		return err
 	}
 	// 记录基线身份（docs/49 §四 阶段 B）：迁移跑完、参数就绪后锚定指纹 + 引擎 hash，
-	// 供 C/D/E 跨年续跑对账。失败不阻断回测，仅告警（身份缺失不该让账本跑不出来）。
+	// 供 C/D/E 跨年续跑对账。docs/49 硬标准① + docs/54 #9：身份是硬标准，
+	// 记录失败=该次运行失败，绝不留"跑了但无法证明身份"的半账本子。
 	if err := recordBaseline(scratch, o); err != nil {
-		fmt.Printf("[bt] 记录基线身份失败（不阻断）: %v\n", err)
+		return fmt.Errorf("记录基线身份失败（docs/49 硬标准①，身份缺失的账本无效）: %w", err)
 	}
 	hashes, fails, err := Replay(scratch, days, dayBars)
 	if err != nil {
@@ -227,7 +228,9 @@ func runRegime(o Options) error {
 			return err
 		}
 		if err := recordBaseline(scratch, o); err != nil {
-			fmt.Printf("[bt] 记录基线身份失败（不阻断）: %v\n", err)
+			// docs/49 硬标准① + docs/54 #9：身份是硬标准，记录失败=该次运行失败，
+			// 绝不留"跑了但无法证明身份/无法续跑"的半账本子。
+			return fmt.Errorf("记录基线身份失败（docs/49 硬标准①，身份缺失的账本无效）: %w", err)
 		}
 	}
 
@@ -264,30 +267,28 @@ func resumeRegime(o Options, scratch string, days []string) ([]string, error) {
 	}
 	defer st.Close()
 
-	// 0. 参数覆盖冲突校验（docs/51 V6-3）：续跑不改参数，若 CLI 带了 --set 且与库内
-	// 已生效值不一致，即拒绝续跑（防"用户以为改了参数、实际静默忽略"的串基线）。
-	params, err := st.ParamRepo.All()
-	if err != nil {
-		return nil, fmt.Errorf("读当前参数算指纹: %w", err)
-	}
+	// 0. 参数覆盖冲突校验（docs/51 V6-3，docs/54 #8 加固）：
+	// 续跑一律不允许 --set。旧实现只比对 param 表内已存在的键，
+	// 七个 default-only 键（无种子行）会被静默跳过——命令行参数与库实际值
+	// 不同也不报。干脆全拒：续跑不改参数，改参数须删库重建（防串基线）。
 	if len(o.ParamOverrides) > 0 {
-		var conflicts []string
-		for k, v := range o.ParamOverrides {
-			if cur, ok := params[k]; ok && cur != v {
-				conflicts = append(conflicts, fmt.Sprintf("%s=%s(库内=%s)", k, v, cur))
-			}
+		keys := make([]string, 0, len(o.ParamOverrides))
+		for k := range o.ParamOverrides {
+			keys = append(keys, k)
 		}
-		if len(conflicts) > 0 {
-			sort.Strings(conflicts)
-			return nil, fmt.Errorf("续跑不允许改参数（--set 与库内已生效值冲突）：%s（改参数须删库重建，勿串基线）",
-				strings.Join(conflicts, ", "))
-		}
+		sort.Strings(keys)
+		return nil, fmt.Errorf("续跑不允许任何 --set 参数覆盖（%s）（改参数须删库重建，勿串基线）",
+			strings.Join(keys, ", "))
 	}
 
 	// 1. 基线身份校验：本库 latest=1 的指纹/引擎hash，与本次 CLI 实际状态对比
 	base, err := st.LatestBaseline()
 	if err != nil {
 		return nil, fmt.Errorf("读基线身份（续跑须先有身份，勿用未记录身份的库）: %w", err)
+	}
+	params, err := st.ParamRepo.All()
+	if err != nil {
+		return nil, fmt.Errorf("读当前参数算指纹: %w", err)
 	}
 	curFp := store.ParamFingerprint(params)
 	if curFp != base.ParamFingerprint {

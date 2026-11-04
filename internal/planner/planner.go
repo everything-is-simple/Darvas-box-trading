@@ -64,7 +64,9 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 
 	// 权益基准
 	eq, _ := p.st.TradeRepo.LatestEquity()
-	equity := defaultEquity
+	// docs/54 #12：无快照时本金必须读 equity.base（与 ledger.baseEquity 同口径），
+	// 不能硬编码 defaultEquity——否则改 equity.base 后两条路径本金不一致。
+	equity := p.st.ParamRepo.GetFloat("equity.base", defaultEquity)
 	if eq != nil {
 		equity = eq.Total
 	}

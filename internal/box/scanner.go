@@ -125,11 +125,14 @@ func (s *Scanner) RescanIncremental(ctx context.Context, date string) (contract.
 		return res, err
 	}
 	volMult := s.st.ParamRepo.GetFloat("box.volmult", 2.0)
+	// docs/54 #14：预过滤均量窗口读 box.volwindow（与引擎 isBreakout 同一参数），
+	// 改参时预过滤与引擎不分叉；默认 50 与历史行为一致。
+	volWindow := s.st.ParamRepo.GetInt("box.volwindow", 50)
 	for _, code := range allCodes {
 		if rescan[code] {
 			continue
 		}
-		if s.prefilter(ctx, code, date, volMult) {
+		if s.prefilter(ctx, code, date, volMult, volWindow) {
 			rescan[code] = true
 		}
 	}
@@ -159,7 +162,7 @@ func (s *Scanner) RescanIncremental(ctx context.Context, date string) (contract.
 // prefilter 增量预过滤（docs/02 §6 + M8.8 破位兜底）：
 // 今日创 60 日新高、今日量≥均量×倍数、或最新 confirmed 箱体下轨被今日收盘跌破。
 // 任一成立即需重算；否则跳过。
-func (s *Scanner) prefilter(ctx context.Context, code, date string, volMult float64) bool {
+func (s *Scanner) prefilter(ctx context.Context, code, date string, volMult float64, volWindow int) bool {
 	select {
 	case <-ctx.Done():
 		return false
@@ -180,8 +183,9 @@ func (s *Scanner) prefilter(ctx context.Context, code, date string, volMult floa
 	if today.High > maxPrev && maxPrev > 0 {
 		return true
 	}
-	// 今日量≥均量×倍数（放量）
-	if avg, err := s.st.BarRepo.AvgVolume(code, date, 50); err == nil && avg > 0 &&
+	// 今日量≥均量×倍数（放量）。docs/54 #14：窗口读 box.volwindow（与引擎 isBreakout
+	// 同一参数），改参时预过滤与引擎不分叉；默认 50 与历史行为一致。
+	if avg, err := s.st.BarRepo.AvgVolume(code, date, volWindow); err == nil && avg > 0 &&
 		float64(today.Volume) >= avg*volMult {
 		return true
 	}

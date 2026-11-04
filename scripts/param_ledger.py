@@ -367,6 +367,16 @@ def cmd_check(led: dict) -> int:
     return 0
 
 
+def print_db_diff(led: dict):
+    """docs/54 #13：库差异提示（--check --db 与非 check 的默认输出共用）。"""
+    if led["db_mismatch"]:
+        print(f"⚠ 库内与生效值不一致: {led['db_mismatch']}")
+    if led["db_extra"]:
+        print(f"⚠ 库内多出（代码不读/已删死参数残留）{len(led['db_extra'])} 键: {led['db_extra']}")
+    if led["db_missing"]:
+        print(f"ℹ 库内缺失（走代码默认）{len(led['db_missing'])} 键: {led['db_missing']}")
+
+
 def cmd_write(led: dict, with_db: bool) -> int:
     if not DOC44.exists():
         print(f"✗ 找不到 {DOC44}")
@@ -397,7 +407,13 @@ def main() -> int:
         Path(a.json).write_text(json.dumps(led, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"已写 {a.json}")
     if a.check:
-        return cmd_check(led)
+        # docs/54 #13：--check 不再提前 return——带了 --db 时一并输出库差异
+        # （db_mismatch/db_extra/db_missing），让 --check 与库对账可同次完成。
+        # 退出码仍只反映 docs/44 与代码/迁移的对齐，库差异以 ⚠ 提示呈现。
+        rc = cmd_check(led)
+        if a.db:
+            print_db_diff(led)
+        return rc
     if a.write:
         return cmd_write(led, bool(a.db))
     print(render_markdown(led, bool(a.db)))
@@ -405,12 +421,7 @@ def main() -> int:
     print(f"合计 {led['count']} 键：种子 {len(led['seeded'])} / 只走代码默认 {len(led['default_only'])}"
           f" / 死参数已删 {len(led['dead'])}")
     if a.db:
-        if led["db_mismatch"]:
-            print(f"⚠ 库内与生效值不一致: {led['db_mismatch']}")
-        if led["db_extra"]:
-            print(f"⚠ 库内多出（代码不读/已删死参数残留）{len(led['db_extra'])} 键: {led['db_extra']}")
-        if led["db_missing"]:
-            print(f"ℹ 库内缺失（走代码默认）{len(led['db_missing'])} 键: {led['db_missing']}")
+        print_db_diff(led)
     return 0
 
 

@@ -45,7 +45,7 @@ func TestPrefilterNewHigh(t *testing.T) {
 	bars := flatSeries("sh600001", 60)
 	bars[59].High = 12.0 // 今日新高
 	seedStock(t, st, "sh600001", bars)
-	if !s.prefilter(context.Background(), "sh600001", d(60), 2.0) {
+	if !s.prefilter(context.Background(), "sh600001", d(60), 2.0, 50) {
 		t.Fatal("today new 60-day high should trigger prefilter")
 	}
 }
@@ -56,7 +56,7 @@ func TestPrefilterVolSpike(t *testing.T) {
 	bars := flatSeries("sh600002", 60)
 	bars[59].Volume = 5000 // 5× 均量 1000 ≥ 2×
 	seedStock(t, st, "sh600002", bars)
-	if !s.prefilter(context.Background(), "sh600002", d(60), 2.0) {
+	if !s.prefilter(context.Background(), "sh600002", d(60), 2.0, 50) {
 		t.Fatal("volume spike should trigger prefilter")
 	}
 }
@@ -66,7 +66,7 @@ func TestPrefilterNeither(t *testing.T) {
 	s, st := newTestScanner(t)
 	bars := flatSeries("sh600003", 60)
 	seedStock(t, st, "sh600003", bars)
-	if s.prefilter(context.Background(), "sh600003", d(60), 2.0) {
+	if s.prefilter(context.Background(), "sh600003", d(60), 2.0, 50) {
 		t.Fatal("flat series should NOT trigger prefilter")
 	}
 }
@@ -77,7 +77,7 @@ func TestPrefilterShortHistory(t *testing.T) {
 	bars := flatSeries("sh600004", 10)
 	seedStock(t, st, "sh600004", bars)
 	// 仅 10 根、平稳 → 不触发
-	if s.prefilter(context.Background(), "sh600004", d(10), 2.0) {
+	if s.prefilter(context.Background(), "sh600004", d(10), 2.0, 50) {
 		t.Fatal("short flat history should not trigger")
 	}
 }
@@ -94,7 +94,7 @@ func TestPrefilterBrokenBelowConfirmedBox(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if !s.prefilter(context.Background(), code, d(60), 2.0) {
+	if !s.prefilter(context.Background(), code, d(60), 2.0, 50) {
 		t.Fatal("confirmed box bottom broken by close should trigger M8.8 fallback")
 	}
 }
@@ -111,7 +111,7 @@ func TestPrefilterAlreadyBrokenDownNotRetrigger(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if s.prefilter(context.Background(), code, d(60), 2.0) {
+	if s.prefilter(context.Background(), code, d(60), 2.0, 50) {
 		t.Fatal("already broken_down box should not retrigger every day")
 	}
 }
