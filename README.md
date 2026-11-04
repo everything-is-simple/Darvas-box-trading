@@ -122,7 +122,7 @@ darvas version
 | [docs/44-new-baseline-config.md](docs/44-new-baseline-config.md) | **唯一参数事实源**：49 键逐键生效值（`param_ledger.py` 生成 + C6 校验） |
 | [docs/49-baseline-rebuild-charter.md](docs/49-baseline-rebuild-charter.md) | **新基线重建纲领**：SOP、验收 V1–V7、身份、两项硬特征 |
 | [docs/53-data-spec-new-baseline.md](docs/53-data-spec-new-baseline.md) | **后复权数据规格**：`daily_bar_adj` 已落地（`full_hist_adj.db`，`adj_ready=1`），生产 `serve` 仍走原始价 |
-| [docs/55-adj-experiment-replay-matrix.md](docs/55-adj-experiment-replay-matrix.md) | **adj 实验重做矩阵（22 项）+ Q1–Q5 裁定 + 执行契约**：旧结论加横幅保留、新结果 `_adj` 并存、B 类只与新基线比、2019+ 不解冻 |
+| [docs/55-adj-experiment-replay-matrix.md](docs/55-adj-experiment-replay-matrix.md) | **adj 实验重做矩阵（22 项）+ Q1–Q5 裁定 + 执行契约 + §9 参数清单与关键参数判定**：旧结论加横幅保留、新结果 `_adj` 并存、B 类只与新基线比、2019+ 不解冻 |
 
 ---
 

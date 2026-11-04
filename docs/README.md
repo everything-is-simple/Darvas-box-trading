@@ -17,7 +17,7 @@
 | [48-regime-attack-defense-design.md](48-regime-attack-defense-design.md) | 攻防转换设计；当前为待实现/待验证，不是生产能力 |
 | [49-baseline-rebuild-charter.md](49-baseline-rebuild-charter.md) | 连续基线重建、身份链、永续化和验收标准 |
 | [53-data-spec-new-baseline.md](53-data-spec-new-baseline.md) | 后复权数据规格；数据侧已实施验收（`adj_ready=1`），生产 `serve` 未切换 |
-| [55-adj-experiment-replay-matrix.md](55-adj-experiment-replay-matrix.md) | **adj 口径全量实验重做矩阵（22 项）+ Q1–Q5 裁定 + 执行契约**；决定旧结论如何处置、B 类对照基准、样本外纪律 |
+| [55-adj-experiment-replay-matrix.md](55-adj-experiment-replay-matrix.md) | **adj 口径全量实验重做矩阵（22 项）+ Q1–Q5 裁定 + 执行契约 + §9 新基线参数清单/关键参数判定**；决定旧结论如何处置、B 类对照基准、样本外纪律，以及 49 键参数哪些真正影响成交 |
 
 ## 目录
 
