@@ -22,12 +22,9 @@ import (
 //
 // engineVersion 与 cmd/darvas/main.go 的 const version 对应，由调用方传入（store 层不持有）。
 // sourceHash 是源库 sha256（从哪来），可选；由调用方传入，空则留 NULL。
-func (s *Store) RecordBaseline(engineVersion, sourceHash string) (baselineID string, err error) {
-	// 1. 参数快照 + 指纹（key 排序，值原样拼，sha256）
-	params, err := s.ParamRepo.All()
-	if err != nil {
-		return "", fmt.Errorf("读参数算指纹: %w", err)
-	}
+// ParamFingerprint 计算参数指纹：(key, value) 按 key 排序拼串的 sha256（小写十六进制）。
+// 供 RecordBaseline（写入）与续跑校验（backtest.resumeRegime）两处复用，保证同一算法。
+func ParamFingerprint(params map[string]string) string {
 	keys := make([]string, 0, len(params))
 	for k := range params {
 		keys = append(keys, k)
@@ -40,7 +37,16 @@ func (s *Store) RecordBaseline(engineVersion, sourceHash string) (baselineID str
 		h.Write([]byte(params[k]))
 		h.Write([]byte{0})
 	}
-	fingerprint := hex.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (s *Store) RecordBaseline(engineVersion, sourceHash string) (baselineID string, err error) {
+	// 1. 参数快照 + 指纹（key 排序，值原样拼，sha256）
+	params, err := s.ParamRepo.All()
+	if err != nil {
+		return "", fmt.Errorf("读参数算指纹: %w", err)
+	}
+	fingerprint := ParamFingerprint(params)
 	snapshot, err := json.Marshal(params)
 	if err != nil {
 		return "", fmt.Errorf("序列化参数快照: %w", err)
@@ -87,4 +93,21 @@ func nullIfEmpty(s string) any {
 		return nil
 	}
 	return s
+}
+
+// BaselineIdentity 一份基线身份的可读快照（续跑校验用）。
+type BaselineIdentity struct {
+	BaselineID       string
+	ParamFingerprint string
+	EngineSHA256     string
+}
+
+// LatestBaseline 读本库最新一次重建（latest=1）的基线身份。
+// 无基线身份（从未 RecordBaseline）时返回 sql.ErrNoRows。
+func (s *Store) LatestBaseline() (BaselineIdentity, error) {
+	var b BaselineIdentity
+	err := s.db.QueryRow(`SELECT baseline_id, param_fingerprint, engine_sha256
+		FROM baseline WHERE latest = 1`).
+		Scan(&b.BaselineID, &b.ParamFingerprint, &b.EngineSHA256)
+	return b, err
 }

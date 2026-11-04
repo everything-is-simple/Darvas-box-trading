@@ -92,6 +92,23 @@ func (r *RunRepo) LatestRunDate() (string, error) {
 	return d, nil
 }
 
+// LastCompleteDate 回放六任务链全 ok 的最大日期（断点，docs/51 阶段 D）。
+// 判据：某日 boxscan/screen/poolsync/signal/plan/report 六任务 status 全 'ok' 才算
+// 「该日跑完」。只统计回放六任务，不把 ingest/weekly 等非回放任务算进去。
+// 无任何完整日时返回空串（sql.ErrNoRows 归一为空）。
+func (r *RunRepo) LastCompleteDate() (string, error) {
+	var d string
+	err := r.db.QueryRow(`SELECT CAST(date AS TEXT) FROM daily_run
+		WHERE task IN ('boxscan','screen','poolsync','signal','plan','report')
+		  AND status = 'ok'
+		GROUP BY date HAVING COUNT(*) = 6
+		ORDER BY date DESC LIMIT 1`).Scan(&d)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return d, err
+}
+
 // DateOverview 有数据日期的概览行（GUI 全站日期选择）。
 type DateOverview struct {
 	Date       string `json:"date"`

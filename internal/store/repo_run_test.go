@@ -99,3 +99,69 @@ func TestRunRepoDifferentTasks(t *testing.T) {
 		t.Fatalf("daily_run rows=%d want 4 (one per task)", cnt)
 	}
 }
+
+// replayTasks 回放六任务链（与 backtest.sixTasks 一致）。
+var replayTasks = []string{"boxscan", "screen", "poolsync", "signal", "plan", "report"}
+
+// markCompleteDay 标记某日回放六任务全 ok（模拟一天完整跑完）。
+func markCompleteDay(t *testing.T, st *Store, date string) {
+	t.Helper()
+	for _, task := range replayTasks {
+		id, err := st.RunRepo.StartRun(date, task)
+		if err != nil {
+			t.Fatalf("StartRun %s %s: %v", date, task, err)
+		}
+		if err := st.RunRepo.FinishRun(id, contract.TaskResult{Status: "ok", AffectedRows: 1}); err != nil {
+			t.Fatalf("FinishRun %s %s: %v", date, task, err)
+		}
+	}
+}
+
+// TestLastCompleteDate 验证断点判据：六任务全 ok 的最大日期；未满六任务不算完成日。
+func TestLastCompleteDate(t *testing.T) {
+	st := newTestStore(t)
+	defer st.Close()
+
+	// 初始无任何完整日 → 空串
+	d, err := st.RunRepo.LastCompleteDate()
+	if err != nil {
+		t.Fatalf("LastCompleteDate 空库: %v", err)
+	}
+	if d != "" {
+		t.Fatalf("空库断点应为空串，得 %q", d)
+	}
+
+	// 2026-10-15 完整跑完
+	markCompleteDay(t, st, "2026-10-15")
+	// 2026-10-16 只跑完 5 个任务（1 个 failed）→ 不算完成日
+	for i, task := range replayTasks {
+		id, err := st.RunRepo.StartRun("2026-10-16", task)
+		if err != nil {
+			t.Fatalf("StartRun: %v", err)
+		}
+		status := "ok"
+		if i == 5 { // 最后一个 report 失败
+			status = "failed"
+		}
+		st.RunRepo.FinishRun(id, contract.TaskResult{Status: status})
+	}
+	// 2026-10-17 完整跑完
+	markCompleteDay(t, st, "2026-10-17")
+
+	d, err = st.RunRepo.LastCompleteDate()
+	if err != nil {
+		t.Fatalf("LastCompleteDate: %v", err)
+	}
+	if d != "2026-10-17" {
+		t.Fatalf("断点应为 2026-10-17（16 日 report 失败不算完成），得 %q", d)
+	}
+
+	// 断点之后（17）若再插 ingest 等非回放任务，不影响判据
+	if _, err := st.RunRepo.StartRun("2026-10-18", "ingest"); err != nil {
+		t.Fatalf("StartRun ingest: %v", err)
+	}
+	d2, _ := st.RunRepo.LastCompleteDate()
+	if d2 != "2026-10-17" {
+		t.Fatalf("ingest 不应影响断点，得 %q", d2)
+	}
+}

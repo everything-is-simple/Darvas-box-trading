@@ -53,6 +53,7 @@ func main() {
 	src := fs.String("src", "", "backtest: 源库路径（只读）")
 	btMode := fs.String("mode", "", "backtest: prefill|progressive|regime|verify")
 	btSet := fs.String("set", "", "backtest: scratch 参数覆盖，格式 key=value,key=value")
+	btResume := fs.Bool("resume-run", false, "backtest: 断点续跑（scratch 已存在且基线身份一致时从断点续，不清库）")
 	// Go flag 遇首个非 flag 即停止；这里把 flag 与位置参数分离，使
 	// `darvas ladder <code> --db <path>` 这样的混合顺序也能正确解析。
 	flagArgs, positional := splitFlags(os.Args[2:])
@@ -94,7 +95,7 @@ func main() {
 	case "serve":
 		runServe(*db, *addr)
 	case "backtest":
-		runBacktest(*db, *from, *to, *src, *btMode, *btSet)
+		runBacktest(*db, *from, *to, *src, *btMode, *btSet, *btResume)
 	default:
 		usage()
 		os.Exit(2)
@@ -145,9 +146,10 @@ func usage() {
   darvas ui     [--addr]                     本地GUI（浏览器四视图，M6）
   darvas serve  [--addr]                     常驻模式（调度+GUI+备份，M7.1）
   darvas backtest --src <库> [--from <起>] [--to <止>] --mode prefill|progressive|regime|verify
-                                             [--set key=value,key=value]
+                                             [--set key=value,key=value] [--resume-run]
                                              内置回放器 M8：scratch库重放as-of六任务链；
-                                             --set 仅覆盖 scratch 参数；verify=双模式差分审计
+                                             --set 仅覆盖 scratch 参数；verify=双模式差分审计；
+                                             --resume-run 断点续跑（regime 模式，scratch 已存在时从断点续）
 
 每日时间表（docs/01 §4 唯一事实源；此处由 scheduler.ScheduleSummary 派生，禁止他处硬编码）:
   ` + scheduler.ScheduleSummary() + ` → 备份轮转
@@ -751,7 +753,7 @@ func runWeekly(db, date string) {
 
 // runBacktest M8 内置回放器入口（PROMPT.md P4/M8.1）。scratch 独立库、源库只读、
 // 观察期内规则冻结（回放只产出问题清单 archive/07-m8-issue-list.md）。
-func runBacktest(db, from, to, src, mode, paramSets string) {
+func runBacktest(db, from, to, src, mode, paramSets string, resume bool) {
 	o := backtest.Options{
 		From:           from,
 		To:             to,
@@ -760,6 +762,7 @@ func runBacktest(db, from, to, src, mode, paramSets string) {
 		Mode:           backtest.Mode(mode),
 		ParamOverrides: parseParamOverrides(paramSets),
 		EngineVersion:  version,
+		Resume:         resume,
 	}
 	if db != "" {
 		o.ScratchDB = db // Bootstrap 内置护栏：拒用 darvas.db / perf_test.db / 与源库同路径

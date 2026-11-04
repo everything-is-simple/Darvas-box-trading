@@ -296,6 +296,49 @@ func TestBootstrapGuards(t *testing.T) {
 	}
 }
 
+// TestDaysAfter 验证断点过滤：只保留严格晚于断点的交易日，保持升序。
+func TestDaysAfter(t *testing.T) {
+	days := []string{"2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08"}
+	got := daysAfter(days, "2026-01-06")
+	want := []string{"2026-01-07", "2026-01-08"}
+	if len(got) != len(want) {
+		t.Fatalf("daysAfter=%v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("daysAfter=%v want %v", got, want)
+		}
+	}
+	// 断点 = 最后一天 → 空
+	if got := daysAfter(days, "2026-01-08"); len(got) != 0 {
+		t.Fatalf("断点在末尾应返回空，得 %v", got)
+	}
+	// 断点早于首日 → 全量
+	if got := daysAfter(days, "2026-01-01"); len(got) != len(days) {
+		t.Fatalf("断点早于首日应返回全量，得 %v", got)
+	}
+}
+
+// TestResumeRejectsNoBaseline 续跑安全闸：scratch 无基线身份时拒绝续跑。
+// 断点续跑的前提是「先有身份」（阶段 B），无身份的库必须拒绝，不能盲续。
+func TestResumeRejectsNoBaseline(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.db")
+	buildSyntheticSource(t, src)
+	scratch := filepath.Join(dir, "bt_cont.db")
+
+	// 引导一个 scratch（不 recordBaseline）
+	if err := Bootstrap(src, scratch, "2026-07-01", false); err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+
+	o := Options{From: "2026-07-01", To: "2026-07-30", SrcDB: src, ScratchDB: scratch}
+	days := []string{d(1), d(2), d(3)}
+	if _, err := resumeRegime(o, scratch, days); err == nil {
+		t.Fatal("无基线身份的 scratch 续跑应报错，得到 nil")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 合成数据源
 // ---------------------------------------------------------------------------

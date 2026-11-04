@@ -16,6 +16,7 @@ MA60 闸门镜子 = 上证 sh000001（单镜；换镜已证伪，双镜擂台已
   python scripts/base_run.py --years 2007,2010,2013,2018 --mirrors A   # 代表年
   python scripts/base_run.py --years 2005..2018 --mirrors A     # 全量 14 年（单镜）
   python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A  # 连续单库（docs/50 阶段 C）
+  python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A --resume  # 断点续跑（docs/51 阶段 D）
 """
 import argparse
 import subprocess
@@ -120,16 +121,17 @@ def run_one(year, mirror, force=False):
     return 0
 
 
-def run_cont(mirror, from_date, to_date, force=False):
+def run_cont(mirror, from_date, to_date, force=False, resume=False):
     """连续单库（docs/50 阶段 C）：一次跑完 [from, to] 一条真实资金约束的账本，
-    替代"单年库 + 事后链式复利"。复用 regime 模式 + COMMON 参数，只改窗口推导。"""
+    替代"单年库 + 事后链式复利"。复用 regime 模式 + COMMON 参数，只改窗口推导。
+    resume=True 时断点续跑（docs/51 阶段 D）：保留已跑库，交给 darvas --resume-run 从断点续。"""
     idx, name = MIRRORS[mirror]
     db = OUT / f"bt_base{mirror}_cont.db"
     logp = OUT / f"bt_base{mirror}_cont.log"
-    if not force and db_complete(db):
+    if not force and not resume and db_complete(db):
         log(f"跳过（已完整）：{db.name}", logp)
         return 0
-    if db.exists() and not force:
+    if db.exists() and not force and not resume:
         log(f"发现不完整连续库，删除重跑：{db.name}", logp)
         for ext in ("", "-wal", "-shm"):
             p = Path(str(db) + ext)
@@ -139,7 +141,10 @@ def run_cont(mirror, from_date, to_date, force=False):
     cmd = [str(EXE), "backtest", "--src", str(SRC),
            "--from", from_date, "--to", to_date,
            "--mode", "regime", "--db", str(db), "--set", sa]
-    log(f"START CONT {from_date}~{to_date} {mirror}({name}) idx={idx} → {db.name}", logp)
+    if resume:
+        cmd.append("--resume-run")
+    log(f"START CONT {from_date}~{to_date} {mirror}({name}) idx={idx} → {db.name}"
+        f"{' [resume]' if resume else ''}", logp)
     log(f"  set: {sa}", logp)
     t0 = time.time()
     with logp.open("a", encoding="utf-8") as f:
@@ -178,6 +183,8 @@ def main():
                     help="连续模式窗口起点（默认 2005-01-01）")
     ap.add_argument("--to", dest="to_date", default="2018-12-31",
                     help="连续模式窗口终点（默认 2018-12-31）")
+    ap.add_argument("--resume", action="store_true",
+                    help="连续模式断点续跑（docs/51 阶段 D）：保留已跑库，交给 darvas --resume-run 从断点续")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
@@ -193,13 +200,15 @@ def main():
             print(f"二进制 {EXE.name}  源库 {SRC.name}")
             for m in mirrors:
                 idx, name = MIRRORS[m]
-                print(f"\n连续单库 {a.from_date}~{a.to_date} {m}({name}) idx={idx}")
+                tag = " [resume]" if a.resume else ""
+                print(f"\n连续单库 {a.from_date}~{a.to_date} {m}({name}) idx={idx}{tag}")
                 for kv in setargs(m).split(","):
                     print(f"   {kv}")
             return 0
         for m in mirrors:
-            print(f"\n=== 连续单库 [{a.from_date}~{a.to_date}] {m} ===", flush=True)
-            if run_cont(m, a.from_date, a.to_date, a.force) != 0:
+            tag = " [resume]" if a.resume else ""
+            print(f"\n=== 连续单库 [{a.from_date}~{a.to_date}] {m}{tag} ===", flush=True)
+            if run_cont(m, a.from_date, a.to_date, a.force, a.resume) != 0:
                 print(f"失败即停：连续 {m}", flush=True)
                 return 1
         print("\n连续单库全部完成")

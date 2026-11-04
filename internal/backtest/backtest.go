@@ -66,6 +66,7 @@ type Options struct {
 	Mode           Mode
 	ParamOverrides map[string]string // 仅写入 scratch，源库与生产参数不变
 	EngineVersion  string            // 语义版本（cmd/darvas 的 const version），写入 baseline 身份
+	Resume         bool              // 断点续跑：scratch 已存在且基线身份一致时，从断点续（不清库）
 }
 
 // sixTasks 回放的六任务链（PROMPT.md「as-of 六任务链」；ingest 由引导替代——
@@ -209,19 +210,35 @@ func runRegime(o Options) error {
 	if scratch == "" {
 		scratch = defaultScratch("regime")
 	}
-	if err = Bootstrap(o.SrcDB, scratch, from, false); err != nil {
-		return err
+
+	// 断点续跑（docs/51 阶段 D）：scratch 已存在且 --resume 时，跳过重建，
+	// 校验基线身份一致后从断点续，不等同于从头重跑。
+	if o.Resume && fileExists(scratch) {
+		rest, err := resumeRegime(o, scratch, days)
+		if err != nil {
+			return err
+		}
+		days = rest
+	} else {
+		if err = Bootstrap(o.SrcDB, scratch, from, false); err != nil {
+			return err
+		}
+		if err = applyParamOverrides(scratch, o.ParamOverrides); err != nil {
+			return err
+		}
+		if err := recordBaseline(scratch, o); err != nil {
+			fmt.Printf("[bt] 记录基线身份失败（不阻断）: %v\n", err)
+		}
 	}
-	if err = applyParamOverrides(scratch, o.ParamOverrides); err != nil {
-		return err
-	}
-	if err := recordBaseline(scratch, o); err != nil {
-		fmt.Printf("[bt] 记录基线身份失败（不阻断）: %v\n", err)
-	}
-	if _, fails, err := Replay(scratch, days, nil); err != nil {
-		return err
-	} else if len(fails) > 0 {
-		return fmt.Errorf("regime 回放存在失败任务:\n  %s", strings.Join(fails, "\n  "))
+
+	if len(days) == 0 {
+		fmt.Printf("[bt] regime: 已是最新，无断点可续（%s 之后无交易日）\n", o.To)
+	} else {
+		if _, fails, err := Replay(scratch, days, nil); err != nil {
+			return err
+		} else if len(fails) > 0 {
+			return fmt.Errorf("regime 回放存在失败任务:\n  %s", strings.Join(fails, "\n  "))
+		}
 	}
 
 	st, err := store.Open(scratch)
@@ -236,6 +253,86 @@ func runRegime(o Options) error {
 	}
 	fmt.Printf("[bt] regime 报告已生成: %s\n", path)
 	return nil
+}
+
+// resumeRegime 断点续跑前置：校验基线身份一致 + 读断点，返回「待续跑的交易日」。
+// 严格校验（docs/51 三决策③）：参数指纹或引擎 hash 不一致即拒绝续跑，防串基线。
+func resumeRegime(o Options, scratch string, days []string) ([]string, error) {
+	st, err := store.Open(scratch)
+	if err != nil {
+		return nil, fmt.Errorf("打开 scratch 续跑: %w", err)
+	}
+	defer st.Close()
+
+	// 1. 基线身份校验：本库 latest=1 的指纹/引擎hash，与本次 CLI 实际状态对比
+	base, err := st.LatestBaseline()
+	if err != nil {
+		return nil, fmt.Errorf("读基线身份（续跑须先有身份，勿用未记录身份的库）: %w", err)
+	}
+	// 当前 param 表指纹（续跑不改参数，直接读 scratch 现状态）
+	params, err := st.ParamRepo.All()
+	if err != nil {
+		return nil, fmt.Errorf("读当前参数算指纹: %w", err)
+	}
+	curFp := store.ParamFingerprint(params)
+	if curFp != base.ParamFingerprint {
+		return nil, fmt.Errorf("基线参数指纹不一致，拒绝续跑：本库 %s… vs 当前 %s…（改了参数须重建，勿串基线）",
+			base.ParamFingerprint[:12], curFp[:12])
+	}
+	curEng := currentEngineSHA()
+	if curEng != base.EngineSHA256 {
+		return nil, fmt.Errorf("引擎二进制 hash 不一致，拒绝续跑：本库 %s… vs 当前 %s…（HARD① 跨二进制不可横比）",
+			base.EngineSHA256[:12], curEng[:12])
+	}
+
+	// 2. 读断点：六任务全 ok 的最大日期
+	last, err := st.RunRepo.LastCompleteDate()
+	if err != nil {
+		return nil, fmt.Errorf("读断点: %w", err)
+	}
+	if last == "" {
+		return nil, fmt.Errorf("scratch 存在但无任何完整回放日（六任务全 ok），无法续跑；请删库重建")
+	}
+	fmt.Printf("[bt] resume: 基线身份一致（%s），断点 %s，续跑 %d 个交易日后段\n",
+		base.BaselineID, last, len(daysAfter(days, last)))
+
+	// 3. 只保留断点之后的交易日
+	rest := daysAfter(days, last)
+	if len(rest) == 0 {
+		fmt.Printf("[bt] resume: 已跑到窗口末 %s，无待续交易日\n", last)
+	}
+	return rest, nil
+}
+
+// fileExists 主库文件是否存在（断点续跑判断：scratch 是否已重建过）。
+func fileExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && !fi.IsDir()
+}
+
+// currentEngineSHA 当前运行二进制的 sha256（HARD① 引擎锚，续跑校验用）。
+func currentEngineSHA() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(exe)
+	if err != nil {
+		return ""
+	}
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+// daysAfter 返回 days 中严格晚于 date 的部分（保持升序）。
+func daysAfter(days []string, date string) []string {
+	var out []string
+	for _, d := range days {
+		if d > date {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // recordBaseline 在 scratch 库迁移跑完后记录基线身份（docs/49 §四 阶段 B）。

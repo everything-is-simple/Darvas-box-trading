@@ -1,4 +1,4 @@
-# 51 · 阶段 D 断点续跑（`--resume`）实施规格
+# 51 · 阶段 D 断点续跑（`--resume-run`）实施规格
 
 > 定位：docs/49 §五 5.2 改造②「断点续跑」。依赖阶段 B（基线身份，已落地）+ 阶段 C（连续单库，已落地）。
 > 本文是阶段 D 的**唯一实施规格**，代码照此写。
@@ -13,7 +13,7 @@
 - **可续**（本阶段）：中断后从断点续，**不等同于从头重跑**，也不丢已跑结果。
 - **可对账**（依赖阶段 B）：断点前后账本连得上，靠基线身份 + 参数指纹。
 
-**一句话**：一条 14 年连续库跑到第 6 年崩了，`--resume` 能从第 6 年的断点继续，而不是删库重跑 6 年。
+**一句话**：一条 14 年连续库跑到第 6 年崩了，`--resume-run` 能从第 6 年的断点继续，而不是删库重跑 6 年。
 
 ---
 
@@ -21,7 +21,7 @@
 
 | 决策 | 结论 |
 |---|---|
-| 续跑入口 | **复用 regime 模式加 `--resume`**，不新建命令 |
+| 续跑入口 | **复用 regime 模式加 `--resume-run`**，不新建命令 |
 | 断点判据 | **六任务全 `ok` 才算某日跑完**（`COUNT(status='ok')=6`） |
 | 身份校验 | **严格校验、不一致拒绝续跑**（防串基线） |
 
@@ -54,9 +54,16 @@ status IN ('running','ok','failed','skipped')
 
 `baseline` 表（0027）已有 `param_fingerprint` + `engine_sha256` + `latest` 标记。但**只有写方法 `RecordBaseline`，没有读方法**——断点续跑需要读 `latest=1` 那行来做校验，这部分要补。
 
-### 3.4 `--resume` 当前不存在
+### 3.4 命名冲突：`--resume` 已被 pool 占用
 
-`backtest` 命令的 `--resume` 是 `pool suspend` 子命令的「挂起激活价」参数（float），**不是** backtest 的断点续跑开关。命名冲突需注意：backtest 主命令加 `--resume` 是 bool，与 `pool suspend --resume <价>` 无冲突（不同子命令）。
+`backtest` 命令的断点续跑 flag **不能叫 `--resume`**——因为所有子命令共享同一个
+`flag.FlagSet`（main.go:40 `fs := flag.NewFlagSet(cmd, ...)`），而 `pool suspend --resume <价>`
+（挂起激活价，float64）已注册了 `resume` 这个名字。实测 `go build` 后运行 `darvas backtest`
+会 panic `flag redefined: resume`。
+
+**解决**：backtest 的断点续跑 flag 命名为 **`--resume-run`**（bool），语义仍是「续跑」，
+避开与 pool 的 `--resume`（float）冲突。`base_run.py` 的 Python 侧开关名保留 `--resume`
+（独立的 argparse 命名空间，不冲突），内部透传给 darvas 时拼成 `--resume-run`。
 
 ---
 
@@ -115,21 +122,22 @@ else:
 
 **引擎 hash 校验**：`os.Executable()` 的 sha256 与 `LatestBaseline().engineSHA` 比。若换二进制 → 拒绝续跑（HARD① 铁律）。
 
-### 4.3 cmd/darvas 层：加 `--resume` 开关
+### 4.3 cmd/darvas 层：加 `--resume-run` 开关
 
 main.go 的 backtest 子命令：
 ```go
-resume := flag.Bool("resume", false, "断点续跑：scratch 已存在且基线身份一致时，从断点续")
+btResume := fs.Bool("resume-run", false, "断点续跑：scratch 已存在且基线身份一致时，从断点续")
 ```
-传入 `backtest.Options{... Resume: *resume ...}`。
+传入 `backtest.Options{... Resume: *btResume ...}`。注意 flag 名是 `resume-run`（见 §3.4 冲突）。
 
-### 4.4 base_run.py 层：连续模式透传 `--resume`
+### 4.4 base_run.py 层：连续模式透传
 
-`base_run.py` 的 `run_cont`（阶段 C 已加）加 `--resume` 透传，让连续库中断后可续：
+`base_run.py` 的 `run_cont`（阶段 C 已加）加 `--resume`（Python 侧开关名，独立 argparse 命名空间）
+透传，内部拼成 darvas 的 `--resume-run`，让连续库中断后可续：
 ```
 python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --resume
 ```
-- `--resume` 时：不删 `bt_baseA_cont.db`，直接续跑。
+- `--resume` 时：不删 `bt_baseA_cont.db`，直接续跑（传给 darvas `--resume-run`）。
 - 非 `--resume`：现有逻辑（删库重建）。
 
 ---
@@ -138,13 +146,13 @@ python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --resume
 
 跑通以下场景即算阶段 D 完成：
 
-1. **V6-1 幂等**：同一窗口跑两遍（第二遍 `--resume`），第二遍识别「已跑完」→ 0 个交易日需要续 → 直接报「已是最新，无断点可续」退出。
+1. **V6-1 幂等**：同一窗口跑两遍（第二遍 `--resume-run`），第二遍识别「已跑完」→ 0 个交易日需要续 → 直接报「已是最新，无断点可续」退出。
 
-2. **V6-2 断点续跑**：跑 2005-2006 连续窗口到中途 kill → `--resume` → 从 `MAX(ok date)+1` 续，不重跑前段；续跑后 `daily_run` 无重复、`equity_snapshot` 连续。
+2. **V6-2 断点续跑**：跑 2005-2006 连续窗口到中途 kill → `--resume-run` → 从 `MAX(ok date)+1` 续，不重跑前段；续跑后 `daily_run` 无重复、`equity_snapshot` 连续。
 
-3. **V6-3 身份拒续**：改一个参数（如 `position.staledays=3`）再 `--resume` → 拒绝续跑（指纹不一致）。
+3. **V6-3 身份拒续**：改一个参数（如 `position.staledays=3`）再 `--resume-run` → 拒绝续跑（指纹不一致）。
 
-4. **V6-4 换二进制拒续**：换一个旧 darvas.exe 再 `--resume` → 拒绝续跑（引擎 hash 不一致）。
+4. **V6-4 换二进制拒续**：换一个旧 darvas.exe 再 `--resume-run` → 拒绝续跑（引擎 hash 不一致）。
 
 5. **V6-5 六任务全 ok 判据**：某日只跑完 5 个任务（1 个 failed）→ `LastCompleteDate` 返回前一日 → 续跑从该「未完成日」重跑。
 
@@ -154,7 +162,8 @@ python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --resume
 
 - **不做**：阶段 E（日追加 append）、阶段 C 的「实际跑 14 年库」（另排白天长任务）。
 - **不做**：`pool suspend --resume` 的语义改造（那是 B2 条件挂起，与本阶段无关）。
-- **命名冲突说明**：backtest 主命令的 `--resume`（bool）与 `pool suspend --resume <价>`（float）是不同子命令的参数，无冲突。
+- **命名冲突（已解决）**：backtest 断点续跑 flag 叫 `--resume-run`（bool），避开 pool 的
+  `--resume`（float）——两者共享同一 flagset，同名会 panic（§3.4）。
 
 ---
 

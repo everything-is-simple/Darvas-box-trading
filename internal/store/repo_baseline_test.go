@@ -77,3 +77,59 @@ func TestRecordBaseline(t *testing.T) {
 		t.Fatalf("db 不存在: %v", err)
 	}
 }
+
+// TestLatestBaseline 验证读最新基线身份：latest=1 那一行、未记录时返回 ErrNoRows。
+func TestLatestBaseline(t *testing.T) {
+	st := newTestStore(t)
+	defer st.Close()
+
+	// 未记录身份时 → ErrNoRows
+	if _, err := st.LatestBaseline(); err == nil {
+		t.Fatalf("未记录身份时 LatestBaseline 应报错，得到 nil")
+	}
+
+	// 记录一次
+	id, err := st.RecordBaseline("0.5.0-test", "")
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	b, err := st.LatestBaseline()
+	if err != nil {
+		t.Fatalf("LatestBaseline: %v", err)
+	}
+	if b.BaselineID != id {
+		t.Fatalf("BaselineID=%s want %s", b.BaselineID, id)
+	}
+	if len(b.ParamFingerprint) != 64 || len(b.EngineSHA256) != 64 {
+		t.Fatalf("指纹/引擎hash 应为 64 位 hex，得 %q / %q", b.ParamFingerprint, b.EngineSHA256)
+	}
+
+	// 再记一次 → latest 翻转，读到的是新的
+	id2, err := st.RecordBaseline("0.5.0-test", "")
+	if err != nil {
+		t.Fatalf("record #2: %v", err)
+	}
+	b2, err := st.LatestBaseline()
+	if err != nil {
+		t.Fatalf("LatestBaseline #2: %v", err)
+	}
+	if b2.BaselineID != id2 {
+		t.Fatalf("翻转后 BaselineID=%s want %s", b2.BaselineID, id2)
+	}
+}
+
+// TestParamFingerprint 验证指纹稳定性：key 顺序无关、值敏感。
+func TestParamFingerprint(t *testing.T) {
+	a := ParamFingerprint(map[string]string{"k1": "v1", "k2": "v2"})
+	b := ParamFingerprint(map[string]string{"k2": "v2", "k1": "v1"}) // key 乱序
+	c := ParamFingerprint(map[string]string{"k1": "v1", "k2": "v3"}) // 值变了
+	if a != b {
+		t.Fatalf("key 顺序不应影响指纹：%s != %s", a, b)
+	}
+	if a == c {
+		t.Fatalf("值变化应改变指纹：%s == %s", a, c)
+	}
+	if len(a) != 64 {
+		t.Fatalf("指纹应为 64 位 hex，得 %q", a)
+	}
+}
