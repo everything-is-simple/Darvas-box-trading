@@ -23,7 +23,7 @@
 
 - 买什么：跟踪池中放量突破箱体上轨的股票
 - 何时买：次日停损买单挂在箱体上轨×1.03
-- 买多少：A M1 仓位——升势日首买 2 单位、其余 1 单位（A 判据 60 日低点相邻日比，一律不加码；见 `docs/00 §5.6.7 D0`）
+- 买多少：**阶梯制**——按「距 52 周高点」分四档，t1(0–5%) 3 单位 / t2(5–10%) 2 单位 / t3(10–20%) 1 单位 / t4(20–40%) 0.5 单位、>40% 拒买（1 单位 = 2% 权益；`pos.newhigh_ladder=on`。**已退役的 A M1「升势 2 单位/其余 1 单位」不再使用**）
 - 卖什么：收盘跌破最新箱体下轨的持仓
 - 何时卖：次日止损卖单挂在下轨×0.97
 - 卖多少：全部，一次清仓（达瓦斯纪律）
@@ -44,7 +44,7 @@ go build -o darvas.exe ./cmd/darvas
 - `darvas.exe`
 - `var/darvas.db`（首次运行自动创建）
 
-数据源：通达信 vipdoc 日线（默认 `H:\new_tdx64\vipdoc`，可用 `darvas param set tdx.root <路径>` 或环境变量 `DARVAS_TDX` 覆盖）。**每个交易日收盘后在通达信客户端点一次「下载数据」（当日数据收盘后才可下载，时点见 docs/01 §4.2）**，这是系统唯一的数据新鲜度前提。
+数据源：通达信 vipdoc 日线（自动探测 `D:/H:/I:/new_tdx64/vipdoc`，可用 `darvas param set tdx.root <路径>` 或环境变量 `DARVAS_TDX` 覆盖；**必须指到 vipdoc 一级**，否则名称全空且不报错）。**每个交易日收盘后在通达信客户端点一次「下载数据」（当日数据收盘后才可下载，时点见 docs/01 §4.2）**，这是系统唯一的数据新鲜度前提。
 
 ---
 
@@ -110,19 +110,19 @@ darvas version
 
 ## 文档体系（按此顺序读）
 
+> **完整索引与治理规则见 [`docs/README.md`](docs/README.md)**（谁是事实源、什么已归档）。下面只列必读六份。
+
 | 文档 | 内容 |
 |------|------|
 | [docs/00-darvas-theory.md](docs/00-darvas-theory.md) | **理论宪法**：箱体理论全部规则+A股适配映射表 |
-| [docs/01-requirements.md](docs/01-requirements.md) | 需求分析：每日时间表、功能清单、验收标准 |
-| [docs/02-architecture.md](docs/02-architecture.md) | 项目设计：分层架构、技术选型、数据流 |
-| [docs/03-erd.md](docs/03-erd.md) | 数据库ERD（事实源：`internal/store/migrations/`） |
-| [docs/04-api-contract.md](docs/04-api-contract.md) | 模块API契约（事实源：`internal/contract/contract.go`） |
-| [docs/05-task-breakdown.md](docs/05-task-breakdown.md) | 任务划分：M0-M10里程碑 |
-| [docs/06-consistency.md](docs/06-consistency.md) | ERD/API一致性维护机制（三道防线） |
-| [docs/29-box-gradient-experiment-plan.md](docs/29-box-gradient-experiment-plan.md) | **唯一实验纲领**：基线四层、结论登记、待做队列 |
-| `A:\Darvas-archive\docs\39-41\` | 阶段性交接材料 39/40/41（已归档） | 仅作历史溯源；当前事实以 `docs/29`、`docs/36`、`docs/42` 和 `docs/experiments/` 为准 |
-| `A:\Darvas-archive\deployment\DEPLOY-PLAN-2026-10-29.md` | 已完成部署事实记录（不再是行动项） |
-| [docs/35-box-second-buy-point-and-volume-divergence.md](docs/35-box-second-buy-point-and-volume-divergence.md) | 研究前瞻：第二买点 pinbar + 量=分歧（未立项） |
+| [docs/01-requirements.md](docs/01-requirements.md) | 需求：每日时间表（唯一时刻源）、价格口径、验收标准 |
+| [docs/02-architecture.md](docs/02-architecture.md) | 架构：分层、数据流、回放链路 |
+| [docs/03-erd.md](docs/03-erd.md) / [docs/04-api-contract.md](docs/04-api-contract.md) | ERD 与模块契约（事实源：`migrations/` / `contract.go`） |
+| [docs/29-box-gradient-experiment-plan.md](docs/29-box-gradient-experiment-plan.md) | **唯一实验纲领**：基线、结论登记、待做队列、判定标准 |
+| [docs/44-new-baseline-config.md](docs/44-new-baseline-config.md) | **唯一参数事实源**：49 键逐键生效值（`param_ledger.py` 生成 + C6 校验） |
+| [docs/49-baseline-rebuild-charter.md](docs/49-baseline-rebuild-charter.md) | **新基线重建纲领**：SOP、验收 V1–V7、身份、两项硬特征 |
+| [docs/53-data-spec-new-baseline.md](docs/53-data-spec-new-baseline.md) | **后复权数据规格**（当前主线） |
+| [docs/54-new-baseline-audit.md](docs/54-new-baseline-audit.md) | 设计与实现差异审查（只列未完成项） |
 
 ---
 
@@ -154,7 +154,8 @@ internal/
   pipeline/            # 盘后流水线编排 + 备份轮转
   reporter/            # HTML日报
   gui/                 # 本地HTTP UI（embed静态+JSON API）
-docs/                  # 00-06 SSoT + 29 实验纲领 + 36 算法法令 + 35 研究前瞻 + experiments 陈列馆
+docs/                  # 15 份现役文档（索引见 docs/README.md）：00-06 SSoT + 29/44/48/49/53/54 + 36 + 46
+docs/archive/          # 历史档案（非事实源，原稿留痕）
 scripts/               # 一致性检查脚本
 var/                   # 运行时（db/备份/报告）
 ```
@@ -164,13 +165,14 @@ var/                   # 运行时（db/备份/报告）
 ## 当前状态
 
 - ✅ M0 规划与骨架 · M1 数据层（全量<10min）· M2 箱体引擎（35用例）· M3 池 · M4 信号与计划（含账本）· M5 CLI闭环 · M6 GUI四视图
-- 🚧 M7 周而复始：✅ 7.1 常驻调度（serve）· ✅ 7.2 周报 · ✅ 7.3 备份轮转+恢复演练 · ✅ 7.4 移植演练（15b5183）· 观察期：连续20交易日无人值守
-- ✅ M8 内置回放器：✅ 8.1 回放骨架 + as-of 差分审计（`darvas backtest`）· ✅ 8.2 模拟撮合器（`internal/match`）· ✅ 8.3 体制运行器（`--mode regime`）· ✅ 8.4a 体制参数敏感性（`internal/regimesweep`，结论：基线已处理论前沿，单参数无解）
-  - M8.1 审计发现事件驱动链路三条死路（archive/07 #1-#3，均已修复）；as-of 纪律成立（六任务链未读未来K线）
-- ✅ 仓位规则已收敛为 **A M1（2026-10-23 落地）**：升势日首买 2 单位、其余 1 单位，一律不加码；winner 5x、旧大盘择时和旧 M8.8 方案均已退役。定稿见 `docs/00 §5.6.7 D0`，实验事实见 `docs/29`。
-- ✅ 新基线（`max_hold=14`、`equity_gate=off`、MA60 上证停买）已完成 14 年验证；当前实验队列以 `docs/29` 为准。
+- ✅ M7 周而复始：✅ 7.1 常驻调度（serve）· ✅ 7.2 周报 · ✅ 7.3 备份轮转+恢复演练 · ✅ 7.4 移植演练（15b5183）
+- ✅ M8 内置回放器：✅ 8.1 回放骨架 + as-of 差分审计（`darvas backtest`）· ✅ 8.2 模拟撮合器（`internal/match`）· ✅ 8.3 体制运行器（`--mode regime`）· ✅ 8.4a 体制参数敏感性（结论：基线已处理论前沿，单参数无解）
+- ✅ **仓位现行 = 阶梯制**（`pos.newhigh_ladder=on`，距 52 周高点四档 3/2/1/0.5 单位）；已退役的 **A M1**（升势 2 单位/其余 1 单位）仅存在于实验史，定稿见 `docs/00 §5.6.7`，事实见 `docs/29`
+- 🚧 **新基线重建中**（`docs/49`）：B–F 已完成（身份 0027 / 连续单库 / 断点续跑 / 日追加 / 完整身份链 0028-0029），G（攻防转换）只有接口桩（`mode=off`）
+- 🚧 **主线**：后复权灌库（`docs/53`）→ `daily_bar_adj` 切表 → 14 年连续单库重跑 → 三项硬标准（永续化 / 身份链 / 攻防）在同一条账本上验收。**旧连续库 `bt_baseA_cont.db` 是 schema v28 产物，不是新基线**
+- 📌 设计与实现剩余差异清单见 `docs/54`（只列未完成项）
 
-数据源已验证：TDX vipdoc 更新至 2026-10-16 收盘；真实库全链路跑通（142候选入池、茅台29箱体）。
+数据源状态：TDX vipdoc 增量更新可用；回测源库 `var/bt/full_hist_10pct.db`（2005–2026）。
 
 ---
 

@@ -1,3 +1,7 @@
+> **📦 已归档（2026-11-04 文档治理）**：阶段 E 已落地并实测，**判据 V7-1/V7-2/V7-3 已折叠进
+> [`docs/49-baseline-rebuild-charter.md`](../49-baseline-rebuild-charter.md) §六**，代码为事实源
+> （`LastCompleteProdDate` + `catchUpRange`）。本稿仅作设计语义留痕，**不再作为事实源**。
+
 # 52 · 阶段 E 日追加 + CatchUp 多日补跑（永续闭环）实施规格
 
 > 定位：docs/49 §五 5.2 改造③「日追加」+ §5.3「生产端 CatchUp 多日补跑」。

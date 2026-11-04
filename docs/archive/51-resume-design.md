@@ -1,3 +1,8 @@
+> **📦 已归档（2026-11-04 文档治理）**：阶段 D 已落地并实测，**判据 V6-1…V6-5 已折叠进
+> [`docs/49-baseline-rebuild-charter.md`](../49-baseline-rebuild-charter.md) §六**；V6-3 已于同日加固为
+> 「续跑一律拒绝 `--set`」（原实现漏 7 个 default-only 键）。代码为事实源（`darvas backtest --resume-run`）。
+> 本稿仅作设计语义留痕，**不再作为事实源**。
+
 # 51 · 阶段 D 断点续跑（`--resume-run`）实施规格
 
 > 定位：docs/49 §五 5.2 改造②「断点续跑」。依赖阶段 B（基线身份，已落地）+ 阶段 C（连续单库，已落地）。

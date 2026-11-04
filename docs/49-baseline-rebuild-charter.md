@@ -54,10 +54,10 @@ python scripts/base_run.py --years 2007 --mirrors A
 # 代表年（先看方向对不对；同样只是分年对账用）
 python scripts/base_run.py --years 2007,2010,2013,2018 --mirrors A
 
-# 正式重建：连续单库（docs/50 阶段 C；持仓跨年结转、真实复利，这才是基线本体）
+# 正式重建：连续单库（阶段 C，判据见 §六；持仓跨年结转、真实复利，这才是基线本体）
 python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A
 
-# 中断后续跑（docs/51 阶段 D；resume 分支会校验参数冲突，改了参数须删库重建）
+# 中断后续跑（阶段 D，判据见 §六；resume 分支会校验参数冲突，改了参数须删库重建）
 python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A --resume
 ```
 
@@ -245,15 +245,26 @@ D 日之后能**日追加**，中断能**断点续跑**。
 
 ## 六、优先级与落地顺序
 
+**阶段验收判据（原 docs/50、51、52 三份实施规格已归档，判据折叠于此——2026-11-04 治理）**
+
+| 阶段 | 判据 | 状态 |
+|---|---|---|
+| C 连续单库 | **V5-1 结转**：跨年 open 持仓数 > 0｜**V5-2 复利**：连续库终值 ≠ 链式终值｜**V5-3 逐年**：与单年库逐年收益率差 < 1%（整手取整内） | ✅ 已实测 |
+| D 断点续跑 | **V6-1 幂等**：同窗口二跑识别「已是最新」0 日续跑｜**V6-2 断点续**：kill 后从 `MAX(ok date)+1` 续、`daily_run` 无重复｜**V6-3 参数拒续**：任何 `--set` 一律拒绝（2026-11-04 加固，原实现漏 default-only 键）｜**V6-4 换二进制拒续**：引擎 hash 不一致拒绝｜**V6-5 六任务全 ok**：任一任务 failed 则断点停在前一日 | ✅ 已实测（V6-3 已补 default-only 用例） |
+| E 日追加/补跑 | **V7-1 多日补跑**：心跳缺失的多日一次补齐｜**V7-2 空库兜底**：不走无限回补｜**V7-3 幂等**：补完再跑不重跑 | ✅ 已实测 |
+
+> 实施细节与设计语义见归档稿 `docs/archive/50-continuous-ledger-design.md`、`51-resume-design.md`、`52-resume-design.md`；
+> **代码是事实源**（`base_run.py --cont`、`--resume-run`、`CatchUp`），引用请优先引本节判据。
+
 **实际执行（2026-11-04）**：B → C → D → E → F 五项工程全部完成，G 接口桩已落（mode=off）。
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | **A** | 参数显式化（0025+0026） | ✅ 完成（44 台账 + 49 键基线） |
 | **B** | 基线身份（0027：指纹+id+引擎hash） | ✅ 完成，实测落库（§四） |
-| **C** | 连续单库（`base_run.py --cont` 结转语义，docs/50） | ✅ 完成，跑过（bt_baseA_cont） |
-| **D** | 断点续跑 `--resume`（docs/51） | ✅ 完成（含参数冲突校验） |
-| **E** | 日追加 + CatchUp 多日补跑（docs/52） | ✅ 完成（LastCompleteProdDate + catchUpRange） |
+| **C** | 连续单库（`base_run.py --cont` 结转语义，判据 §六） | ✅ 完成，跑过（bt_baseA_cont） |
+| **D** | 断点续跑 `--resume`（判据 §六） | ✅ 完成（含参数冲突校验） |
+| **E** | 日追加 + CatchUp 多日补跑（判据 §六） | ✅ 完成（LastCompleteProdDate + catchUpRange） |
 | **F** | DarvasBox 完整身份链（0028 dead_date + 0029 语义分离 + 身份键） | ✅ 完成（verify_0029 实库验收） |
 | **G** | 牛熊识别 + 攻防转换（48 号 B 类） | ⚠️ 接口桩（0030 mode=off）已落；L1 状态机 + B 类判据**待新基线账本**（§五之二 特征二） |
 
