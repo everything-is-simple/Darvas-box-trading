@@ -241,7 +241,94 @@ func TestCatchUpPrevTradingDay(t *testing.T) {
 	eq(t, doneDates, []string{"2026-10-16"})
 }
 
-// TestWeeklySaturdayOnce weekly 触发时机（M7.2）：周六 weekly 触发点整点触发、
+// TestCatchUpMultiDayGap 多日补跑（docs/52 阶段 E1，V7-1）：停机多日（中间几天无心跳），
+// CatchUp 从生产断点连续补到前一交易日，不留洞。
+func TestCatchUpMultiDayGap(t *testing.T) {
+	// 2026-10-12(一)~10-16(五) 五个交易日，10-17 周六启动
+	weekBars := []contract.DailyBar{
+		{Code: "sh000001", Date: "2026-10-12", Close: 3000, Volume: 100},
+		{Code: "sh000001", Date: "2026-10-13", Close: 3010, Volume: 100},
+		{Code: "sh000001", Date: "2026-10-14", Close: 3020, Volume: 100},
+		{Code: "sh000001", Date: "2026-10-15", Close: 3030, Volume: 100},
+		{Code: "sh000001", Date: "2026-10-16", Close: 3040, Volume: 100},
+	}
+	s, runner := newTestEnv(t, weekBars, nil)
+
+	// 预置 10-12、10-13 生产链七任务全 ok（模拟前两天已跑完）
+	for _, d := range []string{"2026-10-12", "2026-10-13"} {
+		for _, task := range []string{"ingest", "boxscan", "screen", "poolsync", "signal", "plan", "report"} {
+			id, _ := s.st.RunRepo.StartRun(d, task)
+			_ = s.st.RunRepo.FinishRun(id, contract.TaskResult{Task: task, Date: d, Status: "ok"})
+		}
+	}
+
+	s.now = func() time.Time { return weeklyAt("2026-10-17", 2*time.Hour) }
+	if err := s.CatchUp(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 应从断点 10-13 之后连续补 10-14/15/16 三天（整日七任务链），非交易日 10-17 只触发 weekly
+	var want []string
+	for _, d := range []string{"2026-10-14", "2026-10-15", "2026-10-16"} {
+		for _, task := range []string{"ingest", "boxscan", "screen", "poolsync", "signal", "plan", "report"} {
+			want = append(want, d+"|"+task)
+		}
+	}
+	want = append(want, "2026-10-17|weekly")
+	eq(t, runner.snapshot(), want)
+}
+
+// TestCatchUpMultiDayGapEmptyBaseline 断点为空（新库）→ 退回单日兜底，不无限回补历史（V7-2）。
+func TestCatchUpMultiDayGapEmptyBaseline(t *testing.T) {
+	weekBars := []contract.DailyBar{
+		{Code: "sh000001", Date: "2026-10-12", Close: 3000, Volume: 100},
+		{Code: "sh000001", Date: "2026-10-16", Close: 3040, Volume: 100},
+	}
+	s, runner := newTestEnv(t, weekBars, nil) // daily_run 全空 → 断点空
+
+	s.now = func() time.Time { return weeklyAt("2026-10-17", 2*time.Hour) }
+	if err := s.CatchUp(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 断点空 → 只补前一交易日 10-16（整日七任务），不补 10-12（不无限回补）
+	var want []string
+	for _, task := range []string{"ingest", "boxscan", "screen", "poolsync", "signal", "plan", "report"} {
+		want = append(want, "2026-10-16|"+task)
+	}
+	want = append(want, "2026-10-17|weekly")
+	eq(t, runner.snapshot(), want)
+}
+
+// TestCatchUpMultiDayIdempotent 多日补跑后再次 CatchUp 不重跑（V7-3）。
+func TestCatchUpMultiDayIdempotent(t *testing.T) {
+	weekBars := []contract.DailyBar{
+		{Code: "sh000001", Date: "2026-10-13", Close: 3010, Volume: 100},
+		{Code: "sh000001", Date: "2026-10-14", Close: 3020, Volume: 100},
+		{Code: "sh000001", Date: "2026-10-15", Close: 3030, Volume: 100},
+		{Code: "sh000001", Date: "2026-10-16", Close: 3040, Volume: 100},
+	}
+	s, runner := newTestEnv(t, weekBars, nil)
+	// 预置 10-13 生产链全 ok
+	for _, task := range []string{"ingest", "boxscan", "screen", "poolsync", "signal", "plan", "report"} {
+		id, _ := s.st.RunRepo.StartRun("2026-10-13", task)
+		_ = s.st.RunRepo.FinishRun(id, contract.TaskResult{Task: task, Date: "2026-10-13", Status: "ok"})
+	}
+
+	s.now = func() time.Time { return weeklyAt("2026-10-17", 2*time.Hour) }
+	if err := s.CatchUp(); err != nil {
+		t.Fatal(err)
+	}
+	first := runner.snapshot()
+
+	// 再次 CatchUp：已全部 ok + weekly 触发点已消费 → 不重跑
+	if err := s.CatchUp(); err != nil {
+		t.Fatal(err)
+	}
+	eq(t, runner.snapshot(), first)
+}
+
+
 // 当日仅一次、触发点前不触发、周五永不触发（时间随 WeeklyClock 派生）。
 func TestWeeklySaturdayOnce(t *testing.T) {
 	s, runner := newTestEnv(t, friBars, nil)
@@ -271,6 +358,7 @@ func TestWeeklySaturdayOnce(t *testing.T) {
 	eq(t, runner2.snapshot(), nil)
 }
 
+// TestCatchUpTodayMidDay 验证：当天已过点但未跑 → 只补到今天已过点的任务。
 func TestCatchUpTodayMidDay(t *testing.T) {
 	s, runner := newTestEnv(t, friBars, nil)
 	s.now = func() time.Time { return schedAt("2026-10-16", 3, 5*time.Minute) }

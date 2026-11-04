@@ -109,6 +109,23 @@ func (r *RunRepo) LastCompleteDate() (string, error) {
 	return d, err
 }
 
+// LastCompleteProdDate 生产链全 ok 的最大日期（生产断点，docs/52 阶段 E1）。
+// 与 LastCompleteDate 的区别：生产链含 ingest，共 7 任务
+// （ingest+boxscan+screen+poolsync+signal+plan+report）全 ok 才算「这天跑完」。
+// CatchUp 多日补跑用它判断「从哪天开始补」；无完整日返回空串。
+func (r *RunRepo) LastCompleteProdDate() (string, error) {
+	var d string
+	err := r.db.QueryRow(`SELECT CAST(date AS TEXT) FROM daily_run
+		WHERE task IN ('ingest','boxscan','screen','poolsync','signal','plan','report')
+		  AND status = 'ok'
+		GROUP BY date HAVING COUNT(*) = 7
+		ORDER BY date DESC LIMIT 1`).Scan(&d)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return d, err
+}
+
 // DateOverview 有数据日期的概览行（GUI 全站日期选择）。
 type DateOverview struct {
 	Date       string `json:"date"`

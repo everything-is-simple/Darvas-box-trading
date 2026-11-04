@@ -173,13 +173,22 @@ func (s *Scheduler) CatchUp() error {
 	now := s.now()
 	today := now.Format("2006-01-02")
 
-	// ① 前一交易日整日补跑
+	// ① 补跑：从生产断点（七任务含 ingest 全 ok 的最大日期）连续补到前一交易日。
+	// 停机一周（多日无心跳）时逐日补齐，不留洞（docs/52 阶段 E1，补 F8）。
+	// 断点为空（新库/全空）→ 退回单日兜底：只补前一交易日（不无限回补历史）。
 	prev, err := s.st.BarRepo.PrevDate("sh000001", today)
 	if err != nil {
 		s.log.Printf("warn: 查询前一交易日: %v", err)
-	} else if prev != "" && !s.anyOK(prev) {
-		s.log.Printf("CatchUp: 前一交易日 %s 无任何 ok 心跳 → 整日补跑", prev)
-		s.runOverdue(s.ctx, prev, endOfDay(prev))
+	} else if prev != "" {
+		prodLast, perr := s.st.RunRepo.LastCompleteProdDate()
+		if perr != nil {
+			s.log.Printf("warn: 查生产断点: %v", perr)
+		} else if prodLast != "" && prodLast < prev {
+			s.catchUpRange(prodLast, prev)
+		} else if !s.anyOK(prev) {
+			s.log.Printf("CatchUp: 前一交易日 %s 无任何 ok 心跳 → 整日补跑", prev)
+			s.runOverdue(s.ctx, prev, endOfDay(prev))
+		}
 	}
 
 	// ② 今天：已过点的触发点立即消费
@@ -188,6 +197,32 @@ func (s *Scheduler) CatchUp() error {
 	// ③ 周六 weekly 周报（M7.2）：CatchUp 启动即检查当日是否该跑
 	s.fireWeekly(now)
 	return nil
+}
+
+// catchUpRange 从生产断点 prodLast 之后逐日补跑到 prev（含），停机多日不留洞
+// （docs/52 阶段 E1）。逐日沿交易日历（sh000001）推进，非交易日跳过；每日用
+// endOfDay 确保整日七任务链都能补（不受「当日触发点未到」截断）。
+func (s *Scheduler) catchUpRange(prodLast, prev string) {
+	cur, err := s.st.BarRepo.NextDate("sh000001", prodLast)
+	if err != nil {
+		s.log.Printf("warn: 查断点下一交易日: %v", err)
+		return
+	}
+	n := 0
+	for cur != "" && cur <= prev {
+		s.log.Printf("CatchUp: 多日补跑 %s（断点 %s 之后）", cur, prodLast)
+		s.runOverdue(s.ctx, cur, endOfDay(cur))
+		n++
+		next, err := s.st.BarRepo.NextDate("sh000001", cur)
+		if err != nil {
+			s.log.Printf("warn: 查下一交易日: %v", err)
+			break
+		}
+		cur = next
+	}
+	if n > 0 {
+		s.log.Printf("CatchUp: 多日补跑完成，共补 %d 个交易日", n)
+	}
 }
 
 // tick 一次巡检（Start 循环内调用）。

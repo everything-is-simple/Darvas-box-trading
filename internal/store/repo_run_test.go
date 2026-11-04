@@ -165,3 +165,60 @@ func TestLastCompleteDate(t *testing.T) {
 		t.Fatalf("ingest 不应影响断点，得 %q", d2)
 	}
 }
+
+// prodTasks 生产链七任务（ingest + 回放六任务，docs/52 阶段 E1）。
+var prodTasks = []string{"ingest", "boxscan", "screen", "poolsync", "signal", "plan", "report"}
+
+// markCompleteProdDay 标记某日生产链七任务全 ok（模拟生产一天完整跑完）。
+func markCompleteProdDay(t *testing.T, st *Store, date string) {
+	t.Helper()
+	for _, task := range prodTasks {
+		id, err := st.RunRepo.StartRun(date, task)
+		if err != nil {
+			t.Fatalf("StartRun %s %s: %v", date, task, err)
+		}
+		if err := st.RunRepo.FinishRun(id, contract.TaskResult{Status: "ok", AffectedRows: 1}); err != nil {
+			t.Fatalf("FinishRun %s %s: %v", date, task, err)
+		}
+	}
+}
+
+// TestLastCompleteProdDate 验证生产断点判据（docs/52 E1）：七任务含 ingest 全 ok 才算完成日。
+func TestLastCompleteProdDate(t *testing.T) {
+	st := newTestStore(t)
+	defer st.Close()
+
+	// 空库 → 空串
+	d, err := st.RunRepo.LastCompleteProdDate()
+	if err != nil {
+		t.Fatalf("LastCompleteProdDate 空库: %v", err)
+	}
+	if d != "" {
+		t.Fatalf("空库生产断点应为空串，得 %q", d)
+	}
+
+	// 只有回放六任务 ok（无 ingest）→ 不算生产完成日
+	markCompleteDay(t, st, "2026-10-15")
+	d, _ = st.RunRepo.LastCompleteProdDate()
+	if d != "" {
+		t.Fatalf("缺 ingest 不应算生产完成日，得 %q", d)
+	}
+
+	// 补上 ingest → 才算完成
+	id, err := st.RunRepo.StartRun("2026-10-15", "ingest")
+	if err != nil {
+		t.Fatalf("StartRun ingest: %v", err)
+	}
+	st.RunRepo.FinishRun(id, contract.TaskResult{Status: "ok"})
+	d, _ = st.RunRepo.LastCompleteProdDate()
+	if d != "2026-10-15" {
+		t.Fatalf("生产断点应为 2026-10-15，得 %q", d)
+	}
+
+	// 后一天 10-16 七任务全 ok → 断点前移到 16
+	markCompleteProdDay(t, st, "2026-10-16")
+	d, _ = st.RunRepo.LastCompleteProdDate()
+	if d != "2026-10-16" {
+		t.Fatalf("生产断点应为 2026-10-16，得 %q", d)
+	}
+}
