@@ -11,10 +11,13 @@ import (
 )
 
 // TradeRepo position/plan/fill/ledger 仓储（docs/04-api-contract.md §3.3）。
-type TradeRepo struct{ db *sql.DB }
+type TradeRepo struct {
+	db *sql.DB
+	dv *dataView
+}
 
 // NewTradeRepo 构造。
-func NewTradeRepo(db *sql.DB) *TradeRepo { return &TradeRepo{db: db} }
+func NewTradeRepo(db *sql.DB, dv *dataView) *TradeRepo { return &TradeRepo{db: db, dv: dv} }
 
 // CreatePlan 创建交易计划头，返回 plan id（UNIQUE(plan_date) 冲突时重置）。
 func (r *TradeRepo) CreatePlan(p contract.TradePlan) (int64, error) {
@@ -210,7 +213,10 @@ func (r *TradeRepo) OpenExposureUnits(unitValue float64) (probeUnits, mainUnits 
 	for _, e := range list {
 		price := e.avgCost
 		var close float64
-		if err := r.db.QueryRow(`SELECT close FROM daily_bar WHERE code = ? ORDER BY date DESC LIMIT 1`, e.code).Scan(&close); err == nil && close > 0 {
+		// 0032：价格类读取走数据口径（adj 模式下个股读后复权，否则权益浮盈会混用两套价）
+		ps := r.dv.price(e.code)
+		if err := r.db.QueryRow(fmt.Sprintf(`SELECT %s FROM %s WHERE code = ? ORDER BY date DESC LIMIT 1`,
+			ps.close, ps.table), e.code).Scan(&close); err == nil && close > 0 {
 			price = close
 		}
 		units := float64(e.qty) * price / unitValue

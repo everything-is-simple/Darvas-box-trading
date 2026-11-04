@@ -55,7 +55,7 @@ func TestSyntheticAsOfDifferential(t *testing.T) {
 		_ = st.ParamRepo.Set("match.slippage", "0")
 		st.Close()
 	}
-	progHashes, fails, err := Replay(prog, days, dayBars)
+	progHashes, fails, err := Replay(prog, days, dayBars, nil)
 	if err != nil {
 		t.Fatalf("replay progressive: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestSyntheticAsOfDifferential(t *testing.T) {
 		_ = st.ParamRepo.Set("match.slippage", "0")
 		st.Close()
 	}
-	preHashes, fails, err := Replay(pre, days, nil)
+	preHashes, fails, err := Replay(pre, days, nil, nil)
 	if err != nil {
 		t.Fatalf("replay prefill: %v", err)
 	}

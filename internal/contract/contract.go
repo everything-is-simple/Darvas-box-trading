@@ -19,8 +19,23 @@ type DailyBar struct {
 	High   float64
 	Low    float64
 	Close  float64
-	Volume int64   // 手
+	Volume int64   // 股（0032 实测订正：volume×close≈amount；旧注释「手」是错的，0001 迁移为 append-only 不回改）
 	Amount float64 // 元
+}
+
+// AdjDailyBar 后复权日线（与 daily_bar_adj 表对应，migration 0032 / docs/53 §8.1）。
+// 只装个股，不装指数；与 daily_bar 同轴（code/date 全集一致）。
+type AdjDailyBar struct {
+	Code       string
+	Date       string // YYYY-MM-DD
+	Open       float64
+	High       float64
+	Low        float64
+	Close      float64
+	Volume     int64   // 股 = round(none_volume / factor_norm)
+	Amount     float64 // 元，原值拷贝不调整（B6）
+	FactorNorm float64 // (back/none) / (back(T0)/none(T0))
+	Status     string  // ok / no_factor
 }
 
 // Security 证券基础信息

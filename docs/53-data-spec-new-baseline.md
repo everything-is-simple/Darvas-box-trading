@@ -21,7 +21,7 @@
 | 股票全集 | **lday 清单（5,563 只沪深A）**，不用 `get_stock_list("5")` | E5 |
 | 退市股 | 339 只 tqcenter **完全拉不到**（行情+除权记录皆空），保留 lday 原价、标注无复权 | E5/E6 |
 | 北交所 | **排除**（`get_stock_list("5")` 返回含 357 只 bj，lday 侧本就无） | E5 |
-| 时间范围 | 数据拉 **2004-01-01 ~ 今**；回测 **2005-01-01 ~ 2018-12-31** | §5 |
+| 时间范围 | 数据拉 **全量历史（1990-01-01 ~ 今，与 `daily_bar` 同轴）**；回测 **2005-01-01 ~ 2018-12-31** | §5 / §8.0-① |
 | 参数 | **49 键冻结、原值不动**，`docs/44` 为准 | §5 |
 | 除权日清仓 | **规则下线**（`match.go` 该分支删除），持仓自然穿越除权日 | E3 |
 
@@ -157,7 +157,7 @@ adj_volume(t)  = Volume_none(t) / factor_norm(t)         # 量反向调整，保
 | # | 项 | **固定值** |
 |---|---|---|
 | B1 | 复权类型 | **后复权** |
-| B2 | 归一化基准日 T0 | **2004-01-02** |
+| B2 | 归一化基准日 T0 | **2004-01-02**（该股当日无 bar 则取其后首个有 bar 日；2004 后完全无数据则走 no_factor，见 §8.0-②） |
 | B3 | 因子公式 | `factor_norm = (back/none) / (back(T0)/none(T0))` |
 | B4 | 价格 | `adj_* = none_* × factor_norm` |
 | B5 | 成交量 | `adj_volume = none_volume / factor_norm` |
@@ -179,7 +179,7 @@ adj_volume(t)  = Volume_none(t) / factor_norm(t)         # 量反向调整，保
 
 | # | 项 | **固定值** |
 |---|---|---|
-| D1 | 数据拉取 | **2004-01-01 ~ 2026-11-04**（前置 1 年供 52 周新高/MA60） |
+| D1 | 数据拉取 | **1990-01-01 ~ 2026-11-04（全量历史，与 `daily_bar` 同轴）**；**不是** 2004 起（会砍断 800 根窗口，见 §8.0-①） |
 | D2 | 回测区间 | **2005-01-01 ~ 2018-12-31**（14 年连续单库） |
 | D3 | 起始权益 | `equity.base = 1000000` |
 | D4 | 交易日历 | 权威 = `sh000001`（ADR-2），用 `get_trading_dates` 交叉校验 |
@@ -229,6 +229,192 @@ adj_volume(t)  = Volume_none(t) / factor_norm(t)         # 量反向调整，保
 | `internal/match/match.go` | 后复权切换时删除除权日强制清仓分支，并验证持仓穿越除权日 |
 | `internal/store/repo_bar.go` | 所有读行情路径统一按股票/指数分流，避免混读原价与后复权价 |
 | `docs/archive/42` | 仅为旧口径历史证据，不再修改历史结论；数据目标由本文承接 |
+
+---
+
+## §8 实施规格（2026-11-04 草案，待确认后转正）
+
+### 8.0 先纠正三处规格错误（不改这三处，灌完就白跑）
+
+**① D1「数据从 2004-01-01 起」会砍断箱体窗口 —— 必须灌全量历史。**
+
+`internal/box/scanner.go:22` 的 `rescanWindow = 800`（约 3 年历史），`planner` 的 52 周新高 `lookback=252`。
+2005-01-04 当天要凑够 800 根，必须回溯到 2001 年中。本机实测（`full_hist_10pct.db`）：
+
+| 若 adj 表从…起 | 2005-01-04 能凑够 800 根的股票数 |
+|---|---|
+| 2002-01-01 | **0** |
+| 2004-01-01 | **0** |
+| 全量历史 | **1,346** |
+
+若按原 D1 灌 2004 起：回放能跑、不报错，但 2005–2007 每天只有 240 根，箱体识别被左截断 ——
+**典型的「能跑、结果错、不报错」**，与 0019 误杀 `tdx.root` 同型。故 D1 改为全量历史。
+
+**② 「数据起点」与「归一化基点 T0」是两件事，原文混在一起。**
+
+- 数据起点 = 灌多少年（要全量，供窗口）。
+- T0 = 把后复权序列除以哪个因子（`B2 = 2004-01-02`），只影响价格刻度，不影响收益率。
+
+T0 兜底三档（原文缺失）：
+
+| 情形 | T0 取法 |
+|---|---|
+| 该股 2004-01-02 有 bar | 2004-01-02 |
+| 当日停牌 / 2004 后才上市 | 该股 2004-01-02 **之后**首个有 bar 日 |
+| 2004 之后完全无数据（早期退市股） | 不归一化，`factor_norm=1`、`adj_status='no_factor'` |
+
+> **T0 取 2004-01-02 而非「该股上市首日」的理由**：回测起点是 2005 年，T0 贴近起点 → 价格刻度≈真实价，
+> 「100 万买到多少股」肉眼可校。取上市首日则老股价格被放大 5–10 倍，读库对账时无法目视判对错。
+>
+> 两者**收益率等价**，可自行验证：按 T0=A 归一得到序列 `P_A(t) = none(t)·f(t)/f(A)`，
+> 取 T0=B 得 `P_B(t) = P_A(t)·f(A)/f(B)`，全期相差一个常数 `k`。等金额建仓时持股数 ∝ 1/P，
+> 单笔盈亏 `= 权益·(P_exit/P_entry − 1)`，`k` 在分子分母同时约掉。**只改刻度，不改收益**。
+
+**③ `daily_bar.volume` 单位是「股」不是「手」，注释写错（不影响数据）。**
+
+实测 `sh600519` 2016-05-23：`volume=1,870,618 × close 254.2 = 4.75 亿 ≈ amount`，比值 1.001。
+若单位是「手」，乘积只有 475 万，差 100 倍。故 `0001_init.sql:36`、`contract.go:22` 的 `-- 手` 是错误注释。
+**订正范围**：`contract.go`、`repo_bar.go`、`docs/03` 三处改为「股」；**`0001_init.sql` 不回改**
+（迁移 append-only 铁律，见 docs/06 §2 防线三），旧注释仅作历史留痕。
+**tqcenter 返回的 Volume 同为股（E2），两边直接可比，`adj_volume` 无需乘除 100。**
+
+### 8.1 表结构（migration 0032）
+
+```sql
+-- 后复权日线：与 daily_bar 同轴（同 code/date 全集），只存个股，不含指数
+CREATE TABLE IF NOT EXISTS daily_bar_adj (
+    code        TEXT NOT NULL,
+    date        DATE NOT NULL,
+    adj_open    REAL NOT NULL,
+    adj_high    REAL NOT NULL,
+    adj_low     REAL NOT NULL,
+    adj_close   REAL NOT NULL,
+    adj_volume  INTEGER NOT NULL,          -- 股（= round(none_volume / factor_norm)）
+    amount      REAL NOT NULL,             -- 元，原值拷贝**不调整**（B6）
+    factor_norm REAL NOT NULL,             -- (back/none) / (back(T0)/none(T0))
+    adj_status  TEXT NOT NULL,             -- 'ok' | 'no_factor'（原价直通）
+    PRIMARY KEY (code, date)
+) WITHOUT ROWID;
+
+-- 数据资产状态（不是参数，不进 param 台账）
+CREATE TABLE IF NOT EXISTS data_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+
+-- 基线身份补数据口径维度（0032 内 ALTER，不新开迁移）
+ALTER TABLE baseline ADD COLUMN data_mode TEXT NOT NULL DEFAULT 'raw';
+```
+
+设计取舍（逐条给理由，便于反驳）：
+
+| 决策 | 取值 | 理由 |
+|---|---|---|
+| 建独立表而非给 `daily_bar` 加列 | **独立表** | `daily_bar` 走 `INSERT OR REPLACE`（`repo_bar.go:52`），加列会被**每次 ingest 整行覆盖清空**；且原表必须保持原价作对账基准（A7） |
+| 存 `amount` | **存（原值拷贝）** | 免 join，且 §6-3 守恒校验可在同一行内自证（`adj_close×adj_volume ≈ amount`）；它是拷贝不是事实源，重灌即刷新 |
+| `WITHOUT ROWID` | **是** | 与 `daily_bar` 一致，PK `(code,date)` 即聚簇，窗口查询走覆盖索引 |
+| `adj_status` | `ok` / `no_factor` | 退市股原价直通必须可识别，否则「339 只没复权」会被当成已复权 |
+| 不存 `security` 外键 | **不设 FK** | 装载器会遇到 `security` 里没有的退市代码；校验交给覆盖率断言（8.7） |
+
+### 8.2 `data_meta` 契约（决定引擎走哪个模式）
+
+| key | 值 | 写入时机 |
+|---|---|---|
+| `adj_ready` | `0` / `1` | **只有 §6 全部验收通过才写 1** |
+| `adj_t0` | `2004-01-02` | 装载开始 |
+| `adj_loader_ver` | 如 `v1` | 装载开始 |
+| `adj_loaded_at` | 时间戳 | 通过后 |
+| `adj_codes` / `adj_rows` / `adj_no_factor` | 计数 | 通过后 |
+
+**三态语义（这是防静默失效的核心）：**
+
+| 状态 | 判定 | 引擎行为 |
+|---|---|---|
+| `raw` | 表不存在或无 `adj_ready` 行 | 全部读 `daily_bar`（旧库、`verify_0029_2005.db`、生产照旧可用） |
+| `adj` | `adj_ready='1'` | 个股读 `daily_bar_adj`，指数读 `daily_bar` |
+| **半成品** | 表有行但 `adj_ready≠1` | **启动即拒绝**，提示「后复权数据未通过验收，禁止回放」 |
+
+没有「读不到就退回原价」这条路径 —— 那正是 0019 的失败形态。
+
+### 8.3 切表规则
+
+**按读取性质分两类，绝不混：**
+
+| 类别 | 方法（`repo_bar.go`） | 读哪张表 |
+|---|---|---|
+| **价格类**（引擎要连续价） | `BarsWindow` `BarsRange` `CloseOn` `AvgVolume` `AvgAmount` `LastClose` | `priceTable(code)` |
+| **日期类**（只要日期轴） | `LatestDate` `PrevDate` `NextDate` `HasBar` `CountBars` `BarCount` `BarCountClosed` | **永远 `daily_bar`** |
+
+日期类不切表的理由：`daily_bar_adj` 与 `daily_bar` 日期轴本应同集，一旦不同集（装载漏股/起止不同），
+`MIN(date)`（次新股过滤 `repo_box.go:295`）、`COUNT(*)`（B2 太晚规则）会**静默换判据**。日期轴只认一个源。
+
+`priceTable(code)` 判定：`security.kind='index'`（799 只，`Open` 时预载为 `map[string]bool`）→ `daily_bar`；
+其余 → `daily_bar_adj`。**不用前缀猜测**（`sh000*` 里混着指数/其他，`sz399*` 也不全是），用库内 `kind` 事实源。
+
+**`repo_bar.go` 之外的价格读取点（会漏，必须一起切）：**
+
+| 位置 | 内容 | 处置 |
+|---|---|---|
+| `repo_pool.go:218` | 跟踪池最新收盘（子查询） | **切**（浮盈亏要用连续价） |
+| `repo_trade.go:213` | 权益快照最新收盘 | **切** |
+| `repo_box.go:295` | `MIN(date)` 次新股过滤 | 不切（日期类） |
+| `backtest.go:425/444` | 日期列表 | 不切 |
+| `regime.go:212`、`regimesweep.go:290` | 指数 MA60 | 不切（本就是指数，读原表） |
+
+**护栏测试** `TestNoDirectDailyBarPriceRead`：扫全仓非测试 `.go`，凡出现 `FROM daily_bar` 且 SELECT 含
+价格列且不在白名单 → 测试失败。把「以后有人新加一条读价 SQL」也挡住。
+
+### 8.4 Bootstrap 必须同步裁剪
+
+`backtest.go:533` 的 progressive 裁剪 `DELETE FROM daily_bar WHERE date >= ? AND code != 'sh000001'`
+必须**同步** `DELETE FROM daily_bar_adj ...`。否则 `LastClose`（无日期上界）会读到窗口外的未来价，
+progressive 隔离被击穿。
+
+### 8.5 身份：把数据口径写进 baseline
+
+`baseline.data_mode ∈ {raw, adj}`，`RecordBaseline` 时落库。
+HARD① 对账要求 `data_mode` + `param_fingerprint` + `engine_sha256` 三者同时相同 ——
+raw 库和 adj 库即使参数完全一致也**不可横比**（价格序列本身不同）。
+
+### 8.6 装载器 `scripts/load_bar_adj.py`
+
+| 项 | 规格 |
+|---|---|
+| 股票池 | `daily_bar` 里按 A5 规则（`sh60*/sh68*/sz00*/sz30*`）实测 **5,561 只**（原文 5,563 是 lday 目录口径，差 2 只以库内为准） |
+| 拉取 | 分批 ≤200 只；每股拉 `none` + `back` 两遍；`period='1d'`、`fill_data=False`、`count=-1`、`start_time='19900101'` |
+| 因子 | `factor = back_close/none_close`；`factor_norm = factor / factor(T0)` |
+| 价格 | `adj_* = none_* × factor_norm` |
+| 量 | `adj_volume = round(none_volume / factor_norm)`，下限 1（除权日 0 量不产生 0 股） |
+| 额 | 原值拷贝 |
+| 无因子股 | tqcenter 返回空 → 从 `daily_bar` 直通，`factor_norm=1`、`adj_status='no_factor'` |
+| 幂等 | `INSERT OR REPLACE`，单股一事务；中断后 `--resume` 跳过已完整股票 |
+| 失败处理 | 单股失败**不得中止全场**，记 `load_fail.tsv`，最终汇入验收报告；失败股计入未覆盖清单 |
+| 两阶段 | 先灌全部行 → 跑 §8.7 验收 → 通过才写 `adj_ready=1` |
+| 预估 | 17.96M 行；拉数约 10 分钟（E8: 0.11s/只），写库 10–20 分钟 |
+
+### 8.7 验收判据（补齐 §6，全部可脚本触发）
+
+| # | 判据 | 脚本 |
+|---|---|---|
+| 1 | `COUNT(DISTINCT code) = 股票池数`（5,561，或装载器实际清单数） | `verify_bar_adj.py` |
+| 2 | `adj_status='no_factor'` 的股票数 = 拉取失败数（实测 **339**，与 §5-A5「只在 lday」口径一致） | 同上 |
+| 3 | **因子-行动一致性**（2026-11-05 灌库后修订，原「除权日 \|adj 涨跌幅\| < 11%」作废）：抽样 20 只、除权日 ≤15 自然日 Gap，`fn(除权日)/fn(前日)` 与交易所除权除息参考价公式的期望缩放（送股+配股+派息一体：`ex_ref=(10×前收+配×配价−派息)/(10+送+配)`，比值=前收/ex_ref）偏差 ≤5%。原判据不可判定：科创/创业 ±20% 涨跌幅合法，除权前停牌使 adj 累计停牌期大盘真实涨幅（如 sh600352 2005-08-05 股改停牌 12 日，adj +26.7% 为真实总回报） | 同上 |
+| 4 | **调整增量误差**（2026-11-05 灌库后修订，原「\|adj换手−amount\|/amount < 5%」作废）：抽 1000 行 `\|adj_close×adj_volume − close×volume\| / (close×volume) ≤ 1%`。原判据误判 raw 固有偏差（收盘≠VWAP，暴涨日 raw 自身偏 5-6%，实测 sz002033 2015-06-04 raw 偏差 6.10% 与 adj 完全相同） | 同上 |
+| 5 | 抽样 50 只 `adj_close` 在 T0 当日 ≡ `daily_bar.close`（factor_norm=1） | 同上 |
+| 6 | **窗口完整性**（2026-11-05 灌库后修订）：≥800 根（截至 2005-01-04）股数 **adj ≡ daily_bar 同口径查询结果**（实测 1,123）。原「≈1,346」系灌库前另一口径 Universe 的估算，作废 | 同上 |
+| 7 | **三态拒绝**：造 `adj_ready=0` 的库 → 回放必须报错退出 | Go 测试（`data_view_test.go`） |
+| 8 | `sim:dividend` 成交数 = 0（除权清仓已按 `DataMode()=="raw"` 下线，`match.go` 0032 豁免） | `smoke_0032.py` adj 冒烟 |
+
+> **2026-11-05 实测终值**：`adj_ready=1`，5,561 只（ok 5,222 / no_factor 339），17,962,168 行，
+> T0=2004-01-02；验收 7/7 过（判据 7=Go 测试、判据 8=adj 冒烟另验）。23 只「2026 年仍有交易
+> 但 TQ 无数据」的 no_factor 股已逐只单股直查复核（券商合并 2026-09 退市潮 + 退市整理股
+> 如 sz301139 元道退），全部真退市/合并，零误判。
+
+### 8.8 本轮明确不做
+
+| 项 | 原因 |
+|---|---|
+| 生产 `serve` 切后复权 | 生产要挂**真实价**止损单；切后复权需 factor 反算回真实价，是独立工程。挂账，回测验收后再议 |
+| 前复权 / 不复权 | 8.0 已论证 |
+| 调整 `amount` | B6：成交额是绝对金额，`screen.turnover` 要的就是真实成交额 |
+| 退市股补因子 | tqcenter 完全没有（E6），只能原价直通 + 打标 |
 
 ---
 

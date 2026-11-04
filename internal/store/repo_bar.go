@@ -8,11 +8,20 @@ import (
 	"darvas/internal/contract"
 )
 
-// BarRepo daily_bar 仓储（docs/04-api-contract.md §3.3）。
-type BarRepo struct{ db *sql.DB }
+// BarRepo 日线仓储（docs/04-api-contract.md §3.3）。
+//
+// 0032 起分两类读法，**绝不混**（docs/53 §8.3）：
+//   - 价格类（BarsWindow/BarsRange/CloseOn/AvgVolume/AvgAmount/LastClose）走 dv.price(code)，
+//     adj 模式下个股读后复权表、指数读原表；
+//   - 日期类（LatestDate/PrevDate/NextDate/HasBar/CountBars/BarCount/BarCountClosed）
+//     **永远读 daily_bar**——日期轴只认一个源，否则 MIN(date)/COUNT(*) 会静默换判据。
+type BarRepo struct {
+	db *sql.DB
+	dv *dataView
+}
 
 // NewBarRepo 构造。
-func NewBarRepo(db *sql.DB) *BarRepo { return &BarRepo{db: db} }
+func NewBarRepo(db *sql.DB, dv *dataView) *BarRepo { return &BarRepo{db: db, dv: dv} }
 
 // batchInsertSize 每条 INSERT 语句拼入的行数。
 // 基准实测（internal/store/bench_test.go TestBenchInsertStrategies）：
@@ -94,13 +103,61 @@ func (r *BarRepo) UpsertBars(bars []contract.DailyBar) (int64, error) {
 	return total, nil
 }
 
+// insertAdjBarsSQL 后复权批量写入（10 列，与 daily_bar_adj 对应）。
+const insertAdjBarsSQL = `INSERT OR REPLACE INTO daily_bar_adj
+	(code, date, adj_open, adj_high, adj_low, adj_close, adj_volume, amount, factor_norm, adj_status) VALUES `
+
+const adjColCount = 10
+
+// UpsertAdjBars 批量幂等写入后复权日线（progressive 回放逐日灌入用，docs/53 §8.4）。
+// 与 UpsertBars 同一套批次策略；adj_status 缺省补 'ok'。
+func (r *BarRepo) UpsertAdjBars(bars []contract.AdjDailyBar) (int64, error) {
+	if len(bars) == 0 {
+		return 0, nil
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	total := int64(0)
+	for start := 0; start < len(bars); start += batchInsertSize {
+		end := start + batchInsertSize
+		if end > len(bars) {
+			end = len(bars)
+		}
+		n := end - start
+		ph := buildPlaceholders(n, adjColCount)
+		args := make([]any, 0, n*adjColCount)
+		for i := start; i < end; i++ {
+			b := bars[i]
+			status := b.Status
+			if status == "" {
+				status = "ok"
+			}
+			args = append(args, b.Code, b.Date, b.Open, b.High, b.Low, b.Close,
+				b.Volume, b.Amount, b.FactorNorm, status)
+		}
+		if _, err := tx.Exec(insertAdjBarsSQL+ph, args...); err != nil {
+			return total, fmt.Errorf("upsert adj batch [%d,%d): %w", start, end, err)
+		}
+		total += int64(n)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 // BarsWindow 读取 code 截至 endDate（含）的最近 n 根K线，升序返回。
 // boxscan 主路径：三日法则只需一个有限窗口（docs/02-architecture.md §6）。
 // 注意：CAST(date AS TEXT) 绕过 modernc 对 DATE 列的 time.Time 转换，
 // 保证引擎拿到纯 "YYYY-MM-DD" 字符串（确定性纯函数要求）。
 func (r *BarRepo) BarsWindow(code string, endDate string, n int) ([]contract.DailyBar, error) {
-	rows, err := r.db.Query(`SELECT CAST(date AS TEXT), open, high, low, close, volume, amount
-		FROM daily_bar WHERE code = ? AND date <= ? ORDER BY date DESC LIMIT ?`, code, endDate, n)
+	ps := r.dv.price(code)
+	rows, err := r.db.Query(fmt.Sprintf(`SELECT CAST(date AS TEXT), %s, %s, %s, %s, %s, %s
+		FROM %s WHERE code = ? AND date <= ? ORDER BY date DESC LIMIT ?`,
+		ps.open, ps.high, ps.low, ps.close, ps.volume, ps.amount, ps.table), code, endDate, n)
 	if err != nil {
 		return nil, err
 	}
@@ -146,8 +203,10 @@ func (r *BarRepo) BarsRange(code, from, to string, max int) ([]contract.DailyBar
 	if max <= 0 {
 		max = 1000
 	}
-	q, args := `SELECT CAST(date AS TEXT), open, high, low, close, volume, amount
-		FROM daily_bar WHERE code = ?`, []any{code}
+	ps := r.dv.price(code)
+	q, args := fmt.Sprintf(`SELECT CAST(date AS TEXT), %s, %s, %s, %s, %s, %s
+		FROM %s WHERE code = ?`, ps.open, ps.high, ps.low, ps.close, ps.volume, ps.amount, ps.table),
+		[]any{code}
 	if from != "" {
 		q += " AND date >= ?"
 		args = append(args, from)
@@ -182,7 +241,9 @@ func (r *BarRepo) BarsRange(code, from, to string, max int) ([]contract.DailyBar
 // CloseOn 查某日收盘价。
 func (r *BarRepo) CloseOn(code, date string) (float64, bool, error) {
 	var c float64
-	err := r.db.QueryRow(`SELECT close FROM daily_bar WHERE code = ? AND date = ?`, code, date).Scan(&c)
+	ps := r.dv.price(code)
+	err := r.db.QueryRow(fmt.Sprintf(`SELECT %s FROM %s WHERE code = ? AND date = ?`,
+		ps.close, ps.table), code, date).Scan(&c)
 	if err == sql.ErrNoRows {
 		return 0, false, nil
 	}
@@ -192,21 +253,24 @@ func (r *BarRepo) CloseOn(code, date string) (float64, bool, error) {
 	return c, true, nil
 }
 
-// AvgVolume 截至 endDate 的 n 日均成交量（手）。
+// AvgVolume 截至 endDate 的 n 日均成交量（股；daily_bar.volume 实测单位是股，非手）。
 func (r *BarRepo) AvgVolume(code string, endDate string, n int) (float64, error) {
 	var v float64
-	err := r.db.QueryRow(`SELECT COALESCE(AVG(volume), 0) FROM (
-		SELECT volume FROM daily_bar WHERE code = ? AND date <= ? ORDER BY date DESC LIMIT ?)`,
-		code, endDate, n).Scan(&v)
+	ps := r.dv.price(code)
+	err := r.db.QueryRow(fmt.Sprintf(`SELECT COALESCE(AVG(%s), 0) FROM (
+		SELECT %s FROM %s WHERE code = ? AND date <= ? ORDER BY date DESC LIMIT ?)`,
+		ps.volume, ps.volume, ps.table), code, endDate, n).Scan(&v)
 	return v, err
 }
 
 // AvgAmount 截至 endDate 的 n 日均成交额（元，screener 流动性条件 FR-301）。
 func (r *BarRepo) AvgAmount(code string, endDate string, n int) (float64, error) {
 	var v float64
-	err := r.db.QueryRow(`SELECT COALESCE(AVG(amount), 0) FROM (
-		SELECT amount FROM daily_bar WHERE code = ? AND date <= ? ORDER BY date DESC LIMIT ?)`,
-		code, endDate, n).Scan(&v)
+	// amount 不调整（B6），但 adj 表存了原值拷贝，故随价格源切表以保持单一路径。
+	ps := r.dv.price(code)
+	err := r.db.QueryRow(fmt.Sprintf(`SELECT COALESCE(AVG(amount), 0) FROM (
+		SELECT amount FROM %s WHERE code = ? AND date <= ? ORDER BY date DESC LIMIT ?)`,
+		ps.table), code, endDate, n).Scan(&v)
 	return v, err
 }
 
@@ -257,7 +321,9 @@ func (r *BarRepo) CountBars(code string) (int64, error) {
 // ORDER BY date DESC LIMIT 1 走索引倒扫，O(log n)。
 func (r *BarRepo) LastClose(code string) (float64, bool, error) {
 	var c float64
-	err := r.db.QueryRow(`SELECT close FROM daily_bar WHERE code = ? ORDER BY date DESC LIMIT 1`, code).Scan(&c)
+	ps := r.dv.price(code)
+	err := r.db.QueryRow(fmt.Sprintf(`SELECT %s FROM %s WHERE code = ? ORDER BY date DESC LIMIT 1`,
+		ps.close, ps.table), code).Scan(&c)
 	if err == sql.ErrNoRows {
 		return 0, false, nil
 	}

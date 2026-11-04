@@ -114,9 +114,13 @@ func runOne(o Options, scratch string) error {
 	fmt.Printf("[bt] 窗口 %s ~ %s（%d 个交易日）\n", from, to, len(days))
 
 	var dayBars map[string][]contract.DailyBar
+	var adjBars map[string][]contract.AdjDailyBar
 	if o.Mode == ModeProgressive {
 		if dayBars, err = loadWindowBars(o.SrcDB, from, to); err != nil {
 			return fmt.Errorf("预载窗口K线: %w", err)
+		}
+		if adjBars, err = loadWindowAdjBars(o.SrcDB, from, to); err != nil {
+			return fmt.Errorf("预载窗口后复权K线: %w", err)
 		}
 	}
 	if err = Bootstrap(o.SrcDB, scratch, from, o.Mode == ModeProgressive); err != nil {
@@ -128,7 +132,7 @@ func runOne(o Options, scratch string) error {
 	if err := recordBaseline(scratch, o); err != nil {
 		return fmt.Errorf("记录基线身份失败（docs/49 硬标准①，身份缺失的账本无效）: %w", err)
 	}
-	hashes, fails, err := Replay(scratch, days, dayBars)
+	hashes, fails, err := Replay(scratch, days, dayBars, adjBars)
 	if err != nil {
 		return err
 	}
@@ -155,10 +159,14 @@ func runVerify(o Options) error {
 	if err != nil {
 		return fmt.Errorf("预载窗口K线: %w", err)
 	}
+	adjBars, err := loadWindowAdjBars(o.SrcDB, from, to)
+	if err != nil {
+		return fmt.Errorf("预载窗口后复权K线: %w", err)
+	}
 	if err = Bootstrap(o.SrcDB, prog, from, true); err != nil {
 		return err
 	}
-	progHashes, fails, err := Replay(prog, days, dayBars)
+	progHashes, fails, err := Replay(prog, days, dayBars, adjBars)
 	if err != nil {
 		return err
 	}
@@ -170,7 +178,7 @@ func runVerify(o Options) error {
 	if err = Bootstrap(o.SrcDB, pre, from, false); err != nil {
 		return err
 	}
-	preHashes, fails, err := Replay(pre, days, nil)
+	preHashes, fails, err := Replay(pre, days, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -237,7 +245,7 @@ func runRegime(o Options) error {
 	if len(days) == 0 {
 		fmt.Printf("[bt] regime: 已是最新，无断点可续（%s 之后无交易日）\n", o.To)
 	} else {
-		if _, fails, err := Replay(scratch, days, nil); err != nil {
+		if _, fails, err := Replay(scratch, days, nil, nil); err != nil {
 			return err
 		} else if len(fails) > 0 {
 			return fmt.Errorf("regime 回放存在失败任务:\n  %s", strings.Join(fails, "\n  "))
@@ -294,6 +302,12 @@ func resumeRegime(o Options, scratch string, days []string) ([]string, error) {
 	if curFp != base.ParamFingerprint {
 		return nil, fmt.Errorf("基线参数指纹不一致，拒绝续跑：本库 %s… vs 当前 %s…（改了参数须重建，勿串基线）",
 			base.ParamFingerprint[:12], curFp[:12])
+	}
+	// 0032：数据口径也是身份。库被换过数据（adj 表被清/被重灌）就必须拒绝续跑，
+	// 否则同一本账里前半段是原始价、后半段是后复权价。
+	if st.DataMode() != base.DataMode {
+		return nil, fmt.Errorf("数据口径不一致，拒绝续跑：本库身份 %s vs 当前 %s（换口径须删库重建）",
+			base.DataMode, st.DataMode())
 	}
 	curEng := currentEngineSHA()
 	if curEng != base.EngineSHA256 {
@@ -534,6 +548,10 @@ func Bootstrap(src, scratch string, from string, progressive bool) error {
 		if err != nil {
 			return fmt.Errorf("裁剪未来K线: %w", err)
 		}
+		// 0032 §8.4：后复权表必须同步裁剪，否则 LastClose（无日期上界）会读到窗口外未来价
+		if _, err := st.DB().Exec(`DELETE FROM daily_bar_adj WHERE date >= ?`, from); err != nil {
+			return fmt.Errorf("裁剪未来后复权K线: %w", err)
+		}
 		n, _ := res.RowsAffected()
 		fmt.Printf("[bt] bootstrap(%s): 已拷贝源库，清空事务态 %d 行，裁掉窗口后K线 %d 行\n",
 			map[bool]string{true: "progressive", false: "prefill"}[progressive], wiped, n)
@@ -603,7 +621,11 @@ func copyFile(src, dst string) error {
 // Replay 按交易日历逐日重放六任务链（生产代码路径 pipeline.RerunTask）。
 // progressive 模式在每个回放日前把该日K线从源库灌入（ingest 的回放等价物）。
 // 返回逐日箱体状态哈希（差分审计用）与失败任务清单。
-func Replay(scratch string, days []string, dayBars map[string][]contract.DailyBar) (map[string]uint64, []string, error) {
+// Replay 逐日重放。dayBars/adjBars 仅 progressive 模式非空（prefill 传 nil）。
+// adjBars（0032）：后复权K线与原始K线**同步逐日灌入**，否则 progressive 隔离下
+// 引擎读到的是「原始价有新日、后复权表缺新日」的错位状态。
+func Replay(scratch string, days []string, dayBars map[string][]contract.DailyBar,
+	adjBars map[string][]contract.AdjDailyBar) (map[string]uint64, []string, error) {
 	st, err := store.Open(scratch)
 	if err != nil {
 		return nil, nil, err
@@ -623,6 +645,9 @@ func Replay(scratch string, days []string, dayBars map[string][]contract.DailyBa
 		if dayBars != nil { // progressive：先灌当日K线再跑链
 			if _, err := st.BarRepo.UpsertBars(dayBars[d]); err != nil {
 				return nil, nil, fmt.Errorf("%s 灌当日K线: %w", d, err)
+			}
+			if _, err := st.BarRepo.UpsertAdjBars(adjBars[d]); err != nil {
+				return nil, nil, fmt.Errorf("%s 灌当日后复权K线: %w", d, err)
 			}
 		}
 		var rows []string
@@ -900,6 +925,40 @@ func loadWindowBars(src, from, to string) (map[string][]contract.DailyBar, error
 	for rows.Next() {
 		var b contract.DailyBar
 		if err := rows.Scan(&b.Date, &b.Code, &b.Open, &b.High, &b.Low, &b.Close, &b.Volume, &b.Amount); err != nil {
+			return nil, err
+		}
+		out[b.Date] = append(out[b.Date], b)
+	}
+	return out, rows.Err()
+}
+
+// loadWindowAdjBars 预载窗口内后复权K线（0032）。源库无 adj 表（0027 前旧库）时返回空，
+// 让旧库仍可被回放——数据口径三态判定在 store.Open 里做，这里只负责取数。
+func loadWindowAdjBars(src, from, to string) (map[string][]contract.AdjDailyBar, error) {
+	db, err := openSourceRO(src)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	var has int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='daily_bar_adj'`).Scan(&has); err != nil {
+		return nil, err
+	}
+	if has == 0 {
+		return nil, nil
+	}
+	rows, err := db.Query(`SELECT CAST(date AS TEXT), code, adj_open, adj_high, adj_low, adj_close,
+			adj_volume, amount, factor_norm, adj_status
+		FROM daily_bar_adj WHERE date >= ? AND date <= ? ORDER BY code, date`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]contract.AdjDailyBar{}
+	for rows.Next() {
+		var b contract.AdjDailyBar
+		if err := rows.Scan(&b.Date, &b.Code, &b.Open, &b.High, &b.Low, &b.Close,
+			&b.Volume, &b.Amount, &b.FactorNorm, &b.Status); err != nil {
 			return nil, err
 		}
 		out[b.Date] = append(out[b.Date], b)

@@ -9,10 +9,13 @@ import (
 )
 
 // PoolRepo candidate + watch 仓储（docs/04-api-contract.md §3.3）。
-type PoolRepo struct{ db *sql.DB }
+type PoolRepo struct {
+	db *sql.DB
+	dv *dataView
+}
 
 // NewPoolRepo 构造。
-func NewPoolRepo(db *sql.DB) *PoolRepo { return &PoolRepo{db: db} }
+func NewPoolRepo(db *sql.DB, dv *dataView) *PoolRepo { return &PoolRepo{db: db, dv: dv} }
 
 // AppendCandidates 批量追加候选快照（append-only，docs/03 §2 候选池只插不更新）。
 // reasons map 序列化为 JSON 存 reasons_json。
@@ -209,13 +212,19 @@ type WatchOverview struct {
 }
 
 // WatchOverview 全部跟踪池看板行（每 code 取最新 watch 行，含 exited）。
-// 最新收盘走 daily_bar PK 倒扫相关子查询（PK(code,date) WITHOUT ROWID，O(log n)/行）。
+// 最新收盘走 PK 倒扫相关子查询（PK(code,date) WITHOUT ROWID，O(log n)/行）。
+// 0032：adj 模式下读 daily_bar_adj.adj_close；**不做「查不到退回原价」**——
+// 缺数据就显示 0，宁可露出空洞也不静默混用两套价。
 func (r *PoolRepo) WatchOverview() ([]WatchOverview, error) {
-	rows, err := r.db.Query(`SELECT w.code, COALESCE(s.name,''), w.stage, CAST(w.added_date AS TEXT), w.box_count,
+	lastClose := `COALESCE((SELECT d.close FROM daily_bar d WHERE d.code = w.code ORDER BY d.date DESC LIMIT 1), 0)`
+	if r.dv.adj {
+		lastClose = `COALESCE((SELECT d.adj_close FROM daily_bar_adj d WHERE d.code = w.code ORDER BY d.date DESC LIMIT 1), 0)`
+	}
+	rows, err := r.db.Query(fmt.Sprintf(`SELECT w.code, COALESCE(s.name,''), w.stage, CAST(w.added_date AS TEXT), w.box_count,
 			COALESCE(b.top,0), COALESCE(b.bottom,0), COALESCE(b.status,''),
 			CAST(COALESCE(b.top_confirmed,'') AS TEXT), CAST(COALESCE(b.bottom_confirmed,'') AS TEXT),
 			CAST(COALESCE(b.broken_date,'') AS TEXT),
-			COALESCE((SELECT d.close FROM daily_bar d WHERE d.code = w.code ORDER BY d.date DESC LIMIT 1), 0),
+			%s,
 			COALESCE(w.exit_reason,''), COALESCE(w.resume_trigger,0)
 		FROM watch w
 		JOIN (SELECT code, MAX(id) AS mid FROM watch GROUP BY code) latest ON w.id = latest.mid
@@ -223,7 +232,7 @@ func (r *PoolRepo) WatchOverview() ([]WatchOverview, error) {
 		LEFT JOIN box b ON b.id = w.current_box_id
 		ORDER BY CASE w.stage
 			WHEN 'holding' THEN 1 WHEN 'pending' THEN 2 WHEN 'watching' THEN 3
-			WHEN 'suspended' THEN 4 WHEN 'blacklisted' THEN 5 ELSE 6 END, w.code`)
+			WHEN 'suspended' THEN 4 WHEN 'blacklisted' THEN 5 ELSE 6 END, w.code`, lastClose))
 	if err != nil {
 		return nil, err
 	}

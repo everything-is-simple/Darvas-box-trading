@@ -78,10 +78,12 @@ func (s *Store) RecordBaseline(engineVersion, sourceHash string) (baselineID str
 	if _, err := s.db.Exec(`UPDATE baseline SET latest = 0 WHERE latest = 1`); err != nil {
 		return "", fmt.Errorf("清旧 latest: %w", err)
 	}
+	// data_mode（0032）：数据口径是基线身份的第四根锚。raw 库与 adj 库即使参数指纹
+	// 完全一致也**不可横比**——价格序列本身不同（docs/53 §8.5）。
 	_, err = s.db.Exec(`INSERT INTO baseline
-		(baseline_id, engine_version, engine_sha256, source_hash, param_fingerprint, params_json, latest)
-		VALUES (?, ?, ?, ?, ?, ?, 1)`,
-		baselineID, engineVersion, engineHash, nullIfEmpty(sourceHash), fingerprint, string(snapshot))
+		(baseline_id, engine_version, engine_sha256, source_hash, param_fingerprint, params_json, latest, data_mode)
+		VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+		baselineID, engineVersion, engineHash, nullIfEmpty(sourceHash), fingerprint, string(snapshot), s.DataMode())
 	if err != nil {
 		return "", fmt.Errorf("写 baseline: %w", err)
 	}
@@ -100,14 +102,15 @@ type BaselineIdentity struct {
 	BaselineID       string
 	ParamFingerprint string
 	EngineSHA256     string
+	DataMode         string // raw / adj（0032）
 }
 
 // LatestBaseline 读本库最新一次重建（latest=1）的基线身份。
 // 无基线身份（从未 RecordBaseline）时返回 sql.ErrNoRows。
 func (s *Store) LatestBaseline() (BaselineIdentity, error) {
 	var b BaselineIdentity
-	err := s.db.QueryRow(`SELECT baseline_id, param_fingerprint, engine_sha256
+	err := s.db.QueryRow(`SELECT baseline_id, param_fingerprint, engine_sha256, data_mode
 		FROM baseline WHERE latest = 1`).
-		Scan(&b.BaselineID, &b.ParamFingerprint, &b.EngineSHA256)
+		Scan(&b.BaselineID, &b.ParamFingerprint, &b.EngineSHA256, &b.DataMode)
 	return b, err
 }

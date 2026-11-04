@@ -45,10 +45,27 @@ erDiagram
         REAL high
         REAL low
         REAL close
-        INTEGER volume "手"
+        INTEGER volume "股（0032 订正，实测 volume×close≈amount）"
         REAL amount "元"
         REAL adj_factor
         DATE ingested_at
+    }
+    daily_bar_adj {
+        TEXT code PK "个股，不含指数"
+        DATE date PK
+        REAL adj_open
+        REAL adj_high
+        REAL adj_low
+        REAL adj_close
+        INTEGER adj_volume "股 = none_volume/factor_norm"
+        REAL amount "元，原值拷贝不调整"
+        REAL factor_norm "(back/none)/(back(T0)/none(T0))，T0=2004-01-02"
+        TEXT adj_status "ok/no_factor（无因子原价直通）"
+        DATETIME ingested_at
+    }
+    data_meta {
+        TEXT k PK "adj_ready/adj_t0/adj_codes/…"
+        TEXT v "数据资产状态，非参数（不进 param 台账）"
     }
     box {
         INTEGER id PK
@@ -190,6 +207,7 @@ erDiagram
         TEXT params_json "参数快照 JSON"
         DATETIME created_at
         INTEGER latest "1=本库最新一次重建"
+        TEXT data_mode "raw/adj 数据口径（0032）"
     }
     security ||--o{ dividend_event : "除权除息事件"
     dividend_event {

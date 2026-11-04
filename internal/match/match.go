@@ -7,6 +7,8 @@
 // 复权日处理（§3.8，用户拍板 2026-10-19）：不复权原始价 + 复权日清仓。持仓股在
 // 除权跳空日强制清仓（价=昨收×(1−滑点)，避开跳空损失）；watch 未持仓股不额外处理
 // （signal 自然出池，复权后重新入池、箱体重算，属可接受行为）。
+// 0032 豁免（docs/53 §8.7 判据⑧）：adj 模式下后复权价已含分红补偿，除权日不再是
+// 「跳空损失」，强制清仓必须下线（sim:dividend 成交数=0）；仅 raw 模式保留清仓。
 // 滑点（C4，2026-10-22）：全部模拟成交按 match.slippage（默认 0.2%）买贵卖贱，0 关闭。
 package match
 
@@ -45,44 +47,47 @@ func (m *Matcher) Match(ctx context.Context, date string) (int, error) {
 	// isDividendGap——原阈值 0.09 恰卡在主跌停 10% 上，四年 44 笔 sim:dividend 里
 	// 37 笔是「跌停误判」，只 7 笔是真除权。定价口径：除权后实际价 today.Close
 	// （而非「昨收×滑点」——那在除权跳空日会按除权前价虚增成交）。
+	// 0032：仅 raw 模式执行（见文件头豁免说明）。
 	cleared := map[string]bool{}
-	positions, err := m.st.TradeRepo.OpenPositions()
-	if err != nil {
-		return 0, err
-	}
-	for _, pos := range positions {
-		bars, err := m.st.BarRepo.BarsWindow(pos.Code, date, 2)
-		if err != nil || len(bars) < 2 {
-			continue
-		}
-		prev, today := bars[0], bars[1]
-		if today.Date != date {
-			continue // 当日无数据（停牌）
-		}
-		_ = prev
-		isDiv, err := m.st.DivRepo.IsDividendDay(pos.Code, date)
+	if m.st.DataMode() == "raw" {
+		positions, err := m.st.TradeRepo.OpenPositions()
 		if err != nil {
-			return n, err
+			return 0, err
 		}
-		if !isDiv {
-			continue
-		}
-		clearPx := today.Close // 除权后实际价格（保守、真实）
-		fill := contract.Fill{
-			Code: pos.Code, Date: date, Side: "sell",
-			Price: clearPx, Qty: pos.Qty,
-			Fee: feeOf("sell", clearPx, pos.Qty, fp), RawText: "sim:dividend",
-		}
-		if _, err := m.l.ApplyFill(fill); err != nil {
-			return n, err
-		}
-		cleared[pos.Code] = true
-		n++
-		// 除权清仓后，在途订单（止损卖单/突破买单）同步作废：卖单不取消会次日触发
-		// 「卖出成交但无持仓」（2018-05-23 sz300630 暴露）；买单不取消会以复权前
-		// 箱体逻辑开幻影新仓。复权后箱体重算、重新出信号属正常流程。
-		if _, err := m.st.TradeRepo.CancelOpenOrders(pos.Code); err != nil {
-			return n, err
+		for _, pos := range positions {
+			bars, err := m.st.BarRepo.BarsWindow(pos.Code, date, 2)
+			if err != nil || len(bars) < 2 {
+				continue
+			}
+			prev, today := bars[0], bars[1]
+			if today.Date != date {
+				continue // 当日无数据（停牌）
+			}
+			_ = prev
+			isDiv, err := m.st.DivRepo.IsDividendDay(pos.Code, date)
+			if err != nil {
+				return n, err
+			}
+			if !isDiv {
+				continue
+			}
+			clearPx := today.Close // 除权后实际价格（保守、真实）
+			fill := contract.Fill{
+				Code: pos.Code, Date: date, Side: "sell",
+				Price: clearPx, Qty: pos.Qty,
+				Fee: feeOf("sell", clearPx, pos.Qty, fp), RawText: "sim:dividend",
+			}
+			if _, err := m.l.ApplyFill(fill); err != nil {
+				return n, err
+			}
+			cleared[pos.Code] = true
+			n++
+			// 除权清仓后，在途订单（止损卖单/突破买单）同步作废：卖单不取消会次日触发
+			// 「卖出成交但无持仓」（2018-05-23 sz300630 暴露）；买单不取消会以复权前
+			// 箱体逻辑开幻影新仓。复权后箱体重算、重新出信号属正常流程。
+			if _, err := m.st.TradeRepo.CancelOpenOrders(pos.Code); err != nil {
+				return n, err
+			}
 		}
 	}
 

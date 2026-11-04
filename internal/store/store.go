@@ -19,6 +19,7 @@ var migrationsFS embed.FS
 // Store 持有数据库连接，聚合各仓储。
 type Store struct {
 	db *sql.DB
+	dv *dataView // 数据口径（raw/adj），0032；见 data_view.go
 	*BarRepo
 	*SecRepo
 	*BoxRepo
@@ -61,12 +62,18 @@ func Open(dsn string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
-	s.BarRepo = NewBarRepo(db)
+	dv, derr := loadDataView(db)
+	if derr != nil {
+		db.Close()
+		return nil, fmt.Errorf("数据口径判定: %w", derr)
+	}
+	s.dv = dv
+	s.BarRepo = NewBarRepo(db, dv)
 	s.SecRepo = NewSecRepo(db)
 	s.BoxRepo = NewBoxRepo(db)
-	s.PoolRepo = NewPoolRepo(db)
+	s.PoolRepo = NewPoolRepo(db, dv)
 	s.SignalRepo = NewSignalRepo(db)
-	s.TradeRepo = NewTradeRepo(db)
+	s.TradeRepo = NewTradeRepo(db, dv)
 	s.RunRepo = NewRunRepo(db)
 	s.ParamRepo = NewParamRepo(db)
 	s.DivRepo = NewDivRepo(db)
