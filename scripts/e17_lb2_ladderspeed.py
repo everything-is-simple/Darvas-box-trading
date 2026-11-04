@@ -778,7 +778,7 @@ def render_html(data):
 匹配失败 {f['match_fail']} / 前驱断链 {f['chain_broken']} / 阶梯异常 {f['neg_gap']} → <b>可复算阶梯速度 {rc_n} 笔</b>
 （多命中 {f['multi_match']} 笔按 broken_date 最新取一）。</div>
 
-<div class="callout gold"><b>已知数据偏差（结论必须携带）</b>：① <b>800 根窗口左截断</b>（docs/36 缺口 L4）——
+<div class="callout gold"><b>已知数据偏差（结论必须携带）</b>：① <b>800 根窗口左截断</b>（docs/archive/36 缺口 L4）——
 前驱落在窗口左边界外 → 被误判「首级」或断链，阶梯链长度被低估；② 未复权（adj_factor≡1.0）；
 ③ 幸存者偏差。</div>
 

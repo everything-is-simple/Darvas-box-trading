@@ -730,7 +730,7 @@ def render_html(data):
 反向匹配 box 成功 <b>{f['matched']}</b> 笔 → 缺 box 字段 {f['no_box_fields']} / 匹配失败 {f['match_fail']} /
 寿命异常 {f['neg_life']} → <b>可复算 {rc_n} 笔</b>（多命中 {f['multi_match']} 笔按 execute_date 最近取一）。</div>
 
-<div class="callout gold"><b>已知数据偏差（结论必须携带）</b>：① <b>800 根窗口左截断</b>（docs/36 缺口 L4）——
+<div class="callout gold"><b>已知数据偏差（结论必须携带）</b>：① <b>800 根窗口左截断</b>（docs/archive/36 缺口 L4）——
 bottom_confirmed 落在窗口左边界外的 box，寿命被截短，长寿命带样本被低估；② 未复权（adj_factor≡1.0），
 跨除权日的 box 边界有语义噪声；③ 幸存者偏差。</div>
 

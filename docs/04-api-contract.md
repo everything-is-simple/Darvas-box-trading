@@ -305,7 +305,7 @@ type BoxScanner interface {
 > （`box` 表无 start_date / invalidated_date / 迁移事件）。因此「数据库 ID」不是受契约保证的逻辑 Box 身份，
 > 「created_at」不是市场中的出生时间。被 position/watch/signal 引用的旧行永久保留，其状态不再被重算改写。
 > 引用 Box 身份/事件日期的研究（如止损上移统计）须先过
-> A0/A1 轨迹验证（docs/29 §五 第 0 项）；若未来扩展 schema，须走 03/04/06 同步变更协议（docs/06 §2 防线三）。
+> A0/A1 轨迹验证（旧队列第 0 项，见 [归档 29 快照](archive/29-box-gradient-experiment-plan-2026-11-04.md) §五；A0 已于 2026-10-29 验收，见 01 FR-208）；若未来扩展 schema，须走 03/04/06 同步变更协议（docs/06 §2 防线三）。
 >
 > 日期字段：`broken_date` 只表向上突破（仅 broken_up 有值），`dead_date` 表死亡（broken_down/invalid 当天，
 > migration 0028 + 0029）。
@@ -601,7 +601,7 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
 | 参数 | 当前值 | 参数化键 | 解锁维度 | 改动位置 |
 |------|--------|---------|---------|---------|
 | box 周期长度 | 3 日（**冻结为引擎常量**） | ~~`box.period`~~ **❌ 作废** | 第 1 维 | 2026-11-04 拍板（docs/49 §四 + docs/54 #4）：不参数化，`ConfirmDays=3` 由 `engine_sha256` 钉住，改它=换引擎 |
-| 突破溢价 | ×1.03 | `buy.premium`（**已参数化**） | 第 6 维 | 改库内 param 值重跑（低端 0–3% 另案，见 docs/29 §七） |
+| 突破溢价 | ×1.03 | `buy.premium`（**已参数化**） | 第 6 维 | 改库内 param 值重跑（低端 0–3% 另案，旧队列见 [归档 29 快照](archive/29-box-gradient-experiment-plan-2026-11-04.md) §七 P1-4） |
 | 放量倍数 | ×2.0 | `box.volmult`（**已参数化**） | 第 7 维 | 改库内 param 值重跑（**P1-4 B 类已收官，扫 1.0/1.5/2.0 三档 → 终判「牛松熊紧」**） |
 
 - **参数化铁律**：参数化后，**每一轮回测必须用单一参数值跑完全部年份**，不得在同一年内混用不同参数——跨年可比性依赖于此。

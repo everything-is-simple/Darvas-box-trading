@@ -74,7 +74,7 @@ VERIFIED: dict[str, tuple[str, str]] = {
     "fee.stamp_tax": ("事实", "法定印花税"),
     "fee.transfer_rate": ("事实", "过户费"),
     "equity.base": ("事实", "初始权益 100 万（回放/复利起点）"),
-    "buy.premium": ("未验", "A 类：3–8.14% 无梯度；低端 0–3% 另案（docs/29 P1-4）"),
+    "buy.premium": ("未验", "A 类：3–8.14% 无梯度；低端 0–3% 另案（旧队列 P1-4）"),
     "match.max_entry_gap": ("未验", "P0-2 定 1.05，梯度未验"),
     "match.slippage": ("未验", "模拟成交买贵卖贱 0.2%"),
     "box.min_width": ("未验", "维 1，梯度未验（成本最大）"),
@@ -368,7 +368,7 @@ def cmd_check(led: dict) -> int:
 
 
 def print_db_diff(led: dict):
-    """docs/54 #13：库差异提示（--check --db 与非 check 的默认输出共用）。"""
+    """docs/archive/54 #13：库差异提示（--check --db 与非 check 的默认输出共用）。"""
     if led["db_mismatch"]:
         print(f"⚠ 库内与生效值不一致: {led['db_mismatch']}")
     if led["db_extra"]:
@@ -407,7 +407,7 @@ def main() -> int:
         Path(a.json).write_text(json.dumps(led, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"已写 {a.json}")
     if a.check:
-        # docs/54 #13：--check 不再提前 return——带了 --db 时一并输出库差异
+        # docs/archive/54 #13：--check 不再提前 return——带了 --db 时一并输出库差异
         # （db_mismatch/db_extra/db_missing），让 --check 与库对账可同次完成。
         # 退出码仍只反映 docs/44 与代码/迁移的对齐，库差异以 ⚠ 提示呈现。
         rc = cmd_check(led)

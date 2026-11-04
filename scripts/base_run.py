@@ -71,7 +71,7 @@ def setargs(mirror):
 
 
 def db_complete(path, min_end):
-    """库是否「完整可用」（docs/54 #10 加固判据）。
+    """库是否「完整可用」（docs/archive/54 #10 加固判据）。
 
     旧判据只看 equity_snapshot 非空——合成库插 1 行即可骗过（审查实测复现）。
     新判据三条同时满足才算完整：
@@ -112,7 +112,7 @@ def run_one(year, mirror, force=False):
     idx, name = MIRRORS[mirror]
     db = OUT / f"bt_base{mirror}_{year}.db"
     logp = OUT / f"bt_base{mirror}_{year}.log"
-    # 完整判据（docs/54 #10）：年末终点 + 逐日六任务全 ok（min_end=12-01，
+    # 完整判据（docs/archive/54 #10）：年末终点 + 逐日六任务全 ok（min_end=12-01，
     # 等价 docs/53 判据；该年 12 月后段必在窗口内）。
     if not force and db_complete(db, f"{year}-12-01"):
         log(f"跳过（已完整）：{db.name}", logp)
@@ -147,7 +147,7 @@ def run_cont(mirror, from_date, to_date, force=False, resume=False):
     idx, name = MIRRORS[mirror]
     db = OUT / f"bt_base{mirror}_cont.db"
     logp = OUT / f"bt_base{mirror}_cont.log"
-    # 完整判据（docs/54 #10）：终点 = to_date 前推 35 天（覆盖年末 12-01
+    # 完整判据（docs/archive/54 #10）：终点 = to_date 前推 35 天（覆盖年末 12-01
     # 等价判据与 smoke 短窗口两种场景）。
     to_dt = datetime.strptime(to_date, "%Y-%m-%d")
     min_end = (to_dt.replace(month=12, day=1) if to_dt.month == 12

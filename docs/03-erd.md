@@ -254,7 +254,8 @@ erDiagram
 > 其余状态不把 `dead_date` 纳入键，避免 `confirmed → broken_down` 时键漂移导致旧行被误删。
 > 回归测试 `TestUpsertBoxesInvalidIdentity`。
 >
-> 剩余缺口（未改，须待 docs/archive/29-box-gradient-experiment-plan-2026-11-04.md §五第 0 项 A0/A1 轨迹验证结论）：
+> 剩余缺口（未改；**A0 已于 2026-10-29 验收通过**（见 `docs/experiments/e17_a0_determinism_report.md`），
+> A1 生命周期可观测性尚未单独立项验收，旧队列位置见 [归档 29 快照](archive/29-box-gradient-experiment-plan-2026-11-04.md) §五第 0 项）：
 > 无 `start_date`（逻辑出生日——`created_at` 是行插入时间，二者不可混用）、
 > 无 `invalidated_date` / `invalid_reason`（invalid 无结构化失效时间与原因）、无 append-only 迁移事件账。
 > 持久层保存的仍是**重算后的状态投影**，未被任何外键引用的陈旧行可被删除。

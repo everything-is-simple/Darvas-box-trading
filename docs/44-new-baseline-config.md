@@ -53,7 +53,7 @@
 |---|---|---|---|---|---|---|
 | `buy.highest_box_mode` | `off` | string | 代码默认（未种子化） | `off` | 否决 | P3-8 2026-11-03 定稿否决（alltime/trend 三档全否） |
 | `buy.highest_box_window` | `120` | int | 代码默认（未种子化） | `120` | 否决 | 随 highest_box_mode 否决；trend 模式专用 |
-| `buy.premium` | `1.03` | float | 种子 0001_init.sql | `1.03` | 未验 | A 类：3–8.14% 无梯度；低端 0–3% 另案（docs/29 P1-4） |
+| `buy.premium` | `1.03` | float | 种子 0001_init.sql | `1.03` | 未验 | A 类：3–8.14% 无梯度；低端 0–3% 另案（旧队列 P1-4） |
 | `buy.uptrend_only` | `off` | string | 代码默认（未种子化） | `off` | 否决 | P3-8 2026-11-03 定稿否决，仅回测注入，不种子化 |
 
 **箱体**

@@ -762,7 +762,7 @@ def render_html(data):
 匹配失败 {f['match_fail']} / 链回溯循环 {f['cycle']} → <b>可复算谱系深度 {rc_n} 笔</b>
 （多命中 {f['multi_match']} 笔按 broken_date 最新取一）。</div>
 
-<div class="callout gold"><b>已知数据偏差（结论必须携带）</b>：① <b>800 根窗口左截断</b>（docs/36 缺口 L4）——
+<div class="callout gold"><b>已知数据偏差（结论必须携带）</b>：① <b>800 根窗口左截断</b>（docs/archive/36 缺口 L4）——
 链头落在窗口左边界外被删除 → 回溯半路断链，谱系深度被系统性低估（深层箱体被误判为浅层）；
 ② 未复权（adj_factor≡1.0）；③ 幸存者偏差。</div>
 

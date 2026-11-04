@@ -96,6 +96,12 @@ commit message约定：`feat(box): ...` / `feat(contract): ...`（contract前缀
 > 未来若为 `box` 表补生命周期证据（`start_date` / `invalidated_date` / `invalid_reason` / append-only
 > 迁移事件账），属 schema 变更：先写 migration 方案，**同 commit** 更新 docs/03 §2.1、docs/04 §4.1 与本文件；
 > 迁移 append-only，禁止修改已发布 migration（§2 防线三变更协议）。
+>
+> **缺口的修补顺序（原 docs/36 第七法，2026-11-04 折叠至此）**：任何生命周期/轨迹缺口按
+> **A0 确定性契约 → A1 生命周期可观测性 → A2 事件研究 → A3 schema 设计**推进，**禁止跳步直接改 schema**；
+> 已闭合：L6（`source_signal_id`，0021）、A0（三路径一致，2026-10-29）。未闭合：L1/L2/L3（见 03 §2.1「剩余缺口」）、
+> L4（800 根窗口左截断）、L5（无逻辑实例 id，0029 只做到身份键唯一化）、L7（出口分解）、L8（5.83% 口径，见 00 §5.1）。
+> 缺口原账与验收原顺序见 [归档 36](archive/36-algorithm-brain-charter.md) §七。
 
 ### 3.2 接口一致性（编译期）
 
@@ -173,7 +179,7 @@ scripts/
 
 月末「文档对账」追加以下检查：
 
-- docs/00 §3.6 的实现状态与实际代码一致；`ConfirmDays=3` 是冻结引擎常量，不再检查已作废的 `box.period` 参数化待办。
+- docs/00 §3.6 十一维表的「现行规则或实现边界」列与实际代码一致；`ConfirmDays=3` 是冻结引擎常量，不再检查已作废的 `box.period` 参数化待办。
 - docs/01 §10.3 档位定义与 `internal/planner` 的 sizing_basis 分档逻辑一致。
 - docs/03 §6.1 已落地字段清单与**实际 `reason_json` 键集合**一致（2026-10-26 已补入 `regime` 缺项；对账方法：任取一年库 `SELECT reason_json FROM plan_order WHERE leg_no=1 LIMIT 100`，求键的并集与清单比对）。
 - 当前执行状态以 docs/29 为准；docs/archive/05-task-breakdown.md 与 E17 状态文件仅作为历史证据，不再维护为现行队列。
