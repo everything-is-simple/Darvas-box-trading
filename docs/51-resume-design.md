@@ -122,6 +122,11 @@ else:
 
 **引擎 hash 校验**：`os.Executable()` 的 sha256 与 `LatestBaseline().engineSHA` 比。若换二进制 → 拒绝续跑（HARD① 铁律）。
 
+**参数冲突校验（V6-3，2026-11-04 补）**：续跑不改参数，若 CLI 带了 `--set` 且与库内已生效值不一致，
+`resumeRegime` 在指纹校验**之前**先逐键比对 override，冲突即拒绝（报「续跑不允许改参数」）。
+否则「用户以为改了参数、实际静默忽略」——旧实现 resume 分支完全不用 `o.ParamOverrides`，
+V6-3 无法经 CLI 触发，是真实缺口。与库内一致（或未带 `--set`）才放行。
+
 ### 4.3 cmd/darvas 层：加 `--resume-run` 开关
 
 main.go 的 backtest 子命令：

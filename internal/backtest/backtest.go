@@ -264,15 +264,30 @@ func resumeRegime(o Options, scratch string, days []string) ([]string, error) {
 	}
 	defer st.Close()
 
+	// 0. 参数覆盖冲突校验（docs/51 V6-3）：续跑不改参数，若 CLI 带了 --set 且与库内
+	// 已生效值不一致，即拒绝续跑（防"用户以为改了参数、实际静默忽略"的串基线）。
+	params, err := st.ParamRepo.All()
+	if err != nil {
+		return nil, fmt.Errorf("读当前参数算指纹: %w", err)
+	}
+	if len(o.ParamOverrides) > 0 {
+		var conflicts []string
+		for k, v := range o.ParamOverrides {
+			if cur, ok := params[k]; ok && cur != v {
+				conflicts = append(conflicts, fmt.Sprintf("%s=%s(库内=%s)", k, v, cur))
+			}
+		}
+		if len(conflicts) > 0 {
+			sort.Strings(conflicts)
+			return nil, fmt.Errorf("续跑不允许改参数（--set 与库内已生效值冲突）：%s（改参数须删库重建，勿串基线）",
+				strings.Join(conflicts, ", "))
+		}
+	}
+
 	// 1. 基线身份校验：本库 latest=1 的指纹/引擎hash，与本次 CLI 实际状态对比
 	base, err := st.LatestBaseline()
 	if err != nil {
 		return nil, fmt.Errorf("读基线身份（续跑须先有身份，勿用未记录身份的库）: %w", err)
-	}
-	// 当前 param 表指纹（续跑不改参数，直接读 scratch 现状态）
-	params, err := st.ParamRepo.All()
-	if err != nil {
-		return nil, fmt.Errorf("读当前参数算指纹: %w", err)
 	}
 	curFp := store.ParamFingerprint(params)
 	if curFp != base.ParamFingerprint {

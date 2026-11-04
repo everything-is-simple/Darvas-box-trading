@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -336,6 +337,50 @@ func TestResumeRejectsNoBaseline(t *testing.T) {
 	days := []string{d(1), d(2), d(3)}
 	if _, err := resumeRegime(o, scratch, days); err == nil {
 		t.Fatal("无基线身份的 scratch 续跑应报错，得到 nil")
+	}
+}
+
+// TestResumeRejectsParamConflict 续跑安全闸（docs/51 V6-3）：带 --set 且与库内已生效值
+// 冲突时拒绝续跑，防"用户以为改了参数、实际静默忽略"的串基线。
+func TestResumeRejectsParamConflict(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.db")
+	buildSyntheticSource(t, src)
+	scratch := filepath.Join(dir, "bt_cont.db")
+
+	// 引导 scratch 并记录基线身份（阶段 B），库内 param 已有 pool.max_hold 等值
+	if err := Bootstrap(src, scratch, "2026-07-01", false); err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	st, err := store.Open(scratch)
+	if err != nil {
+		t.Fatalf("open scratch: %v", err)
+	}
+	if err := st.ParamRepo.Set("pool.max_hold", "14"); err != nil {
+		t.Fatalf("set param: %v", err)
+	}
+	if _, err := st.RecordBaseline("0.5.0-test", ""); err != nil {
+		t.Fatalf("record baseline: %v", err)
+	}
+	st.Close()
+
+	o := Options{
+		From: "2026-07-01", To: "2026-07-30", SrcDB: src, ScratchDB: scratch,
+		ParamOverrides: map[string]string{"pool.max_hold": "7"}, // 与库内 14 冲突
+	}
+	days := []string{d(1), d(2), d(3)}
+	if _, err := resumeRegime(o, scratch, days); err == nil {
+		t.Fatal("参数冲突的续跑应报错，得到 nil")
+	}
+
+	// 与库内一致的 --set 应越过参数冲突校验（不再报"参数冲突"，而是走到后续
+	// "读断点"——本 scratch 未跑过回放，daily_run 为空，报"无完整回放日"即证明
+	// 参数冲突闸门已放行）。
+	o.ParamOverrides = map[string]string{"pool.max_hold": "14"}
+	if _, err := resumeRegime(o, scratch, days); err == nil {
+		t.Fatal("应报'无完整回放日'（证明越过了参数冲突闸门），得到 nil")
+	} else if !strings.Contains(err.Error(), "无任何完整回放日") {
+		t.Fatalf("一致参数应越过冲突校验、卡在断点读取，得到 %v", err)
 	}
 }
 
