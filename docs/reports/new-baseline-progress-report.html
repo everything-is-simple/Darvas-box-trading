@@ -3,386 +3,159 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>新基线（adj 模式）长跑进度与实验设计报告</title>
+<title>新基线长跑进度报告 · 2026-11-05 12:05</title>
 <style>
-  :root {
-    --bg: #ffffff; --surface: #f7f8fa; --page: #eef0f3;
-    --text: #1a1d21; --muted: #6b7280; --hint: #9ca3af;
-    --border: rgba(0,0,0,0.10); --border2: rgba(0,0,0,0.22);
-    --red: #d63031; --green: #16a34a; --blue: #185fa5; --amber: #ba7517;
-    --info-bg: #e6f1fb; --danger-bg: #fcebeb; --success-bg: #eaf3de; --warn-bg: #faeeda;
+  :root{
+    --bg:#f7f8fa; --card:#ffffff; --ink:#1a1d23; --muted:#6b7280;
+    --line:#e5e7eb; --up:#d63031; --down:#16a34a; --accent:#185fa5; --warn:#ba7517;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-    background: var(--page); color: var(--text); line-height: 1.6; font-size: 14px;
-  }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 64px; }
-  header.report-head {
-    background: var(--bg); border: 0.5px solid var(--border); border-radius: 12px;
-    padding: 28px 32px; margin-bottom: 24px;
-  }
-  .kicker { font-size: 12px; color: var(--blue); letter-spacing: 1px; margin: 0 0 8px; }
-  h1 { font-size: 22px; font-weight: 500; margin: 0 0 8px; }
-  .sub { color: var(--muted); font-size: 13px; margin: 0; }
-  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-  .badge {
-    font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 0.5px solid var(--border2);
-    background: var(--surface);
-  }
-  .badge.red { background: var(--danger-bg); color: var(--red); border-color: rgba(214,48,49,.3); }
-  .badge.green { background: var(--success-bg); color: var(--green); border-color: rgba(22,163,74,.3); }
-  .badge.blue { background: var(--info-bg); color: var(--blue); border-color: rgba(24,95,165,.3); }
-  h2 { font-size: 17px; font-weight: 500; margin: 40px 0 16px; padding-left: 10px; border-left: 3px solid var(--blue); }
-  h3 { font-size: 15px; font-weight: 500; margin: 28px 0 12px; }
-  .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 20px; }
-  .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
-  .metric { background: var(--surface); border-radius: 8px; padding: 14px 16px; }
-  .metric .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-  .metric .num { font-size: 22px; font-weight: 500; }
-  .metric .sub-num { font-size: 12px; color: var(--hint); margin-top: 2px; }
-  .pos { color: var(--red); }
-  .neg { color: var(--green); }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { padding: 8px 10px; text-align: right; border-bottom: 0.5px solid var(--border); white-space: nowrap; }
-  th:first-child, td:first-child { text-align: left; }
-  th { color: var(--muted); font-weight: 500; border-bottom: 0.5px solid var(--border2); }
-  tr.tot td { border-top: 2px solid var(--border2); font-weight: 500; background: var(--surface); }
-  .callout { border-radius: 8px; padding: 14px 16px; margin: 16px 0; font-size: 13px; }
-  .callout.warn { background: var(--warn-bg); color: #633806; }
-  .callout.info { background: var(--info-bg); color: #0c447c; }
-  .callout.danger { background: var(--danger-bg); color: #791f1f; }
-  .param-domain { margin-bottom: 18px; }
-  .param-domain h4 { font-size: 13px; font-weight: 500; color: var(--blue); margin: 0 0 8px; }
-  .param-chip { display: inline-block; font-family: "SF Mono", "Consolas", monospace; font-size: 12px;
-    background: var(--surface); border: 0.5px solid var(--border); border-radius: 6px;
-    padding: 4px 8px; margin: 3px 4px 3px 0; }
-  .param-chip .v { color: var(--blue); }
-  .param-chip.dead { text-decoration: line-through; color: var(--hint); }
-  .param-chip.dead .v { color: var(--hint); }
-  .legend { font-size: 12px; color: var(--muted); margin: 8px 0 16px; }
-  .chart-box { position: relative; width: 100%; height: 320px; margin: 12px 0 8px; }
-  .chart-box.tall { height: 380px; }
-  .order-table .seq { font-weight: 500; color: var(--blue); }
-  .tag { font-size: 11px; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
-  .tag.r { background: var(--danger-bg); color: var(--red); }
-  .tag.g { background: var(--success-bg); color: var(--green); }
-  .tag.b { background: var(--info-bg); color: var(--blue); }
-  .footnote { font-size: 12px; color: var(--hint); margin-top: 8px; }
-  ul { margin: 8px 0; padding-left: 20px; }
-  li { margin: 5px 0; }
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px 20px 64px;background:var(--bg);color:var(--ink);
+       font:15px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 6px;letter-spacing:-.3px;font-weight:550}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:24px;line-height:1.8}
+  code{background:#eef0f3;padding:1px 5px;border-radius:4px;font-size:12px}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}
+  .card{background:var(--card);border:.5px solid var(--line);border-radius:10px;padding:16px 18px}
+  .card .k{font-size:12px;color:var(--muted);margin-bottom:6px}
+  .card .v{font-size:22px;font-weight:600;letter-spacing:-.5px}
+  .card .n{font-size:12px;color:var(--muted);margin-top:4px}
+  h2{font-size:16px;margin:32px 0 12px;padding-bottom:8px;border-bottom:.5px solid var(--line);font-weight:550}
+  table{width:100%;border-collapse:collapse;background:var(--card);
+        border:.5px solid var(--line);border-radius:10px;overflow:hidden;font-size:13.5px}
+  th,td{padding:9px 10px;text-align:right;border-bottom:.5px solid var(--line)}
+  th{background:#f1f3f6;font-weight:600;font-size:12px;color:#374151}
+  td:first-child,th:first-child{text-align:left;font-weight:600}
+  tr:last-child td{border-bottom:none}
+  .pos{color:var(--up)} .neg{color:var(--down)}
+  .bar{height:4px;background:#e5e7eb;border-radius:2px;position:relative;margin-top:8px}
+  .bar i{position:absolute;left:0;top:0;height:4px;background:var(--accent);border-radius:2px}
+  .note{background:#faeeda;border:.5px solid #f0d9a8;border-radius:8px;padding:12px 16px;
+        font-size:13px;color:#7a4d0e;margin:16px 0}
+  .kv{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 28px;font-size:13.5px;
+      background:var(--card);border:.5px solid var(--line);border-radius:10px;padding:16px 20px}
+  .kv div{display:flex;justify-content:space-between;gap:12px}
+  .kv span{color:var(--muted)} .kv b{font-weight:600}
+  ul{padding-left:20px;margin:10px 0} li{margin:8px 0;font-size:14px}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;
+       background:#eef2ff;color:#3730a3;margin-left:6px;vertical-align:middle;font-weight:400}
 </style>
 </head>
 <body>
 <div class="wrap">
 
-<header class="report-head">
-  <p class="kicker">DARVAS BOX · 新基线创建与长跑分析</p>
-  <h1>adj 模式新基线：14 年连续回放进度与实验设计报告</h1>
-  <p class="sub">数据来源：<code>var/bt/base/bt_baseA_cont_adj.db</code>（后复权，data_mode=adj） · 生成时间 2026-11-05 08:57</p>
-  <div class="badges">
-    <span class="badge blue">进度 54.1%（1,832 / 3,388 交易日）</span>
-    <span class="badge blue">当前回放至 2012-07-19</span>
-    <span class="badge blue">基线 ID：2026-11-05-newhigh-ladder-v1</span>
-    <span class="badge">engine_sha256 72474597…</span>
-    <span class="badge">42 键入库 + 7 键代码默认 = 49 键</span>
-  </div>
-</header>
-
-<!-- ================= 一、量化进度 ================= -->
-<h2>一、长跑进度量化</h2>
-<div class="card">
-  <div class="metric-grid">
-    <div class="metric"><div class="label">回放进度</div><div class="num">54.1%</div><div class="sub-num">1,832 / 3,388 交易日</div></div>
-    <div class="metric"><div class="label">剩余交易日</div><div class="num">1,556</div><div class="sub-num">约 2012-07 → 2018-12</div></div>
-    <div class="metric"><div class="label">回放速率</div><div class="num">6.9 日/分</div><div class="sub-num">预计 12:30–13:00 收尾</div></div>
-    <div class="metric"><div class="label">已平仓笔数</div><div class="num">561</div><div class="sub-num">另有 4 笔在仓</div></div>
-  </div>
-  <p>截至 2012-07-19，账本已累计 <strong>561 笔平仓</strong>、<strong>565 条买腿</strong>（最大持仓腿数 = 1，印证阶梯制只分首买额度、不产生加仓）。身份锚已落库：<code>baseline_id=2026-11-05-newhigh-ladder-v1</code>、<code>data_mode=adj</code>、<code>engine_sha256=72474597…</code>、42 键参数指纹。</p>
+<h1>新基线长跑进度报告</h1>
+<div class="sub">
+  库 <code>var/bt/base/bt_baseA_cont_adj.db</code> · 引擎 <code>bin/darvas-dev.exe</code> sha <code>72474597…</code><br>
+  基线身份 <code>2026-11-05-newhigh-ladder-v1</code> · 数据口径 <b>adj</b> · 快照时间 2026-11-05 12:05
 </div>
 
-<div class="card">
-  <h3>回放进度条（2005–2018 全窗）</h3>
-  <div class="chart-box" style="height: 140px;">
-    <canvas id="progressChart" role="img" aria-label="回放进度条">进度 54.1%</canvas>
+<div class="cards">
+  <div class="card">
+    <div class="k">交易日进度</div>
+    <div class="v">2,342 / 3,402</div>
+    <div class="n">68.84% · 至 2014-08-26</div>
+    <div class="bar"><i style="width:68.84%"></i></div>
   </div>
-  <div class="footnote">阴影区为已回放段（2005-01 至 2012-07），空白区为待回放段（2012-07 至 2018-12）。</div>
-</div>
-
-<!-- ================= 二、按年 ================= -->
-<h2>二、按年账本（已实现口径）</h2>
-<div class="card">
-  <table>
-    <thead><tr><th>年份</th><th>平仓</th><th>胜率</th><th>已实现盈亏</th><th>均盈</th><th>均亏</th><th>赔率</th><th>保本胜率</th><th>PF</th><th>剔除前三</th></tr></thead>
-    <tbody>
-      <tr><td>2005</td><td>66</td><td>13.6%</td><td class="neg">−29,483</td><td>+1,370</td><td>−734</td><td>1.87</td><td>34.9%</td><td>0.29</td><td class="neg">−38,897</td></tr>
-      <tr><td>2006</td><td>123</td><td>26.8%</td><td class="pos">+51,700</td><td>+7,064</td><td>−2,016</td><td>3.50</td><td>22.2%</td><td>1.28</td><td class="neg">−56,490</td></tr>
-      <tr><td>2007</td><td>54</td><td>40.7%</td><td class="pos">+777,488</td><td>+42,739</td><td>−5,087</td><td>8.40</td><td>10.6%</td><td>5.78</td><td class="pos">+475,110</td></tr>
-      <tr><td>2008</td><td>11</td><td>9.1%</td><td class="pos">+55,137</td><td>+90,222</td><td>−3,509</td><td>25.72</td><td>3.7%</td><td>2.57</td><td class="neg">−34,301</td></tr>
-      <tr><td>2009</td><td>80</td><td>17.5%</td><td class="pos">+48,410</td><td>+16,263</td><td>−2,716</td><td>5.99</td><td>14.3%</td><td>1.27</td><td class="neg">−106,172</td></tr>
-      <tr><td>2010</td><td>107</td><td>15.0%</td><td class="neg">−144</td><td>+12,571</td><td>−2,212</td><td>5.68</td><td>15.0%</td><td>1.00</td><td class="neg">−126,081</td></tr>
-      <tr><td>2011</td><td>79</td><td>13.9%</td><td class="pos">+14,143</td><td>+12,762</td><td>−1,856</td><td>6.87</td><td>12.7%</td><td>1.11</td><td class="neg">−77,268</td></tr>
-      <tr><td>2012*</td><td>41</td><td>9.8%</td><td class="neg">−40,472</td><td>+1,076</td><td>−1,210</td><td>0.89</td><td>52.9%</td><td>0.10</td><td class="neg">−44,636</td></tr>
-      <tr class="tot"><td>合计</td><td>561</td><td>19.6%</td><td class="pos">+876,780</td><td>+16,813</td><td>−2,157</td><td>7.80</td><td>11.4%</td><td>1.90</td><td class="pos">+541,387</td></tr>
-    </tbody>
-  </table>
-  <p class="footnote">*2012 只回放到 7 月，为不完整年。盈亏按「平仓日」归年；权益按「年末」归年，跨年持仓会造成两者口径错位（浮盈未兑现，非账错）。</p>
-  <div class="callout info">
-    <strong>三条稳定结论（561 笔）：</strong>
-    <ul>
-      <li><strong>正 edge 只在赔率（7.80:1），不在胜率（19.6%）</strong>——保本胜率只需 11.4%，安全垫 8.2pp。平均每笔赚 +16,813、亏 −2,157，赔率结构是唯一成立的赚钱来源。</li>
-      <li><strong>2007 一年 = 88.7% 的已实现利润</strong>（+777,488 / +876,780），其余七年剔除前三后全部为负或打平。</li>
-      <li><strong>前 10 笔 = 总账 101.4%</strong>——即前 10 笔合计已超过全账本总盈利，其余 551 笔净亏。利润高度集中，风险敞口极大。</li>
-    </ul>
+  <div class="card">
+    <div class="k">权益</div>
+    <div class="v pos">200.1 万</div>
+    <div class="n">×2.001（起始 100 万）</div>
+  </div>
+  <div class="card">
+    <div class="k">年化 CAGR</div>
+    <div class="v">7.46%</div>
+    <div class="n">9.64 年 · 夏普 0.67</div>
+  </div>
+  <div class="card">
+    <div class="k">最大回撤</div>
+    <div class="v neg">−22.0%</div>
+    <div class="n">2007 年内 · 峰值 232.3 万</div>
   </div>
 </div>
 
-<div class="card">
-  <h3>按年已实现盈亏（红=正，绿=负）</h3>
-  <div class="chart-box">
-    <canvas id="yearChart" role="img" aria-label="按年已实现盈亏柱状图"></canvas>
-  </div>
+<h2>一、按年账本（已实现口径）</h2>
+<table>
+  <thead><tr>
+    <th>年</th><th>笔数</th><th>已实现</th><th>胜率%</th><th>95% CI</th>
+    <th>赔率</th><th>PF</th><th>剔前3</th><th>年内MDD</th><th>均仓%</th><th>年收益%</th>
+  </tr></thead>
+  <tbody>
+    <tr><td>2005</td><td>66</td><td class="neg">−29,483</td><td>13.6</td><td>7.3–23.9</td><td>1.87</td><td>0.29</td><td class="neg">−38,897</td><td>−3.7</td><td>8.1</td><td class="neg">−2.5</td></tr>
+    <tr><td>2006</td><td>123</td><td class="pos">+51,700</td><td>26.8</td><td>19.9–35.1</td><td>3.50</td><td>1.28</td><td class="neg">−56,490</td><td>−9.5</td><td>42.8</td><td class="pos">+23.6</td></tr>
+    <tr><td>2007</td><td>54</td><td class="pos">+777,488</td><td>40.7</td><td>28.7–54.0</td><td>8.40</td><td>5.78</td><td class="pos">+475,110</td><td>−22.0</td><td>47.9</td><td class="pos">+58.2</td></tr>
+    <tr><td>2008</td><td>11</td><td class="pos">+55,137</td><td>9.1</td><td>1.6–35.4</td><td>25.72</td><td>2.57</td><td class="neg">−34,301</td><td>−3.7</td><td>1.1</td><td class="neg">−2.7</td></tr>
+    <tr><td>2009</td><td>80</td><td class="pos">+48,410</td><td>17.5</td><td>10.8–27.1</td><td>5.99</td><td>1.27</td><td class="neg">−106,172</td><td>−11.4</td><td>31.1</td><td class="pos">+8.3</td></tr>
+    <tr><td>2010</td><td>107</td><td class="neg">−144</td><td>15.0</td><td>9.6–22.6</td><td>5.68</td><td>1.00</td><td class="neg">−126,081</td><td>−9.9</td><td>23.1</td><td class="neg">−2.1</td></tr>
+    <tr><td>2011</td><td>79</td><td class="pos">+14,143</td><td>13.9</td><td>8.0–23.0</td><td>6.87</td><td>1.11</td><td class="neg">−77,268</td><td>−7.8</td><td>15.2</td><td class="neg">−2.5</td></tr>
+    <tr><td>2012</td><td>71</td><td class="neg">−13,965</td><td>12.7</td><td>6.9–22.1</td><td>5.54</td><td>0.80</td><td class="neg">−62,402</td><td>−3.1</td><td>9.7</td><td class="pos">+1.1</td></tr>
+    <tr><td>2013</td><td>132</td><td class="neg">−72,920</td><td>22.7</td><td>16.5–30.4</td><td>2.52</td><td>0.74</td><td class="neg">−186,150</td><td>−10.7</td><td>32.9</td><td class="neg">−3.0</td></tr>
+    <tr><td>2014<span class="tag">年中</span></td><td>57</td><td class="neg">−15,944</td><td>21.1</td><td>—</td><td>3.12</td><td>0.85</td><td class="neg">−88,159</td><td>−5.7</td><td>32.0</td><td class="pos">+6.4</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+<b>2014 是年中口径，不能当年度结论。</b>权益变动与已实现之间的差额（+13.6 万）全是未平仓浮盈，年末结算前随时翻转。
+同理，任何未跑完整年的"转正"都只是临时数。
 </div>
 
-<div class="card">
-  <h3>年末权益（单位：元，起始 100 万）</h3>
-  <div class="chart-box">
-    <canvas id="equityChart" role="img" aria-label="年末权益折线图"></canvas>
-  </div>
-  <div class="footnote">年末权益：975,262 → 1,205,177 → 1,906,810 → 1,854,842 → 2,009,383 → 1,967,135 → 1,917,252 → 1,959,846。最大回撤 −22.0%。</div>
+<h2>二、概率统计（n = 780 笔已平仓）</h2>
+<div class="kv">
+  <div><span>胜率</span><b>20.1%　CI [17.5%, 23.1%]</b></div>
+  <div><span>赔率（均盈 / 均亏）</span><b>6.28 : 1</b></div>
+  <div><span>保本胜率 1/(1+赔率)</span><b>13.7%</b></div>
+  <div><span>胜率余量</span><b class="pos">+6.4pp</b></div>
+  <div><span>PF（总盈 / 总亏）</span><b>1.58</b></div>
+  <div><span>均笔 / 中位笔</span><b>+1,039 / −884</b></div>
+  <div><span>均笔 95% CI（t 分布）</span><b>[+156, +1,921]</b></div>
+  <div><span>均笔 95% CI（bootstrap）</span><b>[+198, +1,961]</b></div>
+  <div><span>偏度</span><b>5.56（极度右偏）</b></div>
+  <div><span>分位 p5 / p25 / p75 / p95</span><b>−7,274 / −2,233 / −204 / +15,206</b></div>
+  <div><span>剔前 3 笔</span><b class="pos">+474,690</b></div>
+  <div><span>剔前 10 笔</span><b class="neg">−79,259</b></div>
+  <div><span>前 1% 笔贡献总盈利</span><b>92.8%</b></div>
+  <div><span>前 5% 笔贡献</span><b>216.2%（其余合计为负）</b></div>
+  <div><span>年度正负</span><b>5 / 10，二项检验 p = 1.000</b></div>
+  <div><span>剔除 2007 后九年合计</span><b class="pos">+36,027</b></div>
 </div>
 
-<!-- ================= 三、出口分解 ================= -->
-<h2>三、出口分解：利润 100% 来自「抬升止损」</h2>
-<div class="card">
-  <table>
-    <thead><tr><th>出口类型</th><th>笔数</th><th>占比</th><th>合计盈亏</th><th>均笔</th></tr></thead>
-    <tbody>
-      <tr><td>stop（抬升止损）</td><td>144</td><td>25.7%</td><td class="pos">+1,453,897</td><td>+10,097</td></tr>
-      <tr><td>stop_box（跌破箱下轨）</td><td>23</td><td>4.1%</td><td class="pos">+191,425</td><td>+8,323</td></tr>
-      <tr><td>failed_breakout</td><td>2</td><td>0.4%</td><td class="neg">−9,223</td><td>−4,611</td></tr>
-      <tr><td>time_stop（2 日不赚就走）</td><td>392</td><td>69.9%</td><td class="neg">−759,320</td><td>−1,937</td></tr>
-    </tbody>
-  </table>
-  <div class="callout warn">
-    <strong>出口侧一正一负：</strong><code>stop</code> 抬升止损贡献 <strong>+145.4 万</strong>（利润的 100%），而 <code>time_stop</code> 时间止损占 <strong>69.9% 的出口、净 −75.9 万</strong>。两者相互抵消后净 +69.5 万，是总账的主要构成。
-  </div>
+<h2>三、出口分解（十年来结构未变）</h2>
+<table>
+  <thead><tr><th>出口</th><th>笔数</th><th>占比</th><th>合计</th><th>均笔</th><th>胜率</th></tr></thead>
+  <tbody>
+    <tr><td>stop（移动止损止盈）</td><td>194</td><td>24.9%</td><td class="pos">+1,746,209</td><td class="pos">+9,001</td><td>69.6%</td></tr>
+    <tr><td>stop_box（箱体下轨）</td><td>34</td><td>4.4%</td><td class="pos">+202,678</td><td class="pos">+5,961</td><td>64.7%</td></tr>
+    <tr><td>time_stop（陈旧无利润）</td><td>549</td><td>70.4%</td><td class="neg">−1,126,149</td><td class="neg">−2,051</td><td>0.0%</td></tr>
+    <tr><td>failed_breakout</td><td>3</td><td>0.4%</td><td class="neg">−12,654</td><td class="neg">−4,218</td><td>0.0%</td></tr>
+  </tbody>
+</table>
+
+<h2>四、三条结构性结论</h2>
+<ul>
+  <li><b>赚钱机器只有一个：<code>stop</code>。</b>194 笔移动止损净赚 174.6 万，
+      而 <code>time_stop</code> 549 笔（占全部平仓 70.4%）十年<b>没有一年为正</b>，合计 −112.6 万。</li>
+  <li><b>全部利润来自长持。</b>持有 &gt; 30 天的 160 笔（20.5%）合计 +190.8 万；其余 615 笔合计 −109.6 万。
+      年度笔数与年度已实现的 Spearman ρ = <b>−0.358</b>——交易越频繁越亏。</li>
+  <li><b>利润高度依赖单一年份。</b>2007 一年 +77.7 万 = 十年总量的 95.6%；剔除 2007 后九年只剩 +3.6 万。
+      年度重抽样 2 万次的 5% 分位为 <b>−9.5 万</b>，即"十年总账为负"的概率约 <b>13.1%</b>。</li>
+</ul>
+
+<h2>五、运行状态</h2>
+<div class="kv">
+  <div><span>窗口</span><b>2005-01-01 ~ 2018-12-31（3,402 交易日）</b></div>
+  <div><span>剩余</span><b>1,060 交易日（2014-08-27 起）</b></div>
+  <div><span>实测速率</span><b>约 2.2 交易日 / 分</b></div>
+  <div><span>预计收尾</span><b>今晚 20:00–21:00</b></div>
+  <div><span>在仓</span><b>13 笔 · 当前仓位 32%</b></div>
+  <div><span>参数</span><b>49 键（docs/44 唯一事实源）</b></div>
 </div>
 
-<div class="card">
-  <h3>出口类型构成（按笔数）</h3>
-  <div class="chart-box" style="height: 260px;">
-    <canvas id="exitChart" role="img" aria-label="出口类型构成饼图"></canvas>
-  </div>
+<div class="note" style="background:#e6f1fb;border-color:#bcd9f0;color:#12456f">
+续跑机制：<code>--resume-run</code> 校验<b>参数指纹 + 数据口径 + 引擎 sha256</b> 三项一致后，
+从「六任务全 ok 的最大日期」接着跑，已完成的日子不重跑、不重复记账。进程被杀可随时重新拉起，账本幂等。
 </div>
 
-<!-- ================= 四、参数清单 ================= -->
-<h2>四、新基线放入的参数（42 入库 + 7 代码默认 = 49 键）</h2>
-<div class="card">
-  <p>下面是基线快照中的实际参数，按域分组。划线项为「死参数」（当前零曝露、不影响成交）。</p>
-
-  <div class="param-domain">
-    <h4>仓位 / 阶梯（12 键）</h4>
-    <span class="param-chip">pos.unit = <span class="v">0.02</span></span>
-    <span class="param-chip">pos.newhigh_ladder = <span class="v">on</span></span>
-    <span class="param-chip">pos.newhigh.lookback = <span class="v">252</span></span>
-    <span class="param-chip">pos.newhigh.cutoff = <span class="v">40</span></span>
-    <span class="param-chip">units.t1..t4 = <span class="v">3 / 2 / 1 / 0.5</span></span>
-    <span class="param-chip">pos.equity_gate = <span class="v">off</span></span>
-    <span class="param-chip dead">pos.equity_limit = <span class="v">0.5</span></span>
-    <span class="param-chip dead">pos.single_limit = <span class="v">0.08</span></span>
-    <span class="param-chip dead">pos.regime_scale.mode = <span class="v">off</span></span>
-  </div>
-
-  <div class="param-domain">
-    <h4>箱体 / 买卖（7 键）</h4>
-    <span class="param-chip">box.volmult = <span class="v">2.0</span></span>
-    <span class="param-chip">box.volwindow = <span class="v">50</span></span>
-    <span class="param-chip">box.min_width = <span class="v">0.05</span></span>
-    <span class="param-chip">box.max_growth_days = <span class="v">6</span></span>
-    <span class="param-chip">buy.premium = <span class="v">1.03</span></span>
-    <span class="param-chip">sell.discount = <span class="v">0.97</span></span>
-    <span class="param-chip">position.staledays = <span class="v">2</span></span>
-  </div>
-
-  <div class="param-domain">
-    <h4>股票池 / 筛选（9 键）</h4>
-    <span class="param-chip">pool.blacklist_months = <span class="v">12</span></span>
-    <span class="param-chip">pool.min_watch_days = <span class="v">3</span></span>
-    <span class="param-chip">pool.maxwatch = <span class="v">8</span></span>
-    <span class="param-chip">pool.flatboxmax = <span class="v">4</span></span>
-    <span class="param-chip">pool.max_hold = <span class="v">14</span></span>
-    <span class="param-chip">screen.turnover = <span class="v">5000 万</span></span>
-    <span class="param-chip">screen.rswindow = <span class="v">20</span></span>
-    <span class="param-chip">screen.rs_excess_min = <span class="v">0.20</span></span>
-    <span class="param-chip">screen.latedays = <span class="v">4</span></span>
-  </div>
-
-  <div class="param-domain">
-    <h4>闸门 / 体制（10 键）</h4>
-    <span class="param-chip">gate.ma60.mode = <span class="v">stop</span></span>
-    <span class="param-chip">gate.ma60.index = <span class="v">sh000001</span></span>
-    <span class="param-chip dead">regime.breadth.* = <span class="v">0.40/0.55/3/20/60（5 键死）</span></span>
-    <span class="param-chip dead">regime.a.* = <span class="v">60/1.002/0.998（仅写日志标签）</span></span>
-  </div>
-
-  <div class="param-domain">
-    <h4>撮合 / 费用（8 键）</h4>
-    <span class="param-chip">match.slippage = <span class="v">0.002</span></span>
-    <span class="param-chip">match.max_entry_gap = <span class="v">1.05</span></span>
-    <span class="param-chip">佣金 = <span class="v">0.00025 / 最低 5</span></span>
-    <span class="param-chip">印花税 = <span class="v">0.001</span></span>
-    <span class="param-chip">过户费 = <span class="v">0.00001</span></span>
-    <span class="param-chip">equity.base = <span class="v">1,000,000</span></span>
-    <span class="param-chip">tdx.root = <span class="v">自动探测</span></span>
-  </div>
-
-  <div class="callout danger">
-    <strong>死参数提示：</strong><code>pos.equity_limit=0.5</code> / <code>pos.single_limit=0.08</code> / <code>regime.breadth.*</code> 5 键 / <code>regime.a.*</code> 当前<strong>零曝露</strong>——<code>equity_gate=off</code> 使 <code>capFor()</code> 返回 +Inf，仓位上限从不生效；真正约束是 <code>max_hold=14</code> 槽位（峰值仓位 84.5% ≈ 14 × t1 的 6%）。但 <strong>E18 一旦开闸，这些就是核心</strong>，不可当永久免做。
-  </div>
 </div>
-
-<!-- ================= 五、阶梯四档 ================= -->
-<h2>五、阶梯四档梯度：t4 是唯一持续亏损档</h2>
-<div class="card">
-  <p>用 <code>Σ(leg.qty × leg.price) / (当日权益 × 2%)</code> 反算单位数，实测 2.97 / 2.00 / 0.99 / 0.49，与配置 3/2/1/0.5 完全吻合——<strong>阶梯分的是首买额度，不是加仓次数</strong>（0017 明文「一律不加码」，1 腿是设计）。</p>
-  <table>
-    <thead><tr><th>档位（距 52 周高点）</th><th>n</th><th>占比</th><th>胜率</th><th>合计盈亏</th><th>每单位净利</th><th>PF</th><th>剔除前三</th></tr></thead>
-    <tbody>
-      <tr><td>t1（3 单位）</td><td>137</td><td>24.4%</td><td>26.3%</td><td class="pos">+587,738</td><td class="pos">+1,448</td><td>2.13</td><td class="pos">+271,674</td></tr>
-      <tr><td>t2（2 单位）</td><td>78</td><td>13.9%</td><td>23.1%</td><td class="pos">+160,916</td><td class="pos">+1,026</td><td>1.98</td><td class="neg">−46,222</td></tr>
-      <tr><td>t3（1 单位）</td><td>115</td><td>20.5%</td><td>24.3%</td><td class="pos">+191,324</td><td class="pos">+1,687</td><td>2.44</td><td class="pos">+12,694</td></tr>
-      <tr><td class="pos">t4（0.5 单位）</td><td>231</td><td>41.2%</td><td>12.1%</td><td class="neg">−63,198</td><td class="neg">−565</td><td>0.59</td><td class="neg">−103,234</td></tr>
-    </tbody>
-  </table>
-  <div class="callout danger">
-    <strong>关键发现：</strong><code>t4</code> 档（距 52 周高点最远、最弱的一档）是四档里<strong>唯一持续亏损</strong>的——<strong>231 笔 / 占 41.2% 笔数 / 胜率仅 12.1% / 合计 −63,198 / PF 仅 0.59</strong>。它从上一轮 −13,467 一路扩大到 −63,198（2011、2012 新增平仓持续拖累）。而 t1/t2/t3 三档 PF 全部 &gt;1.9。每单位净利 t3(+1,687) &gt; t1(+1,448) &gt; t2(+1,026) &gt; <strong>t4(−565)</strong>，额度却给了 t4 最多的笔数。这就是「删掉一档就变好」的全表唯一成立表述。
-  </div>
-</div>
-
-<div class="card">
-  <h3>阶梯四档每单位净利（元）</h3>
-  <div class="chart-box">
-    <canvas id="tierChart" role="img" aria-label="阶梯四档每单位净利柱状图"></canvas>
-  </div>
-</div>
-
-<!-- ================= 六、重点实验 ================= -->
-<h2>六、从基线数据出发的重点实验参数</h2>
-<div class="card">
-  <p>按「零回测能量出的可改善金额」排序，不按拦截次数。</p>
-  <table class="order-table">
-    <thead><tr><th>序</th><th>实验</th><th>参数（现值）</th><th>依据（基线实测）</th><th>臂</th></tr></thead>
-    <tbody>
-      <tr><td class="seq">1</td><td>E19-21b 阶梯档位边界</td><td>pos.newhigh.cutoff=40</td><td>t4 负期望、占 41.2% 笔数、PF 0.59</td><td>40/30/20 + 三档</td></tr>
-      <tr><td class="seq">2</td><td>E19-01 阶梯单位比例</td><td>units.t1..t4=3/2/1/0.5</td><td>t3 每单位 +1,687 只给 1 单位，t2 +1,026 给 2 单位</td><td>3 套比例</td></tr>
-      <tr><td class="seq">3</td><td>E19-25 进场偏离上限</td><td>match.max_entry_gap=1.05</td><td>拒单事后 +5.0% &gt; 成交 +3.9%，无追高必亏单调</td><td>1.05/1.08/1.10</td></tr>
-      <tr><td class="seq">4</td><td>E19-12 MA60 闸门</td><td>gate.ma60.mode=stop</td><td>拦掉票跑赢指数 4.4pp，但比成交单差 2.6pp</td><td>off/half/stop</td></tr>
-      <tr><td class="seq">5</td><td>E19-13 成长速度</td><td>box.max_growth_days=6</td><td>2,186 次拦截，LB-4 结论出自 raw</td><td>off/5/6/7/8/10</td></tr>
-      <tr><td class="seq">6</td><td>E19-23 亏损拉黑期</td><td>pool.blacklist_months=12</td><td>16,694 股票·日，真实拉黑仅 136 次</td><td>0/6/12/24</td></tr>
-      <tr><td class="seq">7</td><td>E19-24 入池观察期</td><td>pool.min_watch_days=3</td><td>6,779 次，先分带再定</td><td>0/3/5</td></tr>
-      <tr><td class="seq">8</td><td>E19-15 时间止损</td><td>position.staledays=2</td><td>悬崖在 2→3 天，现行值正确</td><td>仅 =1 验证</td></tr>
-    </tbody>
-  </table>
-</div>
-
-<!-- ================= 七、实验设计修订 ================= -->
-<h2>七、实验设计方案的调整</h2>
-<div class="card">
-  <h3>7.1 已固化的四条判据纪律</h3>
-  <ul>
-    <li><strong>剔前 10 判据：</strong>所有臂必须并列报「剔除前三」与「剔除前十」，<strong>剔除前十为负不得判改善</strong>（前 10 笔 = 101.4% 总账，只剔 3 笔挡不住运气）。</li>
-    <li><strong>逐日轨迹零回测先行：</strong>凡阈值类实验（staledays / cutoff / gap / growth / watch），起跑前先跑逐日轨迹零回测定位拐点——E19-15b 用 20 分钟省了 16 小时回测。</li>
-    <li><strong>单臂单键、串行 scratch：</strong>其余 48 键指纹一致，回测串行、只用 scratch 库。</li>
-    <li><strong>跑完不改判据：</strong>判据预先写死，禁止跑完看结果再挑口径。</li>
-  </ul>
-
-  <h3>7.2 本轮具体修订</h3>
-  <ul>
-    <li><strong>E19-21b / E19-01 升为第 1、2 优先</strong>：t4 档亏损从 −13,467 扩大到 −63,198，PF 跌到 0.59，「删 t4」的证据持续增强。假设从「笼统改单位大小」改为「额度向高每单位收益档倾斜」。</li>
-    <li><strong>E19-25（max_entry_gap）升为第 3</strong>：零回测显示被拒单子事后 +5.0% 优于成交单 +3.9%，P0-2 当年 1.05 的个案依据在 14 年 adj 口径无统计支持；只往上试。</li>
-    <li><strong>E19-12（MA60）降为第 4</strong>：闸门在指数下跌时段关闸是对的，但精度有限，half 臂先验成立。</li>
-    <li><strong>E19-15（staledays）降为验证性单臂</strong>：首次转正日分带显示第 1–2 日 +118.8 万 vs 第 3 日起 −32.6 万，悬崖恰在 2→3 天，现行值正确，只跑 =1 验证。</li>
-    <li><strong>max_hold 降为观察项</strong>：槽位边际质量无单调恶化，且含「牛市」时间混淆，只能当「没证据支持砍槽位」。</li>
-  </ul>
-
-  <div class="callout warn">
-    <strong>工程前置（P3）：</strong>起跑前 <code>base_run.py</code> 需加 <code>--extra-set</code> / <code>--tag</code> 以注入额外参数；<code>resumeRegime</code> 遇 <code>--set</code> 直接报错，每条臂须删库全新起跑，不能拿基线续跑凑数。
-  </div>
-</div>
-
-<!-- ================= 八、结论与下一步 ================= -->
-<h2>八、结论与下一步</h2>
-<div class="card">
-  <div class="callout info">
-    <strong>一句话总结：</strong>新基线（adj 模式）在 54.1% 处已确认三条结构——<strong>赚钱靠赔率不靠胜率</strong>、<strong>利润 100% 来自抬升止损</strong>、<strong>t4 档是唯一持续失血点</strong>。最优先的实验是「砍掉或收窄 t4 档 + 重配阶梯额度」。
-  </div>
-  <p><strong>长跑结束后的顺序：</strong></p>
-  <ol>
-    <li><code>base_cont_check.py</code> 验证 V5（完整性判据覆盖到 2018-12-01 之后）。</li>
-    <li>按新账本重标 <code>docs/48</code> §五特征二判据门槛（旧 ±600 / 3% / 35% 出自旧基线，全部作废）。</li>
-    <li>起跑第 1 项 <strong>E19-21b</strong>（阶梯档位边界）。</li>
-  </ol>
-</div>
-
-<footer style="text-align:center; color:var(--hint); font-size:12px; margin-top:32px;">
-  Darvas-box-trading · adj 模式新基线长跑报告 · 数据截至 2012-07-19（回放 54.1%）
-</footer>
-
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script>
-const RED = '#d63031', GREEN = '#16a34a', BLUE = '#185fa5', AMBER = '#ba7517', GRAY = '#888780';
-
-new Chart(document.getElementById('progressChart'), {
-  type: 'bar',
-  data: { labels: ['回放进度'], datasets: [
-    { label: '已回放', data: [54.1], backgroundColor: BLUE, borderRadius: 4 },
-    { label: '待回放', data: [45.9], backgroundColor: '#e5e7eb', borderRadius: 4 }
-  ]},
-  options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: { x: { stacked: true, max: 100, ticks: { callback: v => v + '%' } }, y: { stacked: true } } }
-});
-
-new Chart(document.getElementById('yearChart'), {
-  type: 'bar',
-  data: { labels: ['2005','2006','2007','2008','2009','2010','2011','2012*'],
-    datasets: [{ label: '已实现盈亏', data: [-29483,51700,777488,55137,48410,-144,14143,-40472],
-      backgroundColor: [-29483,51700,777488,55137,48410,-144,14143,-40472].map(v => v>=0?RED:GREEN), borderRadius: 4 }]},
-  options: { responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: { y: { ticks: { callback: v => (v>=0?'+':'') + (v/10000) + '万' } } } }
-});
-
-new Chart(document.getElementById('equityChart'), {
-  type: 'line',
-  data: { labels: ['2005','2006','2007','2008','2009','2010','2011','2012*'],
-    datasets: [{ label: '年末权益', data: [975262,1205177,1906810,1854842,2009383,1967135,1917252,1959846],
-      borderColor: BLUE, backgroundColor: 'rgba(24,95,165,0.08)', fill: true, tension: 0.3, pointRadius: 4 }]},
-  options: { responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: { y: { ticks: { callback: v => (v/10000).toFixed(0) + '万' } } } }
-});
-
-new Chart(document.getElementById('exitChart'), {
-  type: 'doughnut',
-  data: { labels: ['time_stop 69.9%','stop 25.7%','stop_box 4.1%','failed_breakout 0.4%'],
-    datasets: [{ data: [392,144,23,2], backgroundColor: [AMBER,RED,BLUE,GRAY], borderWidth: 0 }]},
-  options: { responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { position: 'right' } } }
-});
-
-new Chart(document.getElementById('tierChart'), {
-  type: 'bar',
-  data: { labels: ['t1 (3单位)','t2 (2单位)','t3 (1单位)','t4 (0.5单位)'],
-    datasets: [{ label: '每单位净利', data: [1448,1026,1687,-565],
-      backgroundColor: [RED,RED,RED,GREEN], borderRadius: 4 }]},
-  options: { responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: { y: { ticks: { callback: v => (v>=0?'+':'') + v } } } }
-});
-</script>
 </body>
 </html>
