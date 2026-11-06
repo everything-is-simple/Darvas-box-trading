@@ -192,7 +192,7 @@ python scripts/base_ladder_band.py --db var/bt/arms/bt_a1_t4off.db   # 四档：
 | P2 | ⬜ 等 P1 | — |
 | P3 | ⬜ 等 P2 | — |
 | P4 | ⬜ 待 A3 | — |
-| K1 | 🟤 **备跑（2026-11-06 22:00 立项）** | 截尾终点精确核算 = **2018-09-28**（3402 日前推 60 交易日）；比对脚本 `scripts/k1_compare.py` 就绪；起跑命令入 §7.0 |
+| K1 | ✅ **冒烟段通过（2026-11-06 22:50）** | 2005 全窗 vs 截尾（182 日重叠窗口）仓位序列 **0 差异**；建仓成交逐笔一致（qty/cost/stop 全同）。全窗 14 年未验，待拍板是否补全量（18 机时） |
 | K2 | ⬜ 可立即 | — |
 | K3 | ✅ 首版已出 | 51 连亏 / −156,982 / 47.6% 段数≥5 |
 | K4 | ⬜ 待 A3 | — |
@@ -244,12 +244,14 @@ python scripts/base_run.py --cont --from 2005-01-01 --to 2018-09-28 --mirrors A 
   --src var/bt/full_hist_adj.db --exe bin/darvas-dev.exe \
   --db var/bt/arms/bt_k1_trunc.db
 
-# 验收：比对全窗库与截尾库的重叠窗口仓位序列（五字段）
+# 验收：比对全窗库与截尾库的重叠窗口仓位序列（比建仓/清仓「决策」，不比 qty 动态量）
 python scripts/k1_compare.py --full var/bt/base/bt_baseA_cont_adj.db \
   --trunc var/bt/arms/bt_k1_trunc.db --cut 2018-09-28
 ```
 
 通过 → 全窗数字可信，才允许起 D3+D4；不通过 → 前视污染，全窗作废、回滚查引擎。
+
+**冒烟段（已跑，2026-11-06 22:50）**：`bt_k1_full2005.db`（242 日）vs `bt_k1_trunc2005.db`（182 日，截尾 2005-09-30），重叠窗口 **0 差异**。关键修正：`qty` 是动态字段（平仓归零），误报过「前视」，从比对中剔除后通过；建仓成交 `trade_fill` 逐笔一致（sh600150 buy 4000@9.9834、stop_after 9.2769 全同）佐证无前视。全窗 14 年未验。
 
 ### 7.1 中断了怎么续（**不丢一天**）
 

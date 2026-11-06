@@ -8,14 +8,15 @@
 判断依据（见 docs/60 K1 行）：
   仓位序列逐行一致 = 通过；重叠区间任一建仓/清仓/持仓不同 = 前视污染，全窗作废。
 
-比对字段（用户拍板只比这五字段，派生值不比）：
-  position 的 (date, code, qty, opened_date, entry_box_id, closed_date, close_reason)
-  其中 date = 该持仓在当日存在的时间点；qty/opened_date/entry_box_id 刻画「哪一腿」，
+比对字段（前视污染应表现为建仓/清仓「决策」不同，而非动态量不同）：
+  position 的 (code, opened_date, entry_box_id) 刻画「哪一腿建仓」，
   closed_date/close_reason 刻画「何时为何清仓」。
+  **qty 不比**：它是动态字段，仓位平仓后归零（全窗库已平仓→qty=0，
+  截尾库未平仓→qty=建仓量），拿它比会把「截尾边界效应」误报成前视。
 
 实现：对两个库，把 position 展开成「逐日持仓快照」：
   对每笔 position（opened_date ~ closed_date 的每个交易日，未平仓用窗口末日），
-  记 (date, code, qty, opened_date, entry_box_id) 为「在仓标记」；
+  记 (date, code, opened_date, entry_box_id) 为「在仓标记」；
   清仓日额外记 (closed_date, code, close_reason) 为「清仓标记」。
   比对截尾窗口（<= 截尾终点）内的全部标记。
 
@@ -37,9 +38,9 @@ def trade_calendar(c, start="2005-01-01"):
 
 
 def position_marks(c, cutoff):
-    """展开 position 为 (date, code, qty, opened, box) 在仓标记 + (date, code, reason) 清仓标记。
+    """    展开 position 为 (date, code, opened, box) 在仓标记 + (date, code, reason) 清仓标记。
 
-    返回两个 dict：hold[date] -> set of (code,qty,opened,box)；close[date] -> set of (code,reason)。
+    返回两个 dict：hold[date] -> set of (code,opened,box)；close[date] -> set of (code,reason)。
     未平仓持仓（status='open'）其「在仓」持续到 min(closed_date, cutoff)；
     这里只需覆盖 <= cutoff 的交易日，故用 cutoff 截断即可，不引入未来信息。
     """
@@ -62,7 +63,7 @@ def position_marks(c, cutoff):
         for d in cal[i0:]:
             if d > end:
                 break
-            hold[d].add((code, qty, opened, box))
+            hold[d].add((code, opened, box))
         # 清仓标记：仅在清仓日且 <= cutoff
         if closed and closed <= cutoff:
             close[closed].add((code, reason))
