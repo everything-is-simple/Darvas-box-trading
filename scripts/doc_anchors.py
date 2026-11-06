@@ -72,8 +72,10 @@ ANCHORS: list[tuple[str, str, str]] = [
     ("identity_gap", "恒等式差",         "max|total − (cash + market_value)|，单位元"),
     ("band1_n",     "档1 笔数",          "首腿 3 单位（距 52 周高点 ≤5%），±0.35 容差归带"),
     ("band1_pnl",   "档1 净利",          "同上"),
+    ("band1_unit",  "档1 每单位",        "档1 Σpnl / Σ首腿单位"),
     ("band2_n",     "档2 笔数",          "首腿 2 单位（5–10%）"),
     ("band2_pnl",   "档2 净利",          "同上"),
+    ("band2_unit",  "档2 每单位",        "档2 Σpnl / Σ首腿单位"),
     ("band3_n",     "档3 笔数",          "首腿 1 单位（10–20%）"),
     ("band3_pnl",   "档3 净利",          "同上"),
     ("band3_ex3",   "档3 剔前 3 笔",      "档3 内部去掉最好 3 笔（检验是否靠个别赢家）"),
@@ -86,18 +88,23 @@ ANCHORS: list[tuple[str, str, str]] = [
 
     # ── 二级锚点（2026-11-06 增，`64` 总典的过程数字必须同样受管）──────────
     # 持有天数分档：交易日数 = 平仓日与开仓日之间的交易日数 − 1（即「持有 N 个交易日」）
+    ("hold_le2_share", "持有≤2日 占比",   "该档笔数 / 总笔数（表中第三列，必须与 n 同步）"),
     ("hold_le2_n",   "持有≤2日 笔数",    "按交易日计（含开仓日、不含平仓日），下同"),
     ("hold_le2_pnl", "持有≤2日 净利",    "同上"),
     ("hold_le2_wr",  "持有≤2日 胜率",    "同上"),
+    ("hold_3_5_share", "持有3–5日 占比", "同上"),
     ("hold_3_5_n",   "持有3–5日 笔数",   "同上"),
     ("hold_3_5_pnl", "持有3–5日 净利",   "同上"),
     ("hold_3_5_wr",  "持有3–5日 胜率",   "同上"),
+    ("hold_6_10_share", "持有6–10日 占比", "同上"),
     ("hold_6_10_n",  "持有6–10日 笔数",  "同上"),
     ("hold_6_10_pnl", "持有6–10日 净利", "同上"),
     ("hold_6_10_wr", "持有6–10日 胜率",  "同上"),
+    ("hold_11_20_share", "持有11–20日 占比", "同上"),
     ("hold_11_20_n", "持有11–20日 笔数", "同上"),
     ("hold_11_20_pnl", "持有11–20日 净利", "同上"),
     ("hold_11_20_wr", "持有11–20日 胜率", "同上"),
+    ("hold_gt20_share", "持有>20日 占比", "同上"),
     ("hold_gt20_n",  "持有>20日 笔数",   "同上（利润唯一来源，全系统最重的一格）"),
     ("hold_gt20_pnl", "持有>20日 净利",  "同上"),
     ("hold_gt20_wr", "持有>20日 胜率",   "同上"),
@@ -222,8 +229,8 @@ def compute(db: str = DEFAULT_DB) -> dict:
                 sum(sorted(ps)[:-3]) if len(ps) > 3 else 0.0,
                 (sum(ps) / units) if units else 0.0)
 
-    b1n, b1p, _b1e, _b1u = band_stats("band1")
-    b2n, b2p, _b2e, _b2u = band_stats("band2")
+    b1n, b1p, _b1e, b1u = band_stats("band1")
+    b2n, b2p, _b2e, b2u = band_stats("band2")
     b3n, b3p, b3e, b3u = band_stats("band3")
     b4n, b4p, _b4e, b4u = band_stats("band4")
     txn, txp, _txe, _txu = band_stats("tx")
@@ -243,6 +250,7 @@ def compute(db: str = DEFAULT_DB) -> dict:
     for k, ps in hold.items():
         hold_vals[f"hold_{k}_n"] = len(ps)
         hold_vals[f"hold_{k}_pnl"] = sum(ps)
+        hold_vals[f"hold_{k}_share"] = (len(ps) / n) if n else 0.0
         hold_vals[f"hold_{k}_wr"] = (sum(1 for x in ps if x > 0) / len(ps)) if ps else 0.0
 
     exits: dict[str, list[float]] = {}
@@ -311,8 +319,8 @@ def compute(db: str = DEFAULT_DB) -> dict:
             "ex2_year": net - best_year_pnl - second_year_pnl,
             "pos_years": f"{sum(1 for v in by_year.values() if v > 0)}/{len(by_year)}",
             "identity_gap": ident,
-            "band1_n": b1n, "band1_pnl": b1p,
-            "band2_n": b2n, "band2_pnl": b2p,
+            "band1_n": b1n, "band1_pnl": b1p, "band1_unit": b1u,
+            "band2_n": b2n, "band2_pnl": b2p, "band2_unit": b2u,
             "band3_n": b3n, "band3_pnl": b3p, "band3_ex3": b3e, "band3_unit": b3u,
             "band4_n": b4n, "band4_pnl": b4p, "band4_unit": b4u,
             "tx_n": txn, "tx_pnl": txp,
