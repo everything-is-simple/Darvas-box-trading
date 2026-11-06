@@ -192,7 +192,7 @@ python scripts/base_ladder_band.py --db var/bt/arms/bt_a1_t4off.db   # 四档：
 | P2 | ⬜ 等 P1 | — |
 | P3 | ⬜ 等 P2 | — |
 | P4 | ⬜ 待 A3 | — |
-| K1 | ⬜ **批 1 首位** | — |
+| K1 | 🟤 **备跑（2026-11-06 22:00 立项）** | 截尾终点精确核算 = **2018-09-28**（3402 日前推 60 交易日）；比对脚本 `scripts/k1_compare.py` 就绪；起跑命令入 §7.0 |
 | K2 | ⬜ 可立即 | — |
 | K3 | ✅ 首版已出 | 51 连亏 / −156,982 / 47.6% 段数≥5 |
 | K4 | ⬜ 待 A3 | — |
@@ -235,6 +235,21 @@ python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A 
 
 （`--set` 只在**首次起跑**传；staledays=0 由 2026-11-06 planner 修改成为合法禁用档，引擎 `fe3a9f22`。）
 中断续跑：同 §7.1，`--db var/bt/arms/bt_d3d4_off.db --resume`，**不带 --set**。
+
+### 7.0b K1 前视截尾（阶段 0 首位，先于 D3+D4；**v1 参数，不套 D3**）
+
+```bash
+# 截尾库（终点 = 2018-09-28，全窗 3402 日前推 60 交易日；约 18 机时）
+python scripts/base_run.py --cont --from 2005-01-01 --to 2018-09-28 --mirrors A \
+  --src var/bt/full_hist_adj.db --exe bin/darvas-dev.exe \
+  --db var/bt/arms/bt_k1_trunc.db
+
+# 验收：比对全窗库与截尾库的重叠窗口仓位序列（五字段）
+python scripts/k1_compare.py --full var/bt/base/bt_baseA_cont_adj.db \
+  --trunc var/bt/arms/bt_k1_trunc.db --cut 2018-09-28
+```
+
+通过 → 全窗数字可信，才允许起 D3+D4；不通过 → 前视污染，全窗作废、回滚查引擎。
 
 ### 7.1 中断了怎么续（**不丢一天**）
 
