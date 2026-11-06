@@ -461,7 +461,7 @@ python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A 
 
 | 判据 | 内容 | 怎么跑 | 通过标准 |
 |---|---|---|---|
-| **V1 一致性** | C1–C7 机器校验 | `python scripts/check_consistency.py` | 全绿 |
+| **V1 一致性** | C1–C9 机器校验 | `python scripts/check_consistency.py` | 全绿 |
 | **V2 账本对账** | 库可读、`equity_snapshot` 非空、参数键 = 基线 | `python scripts/param_ledger.py --db <库>` | 与 `44` 台账逐键一致 |
 | **V3 剔除前三不翻负** | 总账剔除前三赢家后仍为正 | 复用 `e17_regime_scale_a.py` 的 `summarize` 口径 | 剔除前三净利 > 0（**铁律级判据**） |
 | **V4 年度一致性** | 逐年方向与 `44 §四` 登记一致 | `base_year_summary.py` | 方向一致 |

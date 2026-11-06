@@ -314,7 +314,9 @@ CROSS_DOCS = [
     "docs/29-rulings-registry.md",
     "docs/53-data-and-rebuild.md",
 ]
-ANCHOR_LINE = re.compile(r"基线(账本|14\s*年|全窗|收官)|`55 §11")
+# 只认「承载收官锚点」的节：§11 整章 / §11.2 账本 / §11.3 概率 / §11.9 判据 / §11.10 台账。
+# §11.5 亏损分解、§11.7 加仓等引的是过程数字（如 time_stop 累计亏损），不是收官锚点，误判进来会报假警。
+ANCHOR_LINE = re.compile(r"基线(账本|14\s*年|全窗|收官)|`55 §11(?:\.(?:2|3|9|10))?(?![.\d])")
 SEC_REF = re.compile(r"§\s*\d+(?:\.\d+)*|§\s*[一二三四五六七八九十]+")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 # 只认「像金额/百分比/倍数」的数字，避免把章号（55 §11.9）、档号（剔前3）、年份误判成漂移。
@@ -362,11 +364,99 @@ def check_quotes(snap: dict) -> list[str]:
     return problems
 
 
+# ------------------------------------------------ 近似值检测（抓手抄错）
+# 为什么需要它：C8③ 只扫「明确在引基线数字」的句子，而 docs/55 正文自己就抄了好几份副本
+# （§0 状态行、§11.2 摘要、§11.3 表、§11.9 判据、§13）。这些副本手改一位数，C8③ 看不见，
+# 肉眼也极难发现。所以补一层「近似值」：不在册 + 与某锚点**同形状** + 相对差 ≤0.1% → 判抄错。
+#
+# 两个约束缺一不可，否则噪声爆炸（实测 12 条全是误报）：
+#   ① 同形状：千分位/整数位数/小数位数都相同。`14.0%` 与 14.0 年、`18.56%` 与 18.60% 因此不误伤。
+#   ② 0.1%：金额 7 位时约 1000 元，正好是「末三位抄错」的量级；`1,059` vs `1,063`（0.38%）不触发。
+NEAR_REL = 0.001
+NEAR_PATS = ((MONEY, "金额"), (MONEY_UNSIGNED, "金额"), (PCT, "百分比"), (MULT, "倍数"))
+
+
+def _num(tok: str) -> float | None:
+    s = _minus(tok).replace(",", "").replace("×", "").replace("%", "").replace("+", "")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _shape(tok: str) -> tuple[bool, int, int] | None:
+    """(带千分位, 整数位数, 小数位数)。只描述「长什么样」，不含数值。"""
+    t = _minus(tok).replace("×", "").replace("%", "").replace("+", "")
+    m = re.fullmatch(r"-?([\d,]+)(?:\.(\d+))?", t)
+    if not m:
+        return None
+    return ("," in m.group(1), len(m.group(1).replace(",", "")), len(m.group(2) or ""))
+
+
+def check_near_miss(snap: dict) -> list[str]:
+    """全现役 docs/*.md 扫近似值。生成区里的在册数字自然跳过，不必特判。"""
+    allowed: set[str] = set()
+    pool: list[tuple[str, float, tuple]] = []
+    for key, _label, _note in ANCHORS:
+        v = snap["values"].get(key)
+        if v is None:
+            continue
+        for tok in tokens_of(key, fmt_value(key, v)):
+            allowed.add(tok)
+            n, sh = _num(tok), _shape(tok)
+            if n is not None and sh is not None:
+                pool.append((key, n, sh))
+    allowed |= EXTRA_OK
+    unsigned = {t.lstrip("+") for t in allowed}
+
+    problems: list[str] = []
+    for p in sorted((ROOT / "docs").glob("*.md")):
+        rel = p.relative_to(ROOT).as_posix()
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            scan = DATE.sub(" ", SEC_REF.sub(" ", line))
+            for pat, kind in NEAR_PATS:
+                for m in pat.finditer(scan):
+                    tok = m.group(0)
+                    norm = _minus(tok).replace("×", "")
+                    if norm in allowed or norm.lstrip("+") in unsigned:
+                        continue
+                    val, sh = _num(tok), _shape(tok)
+                    if val is None or sh is None:
+                        continue
+                    for key, av, ash in pool:
+                        if ash != sh or av == 0:
+                            continue
+                        if abs(val - av) / abs(av) <= NEAR_REL:
+                            problems.append(
+                                f"{rel}:{i} 疑似抄错 {tok}（≈锚点 {key} = {fmt_value(key, av)}）"
+                                f" → {line.strip()[:60]}")
+                            break
+    return problems
+
+
 # ---------------------------------------------------------------- 落盘
 def load_snapshot() -> dict | None:
     if not SNAPSHOT.exists():
         return None
     return json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+
+
+def stabilize_ts(snap: dict) -> dict:
+    """内容没变就复用旧 generated_at —— 让 `--write` 幂等，不制造纯时间戳 diff。
+
+    否则每次 `--write` 都会弄脏工作区两份文件，git diff 里躺着一条什么都没改的提交，
+    真正的内容变化反而被淹没。
+    """
+    old = load_snapshot()
+    if not old:
+        return snap
+    same = ({k: v for k, v in old.items() if k != "generated_at"}
+            == {k: v for k, v in snap.items() if k != "generated_at"})
+    if same and old.get("generated_at"):
+        snap = dict(snap, generated_at=old["generated_at"])
+    return snap
 
 
 def write_snapshot(snap: dict) -> None:
@@ -438,6 +528,7 @@ def main() -> int:
             return 1
 
     if a.write:
+        snap = stabilize_ts(snap)
         write_snapshot(snap)
         rewrite_doc55(snap)
         print(f"✓ 已写快照 {SNAPSHOT.relative_to(ROOT)} 并重写 docs/55 生成区"

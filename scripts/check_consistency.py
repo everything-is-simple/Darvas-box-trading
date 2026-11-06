@@ -306,6 +306,13 @@ def check_c8_anchors():
                    f"  → 改文档或补登锚点后 --write")
     else:
         ok(f"C8 跨文档引用在册（{len(doc_anchors.CROSS_DOCS)} 份）")
+
+    near = doc_anchors.check_near_miss(snap)
+    if near:
+        rc |= fail(f"C8 疑似抄错 {len(near)} 处 → {'; '.join(near[:3])}"
+                   f"  → 改回在册值或 --write 重算")
+    else:
+        ok(f"C8 全现役文档无近似错值（同形状 ±{doc_anchors.NEAR_REL:.1%} 阈值）")
     return rc
 
 
