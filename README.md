@@ -111,19 +111,18 @@ darvas version
 ## 文档体系
 
 > **完整索引、治理规则与"已合并文档去向"见 [docs/README.md](docs/README.md)。**
-> 顶层保留 **14 份**必要文档（2026-11-06 治理：20 → 14，5 份已合并、原文留在 `docs/archive/`）。
+> 顶层保留 **13 份**必要文档（2026-11-06 两轮治理：20 → 14 → 13）。**一个内容方向只有一份**；被合并的原文整份留在 `docs/archive/`。
 
 | 想做什么 | 读哪份 |
 |---|---|
 | 判断某条规则能不能加 | `docs/00-darvas-theory.md`（理论宪法） |
-| 今天该做什么 | `docs/56-live-plan.md`（活看板，单页） |
-| 下一个实验是什么 | `docs/60-experiment-plan.md`（唯一预注册队列） |
-| 查参数的值 / 自由度 | `docs/44-new-baseline-config.md`（§二 值、§六 分类） |
-| 查账本数字与教训 | `docs/55-adj-experiment-replay-matrix.md`（§11 收官、§14 教训） |
+| 今天该做什么 / 下一个实验是什么 | `docs/60-plan-and-board.md`（**唯一计划与看板**） |
+| 查参数的值 / 自由度 / 能不能动 | `docs/44-new-baseline-config.md`（§二 值、§六 分类、§4.3 冻结） |
+| 查账本数字与教训 | `docs/55-ledger-and-lessons.md`（§11 收官、§14 教训 R19–R34） |
 | 灌数据 / 重建基线 | `docs/53-data-and-rebuild.md` |
 | 做牛熊识别 / 攻防转换 | `docs/48-market-regime.md` |
 | 工程侧（需求/架构/表/接口/一致性） | `docs/01` / `02` / `03` / `04` / `06` |
-| 已决不得重开的裁定 | `docs/29-rulings-registry.md` |
+| 已裁定的结论 / 已关闭别重跑的 | `docs/29-rulings-registry.md` |
 | 想从别的书搬东西进来 | `docs/57-external-methods.md` |
 
 ---
@@ -171,9 +170,9 @@ var/                   # 运行时（db/备份/报告）
 - ✅ M8 内置回放器：✅ 8.1 回放骨架 + as-of 差分审计（`darvas backtest`）· ✅ 8.2 模拟撮合器（`internal/match`）· ✅ 8.3 体制运行器（`--mode regime`）· ✅ 8.4a 体制参数敏感性（结论：基线已处理论前沿，单参数无解）
 - ✅ **仓位现行 = 阶梯制**（`pos.newhigh_ladder=on`，距 52 周高点四档 3/2/1/0.5 单位）；已退役的 **A M1**（升势 2 单位/其余 1 单位）仅存在于实验史，定稿见 `docs/00 §5.6.7`，事实见 `docs/29`
 - ✅ **新基线已收官**（`docs/53`）：A–F 完成、后复权已上线，adj 连续基线 `bt_baseA_cont_adj.db` 100% 跑完（+1,213,822 / ×2.214 / MDD −32.50%，`docs/55 §11`）；唯一未完成项 = G（攻防转换）仍是接口桩（`mode=off`）
-- ⏳ **正在跑 A1 `units.t4=0` 全窗消融**（`var/bt/arms/bt_a1_t4off.db`）：已到 2015-04（约 76%），总账领先基线 19.7 万，但**主判据（剔最好年）未通过**，结构上领先全部来自 2007 单年（`docs/55 §13`）
-- 📌 实验预注册队列见 [docs/60](docs/60-experiment-plan.md)，活任务看板见 [docs/56](docs/56-live-plan.md)；历史审计见 [归档快照](docs/archive/54-new-baseline-audit.md)。
-- 📚 **文档已治理（2026-11-06）**：顶层 20 → 14 份，`49/58/59/61/62/63` 已合并，`55` 删 9 代快照；去向见 [docs/README.md §墓碑](docs/README.md)。
+- ⏳ **正在跑 A1 `units.t4=0` 全窗消融**（`var/bt/arms/bt_a1_t4off.db`）：已到 **2017-02（86.6%）**，总账领先基线，但**主判据（剔最好年）未通过**，结构上领先全部来自 2007 单年（`docs/55 §13`）
+- 📌 **今天做什么 / 下一个实验 → [docs/60 计划与看板](docs/60-plan-and-board.md)**；历史审计见 [归档快照](docs/archive/54-new-baseline-audit.md)。
+- 📚 **文档已治理（2026-11-06，两轮）**：顶层 20 → 14 → **13 份**。第一轮合并 `49/58/59/61/62/63`；第二轮 **`56` 并入 `60`**（计划只留一份）、`55 §3/§4` 归档。去向见 [docs/README.md §墓碑](docs/README.md)。
 
 数据源状态：TDX vipdoc 增量更新可用；回测源库 `var/bt/full_hist_adj.db`（2005–2026，5,561 只 / `adj_ready=1`）。
 
