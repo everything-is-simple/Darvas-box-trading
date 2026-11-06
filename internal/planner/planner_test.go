@@ -407,6 +407,51 @@ func TestPlannerNoDuplicateSell(t *testing.T) {
 	}
 }
 
+// TestPlannerTimeStopDisabled D3（2026-11-06，docs/65 阶段 2）：staledays≤0 彻底禁用 time_stop。
+// 场景：持仓远超任何 stale 天数且收盘 16 ≤ 成本 20（旧语义下必触发 time_stop），
+// 设 position.staledays=0 后不应产生 time_stop_noprofit 卖单；
+// ST1 初始止损不受 D3 影响，仍应每日挂。
+func TestPlannerTimeStopDisabled(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	boxes := scanBoxesForSeed(code)
+	if _, err := st.BoxRepo.UpsertBoxes(boxes); err != nil {
+		t.Fatal(err)
+	}
+	// 关闭档：0 = 禁用（旧代码该值会落入「0 日强平」的错误语义）
+	st.DB().Exec(`INSERT INTO param(key, value) VALUES('position.staledays', '0')`)
+	// 持仓：开仓于 2026-09-01（距 10-16 远超 2 日），成本 20 > 收盘 16 → 旧语义必触发
+	st.DB().Exec(`INSERT INTO position(code, opened_date, qty, avg_cost, stop_price, status)
+		VALUES (?, '2026-09-01', 500, 20, 16.49, 'open')`, code)
+	st.DB().Exec(`UPDATE daily_bar SET close=16 WHERE code=? AND date='2026-10-16'`, code)
+	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+
+	p := New(st)
+	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
+		t.Fatal(err)
+	}
+	_, orders, _ := st.TradeRepo.PlanOn("2026-10-16")
+	timeStop, initialStop := 0, 0
+	for _, o := range orders {
+		if o.Side != "sell" || o.Reason == nil {
+			continue
+		}
+		switch sig, _ := o.Reason["signal"].(string); sig {
+		case "time_stop_noprofit":
+			timeStop++
+		case "initial_stop":
+			initialStop++
+		}
+	}
+	if timeStop != 0 {
+		t.Fatalf("time_stop 卖单 = %d，期望 0（staledays=0 已禁用）", timeStop)
+	}
+	if initialStop == 0 {
+		t.Fatalf("initial_stop 卖单 = 0，期望 ≥1（ST1 不受 D3 影响）")
+	}
+}
+
 // TestPlannerRejectStaleBoxOrder P0-2（2026-10-21）：陈旧箱体致 trigger 严重偏离现价 → 拒单。
 // 场景（sh600825 型）：箱顶 5.10（久远确认），现价已 15.58，trigger=5.253 偏离 +196%，
 // 远超 max_entry_gap=1.05，必须拦截（否则以 5.253 挂单追高买入）。

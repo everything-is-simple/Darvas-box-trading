@@ -226,37 +226,45 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	// 改「尽快斩断亏损」：staledays 15→2（次日收盘仍 ≤ 成本即走，第3日卖出）。
 	// 依据《简简单单做股票》L755「不赚钱立刻出局」+ A股 T+1 最早次日可卖。
 	staleDays := p.st.ParamRepo.GetInt("position.staledays", 2)
-	for i := range positions {
-		pos := &positions[i]
-		if pos.Qty <= 0 {
-			continue
+	// D3（2026-11-06，docs/65 阶段 2「拆反向总成」）：staledays≤0 = 彻底禁用 time_stop。
+	// 原著 O2「没有任何理由卖掉一支正在上涨的股票」；两日强平是 v1 唯一大额净损出口
+	// （55 §11.5：815 笔 −1,840,601，占总亏损 77.5%），且使「持有到下一个箱体」不可能
+	// 发生（64 §1.4 因果颠倒）。旧代码 staledays=0 落入 n<0 恒假分支 → 变成「当日收盘
+	// ≤成本即强平」而非关闭（语义错误）；本分支使 0/负数成为合法关闭档。
+	// （staledays=1/≥3 已在 29 §三关闭；=0 是此前不可达的新档。）
+	if staleDays > 0 {
+		for i := range positions {
+			pos := &positions[i]
+			if pos.Qty <= 0 {
+				continue
+			}
+			if pendingSell[pos.Code] {
+				continue // 已有在途卖出单，不重复生成（M8.3）
+			}
+			n, err := p.st.BarRepo.BarCount(pos.Code, pos.OpenedDate, planDate)
+			if err != nil || n < staleDays {
+				continue
+			}
+			px, ok, _ := p.st.BarRepo.CloseOn(pos.Code, planDate)
+			if !ok || px > pos.AvgCost {
+				continue
+			}
+			orders = append(orders, contract.PlanOrder{
+				PlanDate: planDate, ExecuteDate: executeDate, Code: pos.Code,
+				Side: "sell", OrderKind: "stop_sell",
+				TriggerPrice: px, LimitPrice: px, Qty: pos.Qty, LegNo: 0,
+				// 无信号驱动（source_signal_id 保持 NULL）；entry_box_id 取持仓自己的入场箱体，
+				// 复盘「不获利离场」时能定位该仓位来自哪个箱体。
+				Reason: map[string]any{
+					"signal": "time_stop_noprofit", "days_held": n,
+					"entry_box_id": pos.EntryBoxID,
+					"avg_cost":     pos.AvgCost, "last_close": px, "qty": pos.Qty, "position_id": pos.ID,
+				},
+			})
+			// P0-3（2026-10-21）：回写 pendingSell，防御同批次重复卖单（与信号循环同源）。
+			pendingSell[pos.Code] = true
+			p.log.Printf("不获利离场 %s（持有%d日 收盘%.2f≤成本%.2f）", pos.Code, n, px, pos.AvgCost)
 		}
-		if pendingSell[pos.Code] {
-			continue // 已有在途卖出单，不重复生成（M8.3）
-		}
-		n, err := p.st.BarRepo.BarCount(pos.Code, pos.OpenedDate, planDate)
-		if err != nil || n < staleDays {
-			continue
-		}
-		px, ok, _ := p.st.BarRepo.CloseOn(pos.Code, planDate)
-		if !ok || px > pos.AvgCost {
-			continue
-		}
-		orders = append(orders, contract.PlanOrder{
-			PlanDate: planDate, ExecuteDate: executeDate, Code: pos.Code,
-			Side: "sell", OrderKind: "stop_sell",
-			TriggerPrice: px, LimitPrice: px, Qty: pos.Qty, LegNo: 0,
-			// 无信号驱动（source_signal_id 保持 NULL）；entry_box_id 取持仓自己的入场箱体，
-			// 复盘「不获利离场」时能定位该仓位来自哪个箱体。
-			Reason: map[string]any{
-				"signal": "time_stop_noprofit", "days_held": n,
-				"entry_box_id": pos.EntryBoxID,
-				"avg_cost": pos.AvgCost, "last_close": px, "qty": pos.Qty, "position_id": pos.ID,
-			},
-		})
-		// P0-3（2026-10-21）：回写 pendingSell，防御同批次重复卖单（与信号循环同源）。
-		pendingSell[pos.Code] = true
-		p.log.Printf("不获利离场 %s（持有%d日 收盘%.2f≤成本%.2f）", pos.Code, n, px, pos.AvgCost)
 	}
 
 	// ST1（2026-10-21）：首腿初始止损单——持仓期每日挂常驻止损卖单（trigger=pos.StopPrice）。

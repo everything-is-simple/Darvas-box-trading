@@ -67,6 +67,7 @@
 
 | 编号 | 实验 | 单变量 | 先验假设（H0） | 主判据 | 依赖 |
 |---|---|---|---|---|---|
+| **D3+D4** | **原著实现资格线**（65 阶段 0 合并臂）：`position.staledays=0`（time_stop 禁用，O2）+ `pool.blacklist_months=0`（无冷却，O3） | 两键一次性反向修正（65 阶段 0 明确合并，非单变量） | H0：拆两处反向后主判据崩坏（v1 总账 −1,840,601 的亏损出口被移除） | 账本恒等式 0.00 + 三判据并列报告 + **>20 日持仓笔数对 v1 基线 222 笔的变化**（机制判据：两日强平曾使长持不可能）；判据全过 → 升「原著实现基准」，供 65 阶段 3 装油门用 | 无（staledays=1/≥3 已关闭，=0 是新合法档）|
 | **A1** | **剔档4**：`units.t4=0` 全窗 | 该键 | H0：档4 与其余档同质 | 三判据全过 + 长持>20日 ≥ 222 笔 + 剔前3 不转负 | ✅ **已完成并判伪**（`55 §13`）：三判据+长持全过，MDD −34.60% 超线 1.10pp |
 | **K1** | **前视截尾检验** | 数据截尾 60 日重跑，比对前 N 日仓位序列 | H0：箱体边界不含未来信息 | 仓位序列逐行一致 | 无（**最高优先**）|
 | **A3** | MA60 闸门三臂 `stop`/`half`/`off` | `gate.ma60.mode` | H0：三档无差异 | 剔最好年总账 ↑ 且 MDD ≤ −33.50%，必报逐年配对差（R29） | A1 |
@@ -184,6 +185,7 @@ python scripts/base_ladder_band.py --db var/bt/arms/bt_a1_t4off.db   # 四档：
 
 | 编号 | 状态 | 结果一句话 |
 |---|---|---|
+| **D3+D4** | 🟤 **备跑（2026-11-06 21:30 立项）** | 原著实现资格线：代码已改（planner staledays≤0 禁用档 + 单测）+ 引擎 `fe3a9f22` + 机检 14/14 全绿；**明晨白天起跑**（夜沙箱 60s 回收，不起），库 `var/bt/arms/bt_d3d4_off.db`，源 `full_hist_adj.db` |
 | **A1** | ✅ **判伪关闭（2026-11-06 18:40 跑完）** | 887 笔 / +1,515,585（+24.9%）/ 笔数 −22.3%；三判据 + 长持全过，但 **MDD −34.60% 超容忍线 1.10pp → 不升 v2**，档4 保持 0.5（`55 §13`）|
 | **D 系** | ⬜ 明细见 `65-darvas-rebuild.md` | 6 阶段 / 18 臂；老 13 臂已归档 `archive/60-D-series-original-2026-11-06.md` |
 | P1 | ⬜ 等 A1 | — |
@@ -216,12 +218,23 @@ python scripts/base_ladder_band.py --db var/bt/arms/bt_a1_t4off.db   # 四档：
 
 ```bash
 # 进度
-python -c "import sqlite3;c=sqlite3.connect('file:var/bt/arms/bt_a1_t4off.db?mode=ro',uri=True);print(c.execute('select max(date),count(distinct date) from daily_run').fetchone())"
+python -c "import sqlite3;c=sqlite3.connect('file:var/bt/arms/bt_d3d4_off.db?mode=ro',uri=True);print(c.execute('select max(date),count(distinct date) from daily_run').fetchone())"
 # 进程
 tasklist //FI "IMAGENAME eq darvas-dev.exe"
 # 一致性（提交前必跑，现 14/14：C1–C9）
 python scripts/check_consistency.py
 ```
+
+### 7.0 D3+D4 首次起跑（白天，PowerShell Start-Process 提权拉起）
+
+```bash
+python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A \
+  --src var/bt/full_hist_adj.db --exe bin/darvas-dev.exe \
+  --db var/bt/arms/bt_d3d4_off.db --set "position.staledays=0,pool.blacklist_months=0"
+```
+
+（`--set` 只在**首次起跑**传；staledays=0 由 2026-11-06 planner 修改成为合法禁用档，引擎 `fe3a9f22`。）
+中断续跑：同 §7.1，`--db var/bt/arms/bt_d3d4_off.db --resume`，**不带 --set**。
 
 ### 7.1 中断了怎么续（**不丢一天**）
 
