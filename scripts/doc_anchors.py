@@ -83,6 +83,40 @@ ANCHORS: list[tuple[str, str, str]] = [
     ("band4_unit",  "档4 每单位",        "档4 Σpnl / Σ首腿单位"),
     ("tx_n",        "未归类笔数",        "首腿单位不在四档 ±0.35 内（R23：必须显式报，不许藏）"),
     ("tx_pnl",      "未归类净利",        "同上"),
+
+    # ── 二级锚点（2026-11-06 增，`64` 总典的过程数字必须同样受管）──────────
+    # 持有天数分档：交易日数 = 平仓日与开仓日之间的交易日数 − 1（即「持有 N 个交易日」）
+    ("hold_le2_n",   "持有≤2日 笔数",    "按交易日计（含开仓日、不含平仓日），下同"),
+    ("hold_le2_pnl", "持有≤2日 净利",    "同上"),
+    ("hold_le2_wr",  "持有≤2日 胜率",    "同上"),
+    ("hold_3_5_n",   "持有3–5日 笔数",   "同上"),
+    ("hold_3_5_pnl", "持有3–5日 净利",   "同上"),
+    ("hold_3_5_wr",  "持有3–5日 胜率",   "同上"),
+    ("hold_6_10_n",  "持有6–10日 笔数",  "同上"),
+    ("hold_6_10_pnl", "持有6–10日 净利", "同上"),
+    ("hold_6_10_wr", "持有6–10日 胜率",  "同上"),
+    ("hold_11_20_n", "持有11–20日 笔数", "同上"),
+    ("hold_11_20_pnl", "持有11–20日 净利", "同上"),
+    ("hold_11_20_wr", "持有11–20日 胜率", "同上"),
+    ("hold_gt20_n",  "持有>20日 笔数",   "同上（利润唯一来源，全系统最重的一格）"),
+    ("hold_gt20_pnl", "持有>20日 净利",  "同上"),
+    ("hold_gt20_wr", "持有>20日 胜率",   "同上"),
+    # 出口分解：position.close_reason
+    ("exit_stop_n",      "初始止损 笔数",   "close_reason='stop'"),
+    ("exit_stop_pnl",    "初始止损 净利",   "同上"),
+    ("exit_stop_box_n",  "破下轨 笔数",     "close_reason='stop_box'"),
+    ("exit_stop_box_pnl", "破下轨 净利",    "同上"),
+    ("exit_time_stop_n", "两日强平 笔数",   "close_reason='time_stop'（O2 违反点）"),
+    ("exit_time_stop_pnl", "两日强平 净利", "同上（唯一大额净损出口）"),
+    ("exit_failed_n",    "失败突破 笔数",   "close_reason='failed_breakout'"),
+    ("exit_failed_pnl",  "失败突破 净利",   "同上"),
+    # 集中度与尾部（口径同 scripts/base_progress_stat.py）
+    ("skew",         "偏度",             "Σ((p−均值)/样本sd)³ / n"),
+    ("top1pct_share", "前 1% 笔贡献",     "最大 round(n×1%) 笔 Σpnl / 总 Σpnl"),
+    ("top5pct_share", "前 5% 笔贡献",     "同上，5%"),
+    ("ex10_pnl",     "剔前 10 笔",        "笔级：去掉盈利最大的 10 笔后 Σpnl"),
+    ("loss_streak_n", "最长连亏 笔数",     "按平仓日排序，连续 pnl≤0 的最长一段"),
+    ("loss_streak_pnl", "最长连亏 金额",   "同一段的 Σpnl"),
 ]
 
 BANDS = [("band1", 3.0), ("band2", 2.0), ("band3", 1.0), ("band4", 0.5)]
@@ -121,9 +155,9 @@ def compute(db: str = DEFAULT_DB) -> dict:
             "SELECT position_id, qty*price FROM position_leg WHERE leg_no=1")}
 
         rows = []
-        for pid, od, cd, pnl in con.execute("""
+        for pid, od, cd, pnl, reason in con.execute("""
                 SELECT id, cast(opened_date as text), cast(closed_date as text),
-                       coalesce(realized_pnl, 0)
+                       coalesce(realized_pnl, 0), coalesce(close_reason, '')
                 FROM position WHERE status='closed'"""):
             od, cd = od[:10], (cd or "")[:10]
             # R34：按平仓日截断（按建仓日截断会把窗口外才平仓的赢家提前计入）
@@ -131,8 +165,12 @@ def compute(db: str = DEFAULT_DB) -> dict:
                 continue
             notional = leg.get(pid, 0.0)
             e = eq.get(od, 0.0)
-            rows.append(dict(cd=cd, pnl=float(pnl),
+            rows.append(dict(cd=cd, od=od, pnl=float(pnl), reason=reason,
                              units=(notional / (e * UNIT_PCT) if e > 0 else 0.0)))
+
+        # 交易日历（持有天数分档用）：全市场 distinct date 足够，不必按个股
+        cal = [r[0] for r in con.execute(
+            "SELECT DISTINCT date FROM daily_bar WHERE date <= ? ORDER BY date", (cut,))]
 
         bl = con.execute("SELECT baseline_id, engine_sha256, data_mode "
                          "FROM baseline ORDER BY id DESC LIMIT 1").fetchone()
@@ -190,6 +228,63 @@ def compute(db: str = DEFAULT_DB) -> dict:
     b4n, b4p, _b4e, b4u = band_stats("band4")
     txn, txp, _txe, _txu = band_stats("tx")
 
+    # ── 二级锚点：持有天数分档 / 出口分解 / 集中度尾部 ──────────────────
+    # 持有天数口径：平仓日与开仓日之间的交易日数 − 1（=「持有 N 个交易日」）。
+    # 实测该分布只落在 2/5/8/11/14… 上，故 5 档等价于 ≤2 / 3–5 / 6–10 / 11–20 / >20。
+    import bisect
+    hold: dict[str, list[float]] = {"le2": [], "3_5": [], "6_10": [], "11_20": [], "gt20": []}
+    for r in rows:
+        h = bisect.bisect_right(cal, r["cd"]) - bisect.bisect_left(cal, r["od"]) - 1
+        k = ("le2" if h <= 2 else "3_5" if h <= 5 else "6_10" if h <= 10
+             else "11_20" if h <= 20 else "gt20")
+        hold[k].append(r["pnl"])
+
+    hold_vals: dict[str, float] = {}
+    for k, ps in hold.items():
+        hold_vals[f"hold_{k}_n"] = len(ps)
+        hold_vals[f"hold_{k}_pnl"] = sum(ps)
+        hold_vals[f"hold_{k}_wr"] = (sum(1 for x in ps if x > 0) / len(ps)) if ps else 0.0
+
+    exits: dict[str, list[float]] = {}
+    for r in rows:
+        exits.setdefault(r["reason"] or "unknown", []).append(r["pnl"])
+    for tag, key in (("stop", "stop"), ("stop_box", "stop_box"),
+                     ("time_stop", "time_stop"), ("failed_breakout", "failed")):
+        ps = exits.get(tag, [])
+        hold_vals[f"exit_{key}_n"] = len(ps)
+        hold_vals[f"exit_{key}_pnl"] = sum(ps)
+
+    # 集中度：口径与 scripts/base_progress_stat.py 完全一致（样本 sd、总体三阶矩）
+    mean_all = net / n
+    sd_all = statistics.stdev(pnls) if n > 1 else 0.0
+    skew = (sum(((p - mean_all) / sd_all) ** 3 for p in pnls) / n) if sd_all else 0.0
+    srt = sorted(pnls)
+
+    def top_share(frac: float) -> float:
+        k = max(1, int(round(n * frac)))
+        return (sum(srt[-k:]) / net) if net else 0.0
+
+    # 最长连亏（按平仓日排序；同日顺序不确定，只作量级参考）
+    streak_n = cur_n = 0
+    streak_pnl = cur_pnl = 0.0
+    for r in sorted(rows, key=lambda x: x["cd"]):
+        if r["pnl"] <= 0:
+            cur_n += 1
+            cur_pnl += r["pnl"]
+            if cur_n > streak_n:
+                streak_n, streak_pnl = cur_n, cur_pnl
+        else:
+            cur_n, cur_pnl = 0, 0.0
+
+    hold_vals.update({
+        "skew": skew,
+        "top1pct_share": top_share(0.01),
+        "top5pct_share": top_share(0.05),
+        "ex10_pnl": sum(srt[:-10]) if n > 10 else 0.0,
+        "loss_streak_n": streak_n,
+        "loss_streak_pnl": streak_pnl,
+    })
+
     return {
         "generated_at": _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "db": str(Path(db).as_posix()),
@@ -221,6 +316,7 @@ def compute(db: str = DEFAULT_DB) -> dict:
             "band3_n": b3n, "band3_pnl": b3p, "band3_ex3": b3e, "band3_unit": b3u,
             "band4_n": b4n, "band4_pnl": b4p, "band4_unit": b4u,
             "tx_n": txn, "tx_pnl": txp,
+            **hold_vals,
         },
     }
 
@@ -231,25 +327,25 @@ def _minus(s: str) -> str:
 
 
 def fmt_value(key: str, v) -> str:
-    if key in ("days", "trades_n", "band1_n", "band2_n", "band3_n", "band4_n", "tx_n"):
-        return f"{int(v):,}"
     if key == "pos_years":
-        return str(v)
-    if key in ("net_pnl", "ex3_pnl", "ex_best_year", "ex2_year",
-               "band1_pnl", "band2_pnl", "band3_pnl", "band3_ex3", "band4_pnl", "tx_pnl"):
-        return _minus(f"{v:+,.0f}")
-    if key in ("band3_unit", "band4_unit", "avg_pnl"):
-        return _minus(f"{v:+,.0f}")
+        return str(v)          # "7/14" 形式，不是单值
+    if key in ("cagr", "mdd"):
+        return _minus(f"{v * 100:.2f}%")
     if key == "equity_mult":
         return f"×{v:.3f}"
-    if key == "cagr":
-        return _minus(f"{v * 100:.2f}%")
-    if key == "mdd":
-        return _minus(f"{v * 100:.2f}%")
-    if key == "win_rate":
-        return f"{v * 100:.1f}%"
     if key == "identity_gap":
         return f"{v:.2f}"
+    if key == "skew":
+        return f"{v:.2f}"
+    if key == "win_rate" or key.endswith("_wr"):
+        return f"{v * 100:.1f}%"
+    if key.endswith("_share"):
+        return f"{v * 100:.1f}%"
+    if key == "days" or key.endswith("_n"):
+        return f"{int(v):,}"
+    if key.endswith("_pnl") or key.endswith("_unit") or key.endswith("_ex3") \
+            or key in ("ex_best_year", "ex2_year"):
+        return _minus(f"{v:+,.0f}")
     return f"{v:.2f}"
 
 
@@ -425,6 +521,10 @@ def check_near_miss(snap: dict) -> list[str]:
                         continue
                     val, sh = _num(tok), _shape(tok)
                     if val is None or sh is None:
+                        continue
+                    # 只对「像金额的大数」做近似检测。小额无量纲值必然撞：`skew=8.06`
+                    # 与旧口径 `CAGR 8.06%` 形状数值全同，无法区分（实测假警 2 处）。
+                    if "," not in norm and abs(val) < 10000:
                         continue
                     for key, av, ash in pool:
                         if ash != sh or av == 0:
