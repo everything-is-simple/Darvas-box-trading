@@ -1,0 +1,410 @@
+# 03 · 数据库ERD（SQLite）
+
+> **单一事实源**：`internal/store/migrations/`（append-only；当前仓库含 0001–0020，实际 schema 以已应用迁移及代码为准）。本文档为数据模型释义，修改遵循《06-consistency》。
+> 版本注记：截至 2026-11-01，最新迁移编号为 0020；该编号不等同于 ERD 文档 schema 版本号。
+
+---
+
+## 1. ER图
+
+```mermaid
+erDiagram
+    security ||--o{ daily_bar : "行情"
+    security ||--o{ box : "箱体阶梯"
+    box ||--o{ box : "prev_box_id 阶梯链"
+    security ||--o{ candidate : "初选快照"
+    security ||--o{ watch : "跟踪池"
+    box ||--o{ watch : "当前箱体"
+    security ||--o{ position : "持仓"
+    position ||--o{ position_leg : "金字塔腿"
+    box ||--o{ position : "入场箱体"
+    security ||--o{ signal : "信号"
+    box ||--o{ signal : "触发箱体"
+    trade_plan ||--o{ plan_order : "订单"
+    plan_order ||--o| trade_fill : "成交"
+    security ||--o{ equity_snapshot : "权益(间接)"
+    candidate ||--o{ watch : "入池来源"
+    position ||--o| trade_review : "复盘(每笔一条,B3)"
+
+    security {
+        TEXT code PK "sh600519"
+        TEXT market "sh/sz/bj"
+        TEXT name
+        TEXT kind "stock/index"
+        TEXT board "main/gem/star/st"
+        TEXT industry
+        DATE list_date
+        TEXT status "active/delisted"
+        TEXT track_level "normal/winner/blacklist（0017 战绩分级）"
+        DATE blacklist_until "黑名单冷却截止日（0017）"
+    }
+    daily_bar {
+        TEXT code FK
+        DATE date PK
+        REAL open
+        REAL high
+        REAL low
+        REAL close
+        INTEGER volume "股（0032 订正，实测 volume×close≈amount）"
+        REAL amount "元"
+        REAL adj_factor
+        DATE ingested_at
+    }
+    daily_bar_adj {
+        TEXT code PK "个股，不含指数"
+        DATE date PK
+        REAL adj_open
+        REAL adj_high
+        REAL adj_low
+        REAL adj_close
+        INTEGER adj_volume "股 = none_volume/factor_norm"
+        REAL amount "元，原值拷贝不调整"
+        REAL factor_norm "(back/none)/(back(T0)/none(T0))，T0=2004-01-02"
+        TEXT adj_status "ok/no_factor（无因子原价直通）"
+        DATETIME ingested_at
+    }
+    data_meta {
+        TEXT k PK "adj_ready/adj_t0/adj_codes/…"
+        TEXT v "数据资产状态，非参数（不进 param 台账）"
+    }
+    box {
+        INTEGER id PK
+        TEXT code FK
+        REAL top "上轨"
+        REAL bottom "下轨"
+        DATE top_confirmed "上轨3日确认日"
+        DATE bottom_confirmed "下轨3日确认日"
+        TEXT status "forming/confirmed/broken_up/broken_down/invalid"
+        INTEGER prev_box_id FK "阶梯链"
+        DATE broken_date "向上突破日(仅broken_up有值,0029)"
+        DATE dead_date "死亡日(broken_down/invalid当天,0028)"
+        DATE created_at
+    }
+    candidate {
+        INTEGER id PK
+        DATE screen_date
+        TEXT code FK
+        REAL score "四条件总分"
+        TEXT reasons_json "各条件明细"
+        TEXT fundamental_flag "人工复核: yes/no/unknown"
+    }
+    watch {
+        INTEGER id PK
+        TEXT code FK
+        INTEGER candidate_id FK "入池来源快照"
+        DATE added_date
+        TEXT stage "watching/pending/holding/exited/suspended/blacklisted"
+        INTEGER current_box_id FK
+        INTEGER box_count "已走完的箱体数"
+        TEXT exit_reason
+        REAL resume_trigger "挂起激活价(suspended有效,0003)"
+        TEXT note
+        DATE updated_at
+    }
+    signal {
+        INTEGER id PK
+        DATE date
+        TEXT code FK
+        TEXT type "breakout/pyramid/stop/failed_breakout"
+        INTEGER box_id FK
+        REAL close_px
+        REAL box_level
+        TEXT payload_json
+    }
+    position {
+        INTEGER id PK
+        TEXT code FK
+        DATE opened_date
+        INTEGER entry_box_id FK
+        INTEGER qty "现持股数"
+        REAL avg_cost
+        REAL stop_price "最新止损位(只升不降)"
+        TEXT status "open/closed"
+        DATE closed_date
+        TEXT close_reason "六值枚举: stop/stop_box/failed_breakout/time_stop/dividend_clear/manual (0023)"
+        REAL realized_pnl "清仓时落库净盈亏(含费,0003)"
+    }
+    position_leg {
+        INTEGER id PK
+        INTEGER position_id FK
+        INTEGER leg_no "1/2/3"
+        DATE date
+        INTEGER qty
+        REAL price
+        REAL stop_after "本腿后止损位"
+    }
+    trade_plan {
+        INTEGER id PK
+        DATE plan_date "生成日T"
+        DATE execute_date "执行日=下一交易日(ADR-2:sh000001日线,无未来K线时跳周末兜底)"
+        REAL equity_base "计算仓位用的权益"
+        INTEGER open_position_count
+        DATE created_at
+    }
+    plan_order {
+        INTEGER id PK
+        INTEGER trade_plan_id FK
+        TEXT code
+        TEXT side "buy/sell"
+        TEXT order_kind "stop_buy/stop_sell"
+        REAL trigger_price "触发价"
+        REAL limit_price "委托价"
+        INTEGER qty
+        INTEGER leg_no
+        TEXT reason_json "六问答案引用"
+        INTEGER source_signal_id FK "来源信号(signal.id,0021)"
+        TEXT status "pending/placed/filled/cancelled/expired"
+    }
+    trade_fill {
+        INTEGER id PK
+        INTEGER plan_order_id FK
+        DATE date
+        TEXT side "buy/sell (0002迁移)"
+        REAL price
+        INTEGER qty
+        REAL fee
+        TEXT raw_text "粘贴原文(审计)"
+    }
+    trade_review {
+        INTEGER id PK
+        INTEGER position_id FK "每笔交易一条复盘(UNIQUE,重录覆盖)"
+        TEXT code FK
+        TEXT rule_followed "规则执行评价(人工)"
+        TEXT error_type "错误类型(人工:追高/不止损…)"
+        TEXT lesson "教训(人工复盘录入,B3)"
+        DATE created_at
+    }
+    equity_snapshot {
+        DATE date PK
+        REAL cash
+        REAL market_value
+        REAL total
+        REAL drawdown "距峰值回撤"
+    }
+    daily_run {
+        INTEGER id PK
+        DATE date
+        TEXT task "ingest/boxscan/..."
+        TEXT status "ok/failed/running"
+        DATETIME started_at
+        DATETIME finished_at
+        TEXT error
+        INTEGER affected_rows
+    }
+    param {
+        TEXT key PK
+        TEXT value
+        DATETIME changed_at
+        TEXT old_value
+    }
+    baseline {
+        INTEGER id PK
+        TEXT baseline_id "重建身份，如 2026-11-04-newhigh-ladder-v1"
+        TEXT engine_version "语义版本 0.5.0-m8"
+        TEXT engine_sha256 "跑出账本的二进制 sha256（HARD① 锚）"
+        TEXT source_hash "源库 sha256（从哪来）"
+        TEXT param_fingerprint "(key,value) 排序序列 sha256"
+        TEXT params_json "参数快照 JSON"
+        DATETIME created_at
+        INTEGER latest "1=本库最新一次重建"
+        TEXT data_mode "raw/adj 数据口径（0032）"
+    }
+    security ||--o{ dividend_event : "除权除息事件"
+    dividend_event {
+        TEXT code FK
+        DATE date PK
+        INTEGER type "1=除权除息(唯一落库)"
+        REAL bonus_10 "派息(每10股,元)"
+        REAL share_bonus_10 "送股(每10股)"
+        REAL allot_10 "配股(每10股)"
+        REAL allot_price "配股价(元/股)"
+    }
+```
+> **复利前提（2026-10-27）**：回测按年独立起跑，`equity_snapshot` 每年首日 `total = 1,000,000`（起始资金），
+> 年末含未平仓头寸的市价估值（即含浮盈浮亏）；`drawdown` 为**年内**距峰值回撤，逐年重置。
+> 滚雪球复利按 `total_d / total_{d-1}` 逐日链式推演、跨年直接衔接，口径见 docs/01 §10.6。
+> ⚠️ `e17_metrics.csv` 的 `ret` 列是**权益口径**（年末权益/100 万 − 1），`pnl` 列是**已实现口径**；
+> 两者在 V 型年（如 2009）会背离，判读必须双口径并列，不得混用。
+
+
+---
+
+## 2. 领域状态机（数据完整性规则）
+
+### 2.1 `box.status`
+
+| 迁移 | 触发 | 守卫 |
+|------|------|------|
+| → forming | 出现新高候选 | - |
+| forming → forming | 3日内又创新高 | 重置上轨候选 |
+| forming → confirmed | 上轨3日确认+下轨3日确认 | top>bottom，宽度≥5% |
+| confirmed → broken_up | 收盘>top×1.03且放量且非一字板 | 生成新箱体forming，prev指向本箱 |
+| confirmed → broken_down | 收盘<bottom | 触发stop信号 |
+| forming → invalid | 下轨确立前创新高 / 宽度校验失败（top≤bottom 或 (top−bottom)/top<box.min_width） | 当根K线即重启新箱体（见下一行）；invalid 不计入阶梯（prev 锚点=最近 confirmed 箱体） |
+| invalid → forming | invalidateAndRestart：从触发作废的当根 K 线重启（docs/00 §3.3 状态机） | 每根 K 线必属且仅属一个箱体（2026-10-29 对照 engine.go 校正） |
+
+> **✅ 突破/死亡语义已分离（2026-11-04，migration 0028 + 0029）**：
+> `broken_date` **只表向上突破**（仅 `broken_up` 有值，触发买入的那个事件）；
+> `dead_date` 表「死亡」= `broken_down`（向下破位）或 `invalid`（宽度不足作废）当天。
+> `broken_up` 箱体的生命周期终点即「突破日」，无额外死亡日（`dead_date` 为 NULL）。
+> 一格只表一件事，从库上可直接回答 `docs/53 §10.1` 身份链要求的
+> 「出生(bottom_confirmed) → 突破(broken_date) → 死亡(dead_date) → 卖出(position.closed_date) → 继任(prev_box_id)」链条。
+>
+> 0028 首版曾让 `broken_date` 同时承载破位日（实测 100% 的 `broken_down` 两列同值，
+> 占全部箱体 54.4%），0029 将其收紧为突破专用：存量 `broken_down` 行的 `broken_date` 清空
+> （仅清 `dead_date` 已存在的行，老库无 `dead_date` 时保留原值）。
+> 下游 `BreadthAgg` 改为按状态取列（`broken_up`→`broken_date`，`broken_down`→`COALESCE(dead_date, broken_date)`），
+> 因旧库两列同值，切换前后宽度法聚合结果完全一致；`regime.LabelBoxes` 读内存且按 status 分流；
+> `signal`/`screener` 均显式要求 `status='broken_up'`，无裸读依赖。
+
+> **✅ 箱体身份已稳定（2026-11-04，0029）／⚠️ 仍有剩余缺口**：
+> `UpsertBoxes` 的身份键原为上下轨价格对 `(top, bottom)`（6 位小数），同一只股票在不同生命周期
+> 重现同价箱体时会复用到同一行，把买入当时的 `status`/`broken_date` 覆盖掉。实库实测后果：
+> 34 笔持仓 `opened_date` 早于其箱体 `broken_date`（最多早 86 天）、11 笔买入挂在 `broken_down` 箱体上、
+> `broken_date` 非空却非 `broken_up` 的箱体占 54.4%。
+> 0029 起身份键改为 **`(top, bottom, bottom_confirmed)`**，不同生命周期的同价箱体不再撞键；
+> 被 `position`/`watch`/`signal` 引用的旧行仍由 stale 删除逻辑永久保留，历史事实不再被重算改写。
+> 回归测试 `TestUpsertBoxesIdentityStable` 覆盖此场景。
+>
+> **`invalid` 例外**：作废箱可能在下轨确认前就死（`bottom=0`、`bottom_confirmed` 为空），
+> 身份会退化成只剩 `top`，不同年份同样 `top` 的作废箱撞在一起（实测 124 组）。
+> 故 `invalid` 的身份再追加 `dead_date`——它是终态、重算不变，加入后唯一且稳定；
+> 其余状态不把 `dead_date` 纳入键，避免 `confirmed → broken_down` 时键漂移导致旧行被误删。
+> 回归测试 `TestUpsertBoxesInvalidIdentity`。
+>
+> 剩余缺口（未改；**A0 已于 2026-10-29 验收通过**（见 `docs/experiments/e17_a0_determinism_report.md`），
+> A1 生命周期可观测性尚未单独立项验收，旧队列位置见 [归档 29 快照](archive/29-box-gradient-experiment-plan-2026-11-04.md) §五第 0 项）：
+> 无 `start_date`（逻辑出生日——`created_at` 是行插入时间，二者不可混用）、
+> 无 `invalidated_date` / `invalid_reason`（invalid 无结构化失效时间与原因）、无 append-only 迁移事件账。
+> 持久层保存的仍是**重算后的状态投影**，未被任何外键引用的陈旧行可被删除。
+> **是否补 append-only 事件表，须先写 migration 方案并同 commit 更新 03/04/06；禁止直接改已发布 migration。**
+> 详见 docs/00 §3.7 第 1.1/6 点与 docs/archive/29-box-gradient-experiment-plan-2026-11-04.md §七前置段。
+
+> **✅ 交易对象追踪链已补（2026-11-02，migration 0021）**：`plan_order.source_signal_id`
+> 强引用 `signal.id`，突破事件到成交的精确回溯不再依赖 `reason_json`。`position.entry_box_id` 同步修复——
+> planner 的 reason_json 现已写真实 `box_id`（`planner.go:757` T2 追踪链），`ledger.applyBuy` 的 `reasonBoxID()`
+> 据此落库（有 `TestTrackingChain` 端到端测试覆盖）。**历史行不回填、不伪造**：NULL = 早于 0021 的订单，
+> 历史库分析继续用 `(code, box_top, box_bottom)` 反向匹配口径，新老口径在报告中必须显式声明。
+> （注：现存 `bt_baseA_*` 历史库 schema 停在迁移 0019，故其 `entry_box_id` 仍全 NULL——这是**旧二进制旧产物**，
+> 不是当前代码缺陷；新基线重建跑完迁移 0026 后该字段即非 NULL。）
+
+
+
+### 2.2 `watch.stage`
+
+| 迁移 | 触发 |
+|------|------|
+| → watching | candidate当日入池（blacklisted 冷却期内拦截；`pool.maxwatch` 降级软参考仅日志告警不拒绝入池——资金预算为唯一约束） |
+| watching → pending | 箱体confirmed且挂停损买单计划生成 |
+| pending → watching | 买单过期未成交（RelaxPendingWatches，B2接线） |
+| pending → holding | 买单成交（trade_fill回录） |
+| holding → exited | 止损成交 / 突破失败 / 3周不获利 / 人工移除 |
+| watching → exited | 箱体broken_down / 连续4箱不涨 / 人工移除 |
+| watching/holding → suspended | 人工挂起（`pool suspend --resume <价>`，B2） |
+| suspended → watching | 收盘价 ≥ resume_trigger 激活价（poolsync 巡检） |
+| watching/pending/holding → blacklisted | 战绩分级（0017）：最近一笔持仓周期亏损 `realized_pnl<0` → blacklist 冷却 `pool.blacklist_months` 月。A M1（2026-10-23）后 winner 档退役，流转简化为盈利→normal、亏损→blacklist 两态（docs/00 §5.6.5、docs/00 §5.6.7 D1） |
+
+注：suspended 不占跟踪名额（`pool.maxwatch` 只计 watching+pending+holding，但已降级软参考）；blacklisted 冷却 `pool.blacklist_months` 月后解禁回 normal（0017 战绩分级，非终态；0003 起 CHECK 六值）。
+
+### 2.3 `position.stop_price`
+
+**只升不降**（DB层CHECK触发器 + 应用层双重防护）：任何更新若新值<旧值 → 拒绝并记审计日志。
+
+---
+
+## 3. 完整DDL
+
+见 `internal/store/migrations/`（0001 初始 + 0002 fill.side + 0003 跟踪池生命周期 + 0004 已交易股票历史库，append-only，最新状态为事实源）。0003 要点：watch 表重建（stage 扩六值 + resume_trigger 列）、position 增 realized_pnl 列、4 个新参数种子。0004 要点：trade_review 复盘表（每笔 closed position 一条，`UNIQUE(position_id)` 重录覆盖；code 冗余存储便于按股索引查询；教训人工录入不自动生成——三记录制度见 docs/00 §6）。
+
+要点：
+- 主键策略：`daily_bar`用`(code,date)`复合主键；`box`/`signal`等用自增`INTEGER PRIMARY KEY`
+- 金额与价格一律`REAL`（浮点），**展示层**做四舍五入；账本恒等式校验容忍1分误差
+- 所有快照表（candidate/plan/equity）**只插入不更新**（append-only审计特性）
+- `signal.payload_json`/`candidate.reasons_json`用JSON1扩展存储判定明细
+- 外键：`PRAGMA foreign_keys=ON`（store.Open强制）
+
+---
+
+## 4. 索引设计
+
+| 表 | 索引 | 服务于 |
+|----|------|--------|
+| daily_bar | `(code, date)`主键即索引 | 个股K线窗口读取（boxscan主路径） |
+| daily_bar | `(date)` | 全市场当日截面（screen/pool） |
+| box | `(code, status)` | 跟踪池当前箱体查找 |
+| box | `(code, id)` | 阶梯链回溯 |
+| candidate | `(screen_date)` | 初选日快照查询 |
+| watch | `(stage)` | 池列表视图 |
+| watch | `(code)` | 按股查池状态/两亏拉黑巡检（B2） |
+| trade_review | `(code)` + `UNIQUE(position_id)` | 战绩按股查询 / 每笔一条复盘（B3） |
+| plan_order | `(trade_plan_id, status)` | 计划视图 |
+| plan_order | `(source_signal_id)` | 信号→订单回溯（0021） |
+| position | `(status)` | 持仓/清仓过滤 |
+| trade_fill | `(code, date)` | 成交幂等检查 |
+| trade_fill | `(date)` | 成交按日查询（0002） |
+| signal | `(date, type)` | 当日信号汇总 |
+| signal | `(code, date)` | 个股信号历史（昨日状态对比，首次事件语义） |
+| daily_run | `(date, task)` | 心跳视图/补跑判断 |
+
+---
+
+## 5. 数据量估算（10年运行）
+
+| 表 | 行数估算 | 说明 |
+|----|---------|------|
+| daily_bar | 1.2万股票×2400交易日≈2900万行 | ~2GB，SQLite可承受；boxscan走(code,date)索引 |
+| box | 数百万 | 多数invalid，可按年归档 |
+| candidate/plan/signal | 每日百行级 | 忽略不计 |
+
+> 扩展预案：daily_bar超5GB时按年分表（`daily_bar_2026`），store层路由，接口不变。
+
+---
+
+## 6. 研究字段：plan_order.reason_json（2026-10-25 立项）
+
+> box 十一维迭代实验（理论框架见 docs/00 §3.6）的核心数据载体是 `plan_order.reason_json`（JSON 文本字段）。回测器在生成每笔买入订单时，把信号触发时的 box 几何与 52 周新高上下文写入该字段；离线分析脚本（`e17_watch.py` / `e17_annual_tier_report.py` / `e17_*_report.py`）只读查询该字段做梯度分布统计。**允许**用 `daily_bar` 重算指数侧特征（MA / 回撤 / regime 标签），但**不得重算 box 几何与信号**——那是回测器的职责，重算会造成口径漂移。
+
+### 6.1 已落地字段清单（当前 darvas_e17.exe 产出）
+
+| 字段 | 类型 | 含义 | 对应实验维度 |
+|------|------|------|-------------|
+| `box_bottom` | number | 被突破箱体下轨价 | 第 2 维（box 高度）后验原料 |
+| `box_top` | number | 被突破箱体上轨价 | 第 2 维 + 第 6 维后验原料 |
+| `trigger` | number | 触发价 = `box_top × buy.premium` | 第 6 维（突破强度）—— 强度= `close(plan_date)/box_top−1` 可复算；**P1-4 A 类已收官（2026-10-30）**：3–8.14% 内无梯度 |
+| `high_52w` | number | 截至突破日的 52 周最高价 | 第 5 维 + 第 4 维后验原料 |
+| `newhigh_distance_pct` | number | `(high_52w - close) / high_52w × 100` | 第 5 维（box 位置）—— E17 阶梯分档依据 |
+| `sizing_basis` | string | `newhigh_t1`/`档2`/`档3`/`档4` 之一 | 第 5 维档位标记 |
+| `units` | number | 该笔订单的仓位单位数（1 单位=2% 权益） | 每单位净利计算分母 |
+| `regime` | string | A 判据标签 `bull`/`bear`/`range`，**按 `plan_date` 当日计算**（`regime.ClassifyDateA`） | 第 10 维（头寸 regime）归因原料 |
+| `signal` | string | 信号类型（`breakout` 等） | 审计（非研究字段） |
+| `budget_bucket` | string | 预算桶（当前恒 `normal`） | 审计（非研究字段） |
+| `track_level` | string | 跟踪级别（`normal`/`winner`/`blacklist`） | 审计（E17 后不再驱动 units） |
+| `box_id` | number | 本单实际使用的入场箱体 id（0021 起写入；传导到 `position.entry_box_id`） | 追踪链（非研究字段） |
+
+> 另有执行冗余键 `leg` / `stop` / `unit_shares` / `unit_value`，由 planner 写入用于下单与审计，**不入研究字段清单**。
+> 本节 2026-10-26 补齐 `regime` 缺项——此前 §6.1 只列 7 个字段，而实际库中每笔订单产出 15 个键，属契约漂移。
+> 2026-11-02 补 `box_id`（0021 追踪链）；旧年份库无此键，分析脚本对缺失返回 None 并诚实标注（§6.3 契约）。
+
+### 6.2 待加字段（解锁其余维度，需改回测器 + 重编译）
+
+| 待加字段 | 含义 | 解锁维度 | 改动位置 |
+|---------|------|---------|---------|
+| `volume_ratio` | 突破日量 / 过去 N 日均量 | 第 7 维（量比梯度） | `internal/signal` 信号生成处加计算 + 写入 reason_json |
+| `box_height_pct` | `(box_top-box_bottom)/box_bottom × 100`（冗余存方便统计） | 第 2 维（已可后验，冗余字段只是省计算） | 可选 |
+| `is_top_box` | bool：当前 box 是否为此前 N 个 box 序列的最高 | 第 4 维（最高 box，需 box 序列历史） | `internal/box` 加序列状态 + 信号生成处查询 |
+| `break_strength_pct` | `(trigger - box_top) / box_top × 100`（参数化后才有梯度） | 第 6 维（需配合 `buy.premium` 参数化多轮跑） | `internal/contract` 加参数 + 信号生成处读参数 |
+
+### 6.3 字段写入契约
+
+- **写入时机**：`planner` 生成买入订单时，从 `signal` 上下文取上述字段，序列化为 JSON 写入 `plan_order.reason_json`。
+- **只读查询**：离线分析脚本用 `json_extract(reason_json, '$.field')` 或 Python `json.loads` 读取，**不得反向修改**回测库。
+- **字段缺失处理**：早期年份（2005-2013）的回测库若用旧版 darvas_e17.exe 跑，可能缺字段；分析脚本必须对缺失字段返回 None 并在报告里诚实标注"该年份无此字段"，不编造。
+- **字段稳定性**：已落地字段（§6.1）的键名与语义冻结，不得改名或改义——跨年可比依赖于此；新增字段（§6.2）只能追加，不破坏旧库的可读性。
+- **时点冻结（`regime` 专属）**：`regime` 记录的是 **`plan_date`（T 日）** 的 A 判据标签，**不是** `execute_date`（T+1）的。不得改义，也不得把 T 日标签当作 T+1 开盘的市场状态使用。实测差异：2014 年 plan 日与 opened 日标签一致率 86/100；14 年全样本升势笔数 107（plan 日）vs 91（建仓日）。归因报告若按 `opened_date` 重算，必须显式声明口径并与本字段对账。
+
+### 6.4 position_leg 与 reason_json 的关联
+
+- 每个持仓的第一腿（`position_leg.leg_no=1`）关联的 `plan_order.reason_json` 是该持仓的"出生证明"——含建仓时的全部 box 上下文。
+- 离线分析以 `position_leg.leg_no=1 JOIN plan_order ON plan_order.id = position_leg.plan_order_id` 为基础视图，按 `sizing_basis` 分档统计四项口径（见 docs/01 §10.2）。
+- 加码腿（leg_no>1）的 reason_json 不参与分档统计（避免同一持仓被重复计数）。
+
