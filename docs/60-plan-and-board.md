@@ -209,7 +209,7 @@ python scripts/base_ladder_band.py --db var/bt/arms/bt_a1_t4off.db   # 四档：
 
 | 批 | 何时 | 内容 | 解锁条件 |
 |---|---|---|---|
-| **批 0** | A1 一跑完 | P1 → P2 → P3 → 重编译 → 单测 → `param_ledger --write` → `check_consistency` 回 12/12；**同时做 D5 零回测事件研究**（raiseStops 触发概率） | 校验全绿 + D5 出表 |
+| **批 0** | A1 一跑完 | P1 → P2 → P3 → 重编译 → 单测 → `param_ledger --write` → `check_consistency` 回 14/14；**同时做 D5 零回测事件研究**（raiseStops 触发概率） | 校验全绿 + D5 出表 |
 | **批 1** | 批 0 后立刻 | **K1 前视截尾**（1 臂，全有或全无） | 通过才允许用任何历史数字做决策；不通过先去修箱体边界 |
 | **批 2** | K1 通过 | **D3 取消时间止损 + D4 取消拉黑**（2 臂，可并行） | 逐臂三判据（R28）；D3 必须报「>20 日持仓笔数」变化 |
 | **批 3** | D3 定案 | **D1 加仓接线 → D2 腿数梯度**（3 臂，严格串行） | 三判据 + 单票最大权益占比 |
@@ -321,7 +321,7 @@ D 系要重跑 9 个臂，如果箱体边界含未来信息，这 9 个臂全是
 python -c "import sqlite3;c=sqlite3.connect('file:var/bt/arms/bt_a1_t4off.db?mode=ro',uri=True);print(c.execute('select max(date),count(distinct date) from daily_run').fetchone())"
 # 进程
 tasklist //FI "IMAGENAME eq darvas-dev.exe"
-# 一致性（提交前必跑，现 12/12：C1–C9）
+# 一致性（提交前必跑，现 14/14：C1–C9）
 python scripts/check_consistency.py
 ```
 
