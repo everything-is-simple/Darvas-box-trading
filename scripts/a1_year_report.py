@@ -4,7 +4,8 @@
 
 用于「跑完一年报一次」的节奏。只读，可在回测运行中调用：
 有效边界 = 六任务全 ok 的最大日期（LastCompleteDate 等价），只统计
-opened_date ≤ 边界 且 status='closed' 的笔。
+closed_date ≤ 边界 且 status='closed' 的笔（R34：按平仓日截断，
+按建仓日截断会引入「未来才平仓的赢家」前视污染）。
 
 用法：
   python scripts/a1_year_report.py --year 2005
@@ -39,12 +40,16 @@ def load(db, upto):
     for pid, code, od, cd, pnl, reason in db.execute("""
             SELECT id, code, cast(opened_date as text), cast(closed_date as text),
                    coalesce(realized_pnl,0), coalesce(close_reason,'')
-            FROM position WHERE status='closed' ORDER BY opened_date, id"""):
-        if upto and od[:10] > upto:
+            FROM position WHERE status='closed' ORDER BY closed_date, id"""):
+        od, cd = od[:10], (cd or "")[:10]
+        # R34：同期对比必须按「平仓日」截断，只统计有效边界内已实现的盈亏。
+        # 按建仓日截断会把「建仓在窗口内、平仓在窗口后」的未来赢家提前计入（前视污染）：
+        # 臂只跑到 D 日时，基线却读到了 D 日之后才平仓的大赢家，对比失真。
+        if upto and (not cd or cd > upto):
             continue
         n = leg.get(pid, 0.0)
-        e = eq.get(od[:10], 0.0)
-        rows.append(dict(pid=pid, code=code, od=od[:10], cd=(cd or "")[:10], pnl=float(pnl),
+        e = eq.get(od, 0.0)
+        rows.append(dict(pid=pid, code=code, od=od, cd=cd, pnl=float(pnl),
                          reason=reason, units=(n / (e * UNIT_PCT) if e > 0 else 0.0),
                          notional=n, year=od[:4]))
     return rows

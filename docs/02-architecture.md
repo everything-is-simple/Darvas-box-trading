@@ -202,7 +202,7 @@ report      ──汇总──▶ daily_YYYYMMDD.html + db备份
 ### 9.1 研究数据流
 
 > ⚠️ 本图为 **raw 时代（e17/bt_base_<year>）研究架构**的历史描述，已被后复权 adj 架构取代（2026-11-05）。
-> 现行源库 = `var/bt/full_hist_adj.db`、连续单库 = `bt_baseA_cont_adj.db`、二进制 = `bin/darvas-dev.exe`，见 `docs/53` / `docs/49`。
+> 现行源库 = `var/bt/full_hist_adj.db`、连续单库 = `bt_baseA_cont_adj.db`、二进制 = `bin/darvas-dev.exe`，见 `docs/53`。
 
 ```
 TDX 日线 (H:\new_tdx64)
@@ -220,7 +220,7 @@ TDX 日线 (H:\new_tdx64)
    │      high_52w/newhigh_distance_pct/sizing_basis/units)
    ▼
 e17_watch.py + e17_annual_tier_report.py  (Python 离线分析, 只读查 db)
-   │  按 t1/t2/t3/t4 + box 高度梯度分带统计四项口径
+   │  按 档1/档2/档3/档4 + box 高度梯度分带统计四项口径
    ▼
 var/bt/e17_metrics.csv             (年度汇总, append)
 var/bt/e17_watch_report.md         (摘要, 每次重建)
@@ -249,7 +249,7 @@ docs/experiments/<实验>_framework.md (零结果纯规则) + _report.{html,md} 
 | 年度报告 | `var/bt/bt_e17_<year>_report.md` | `p05_yearly_report.py` 后处理 | 单年 Markdown 报告 |
 | metrics 汇总 | `var/bt/e17_metrics.csv` | 每年完成后 append 一行 | 跨年汇总，是"已完成年份"的事实源 |
 | 监控摘要 | `var/bt/e17_watch_report.md` | `e17_watch.py` 每次运行重建 | 含已完成年份四项口径 + 进行中年份进度 + 2008 队列状态 |
-| 逐年分层报告 | `var/bt/e17_annual_tier_report.html` | `e17_annual_tier_report.py` 每年完成后重建 | 每年一章，含 t1-t4 四项口径 + box 高度梯度分布 + 诚实标注 || 复利统计 | `var/bt/snowball_stats.json` + `docs/experiments/e17_snowball_report.md` | `e17_snowball.py` 手动重建 | baseline / baseline+ 的链式复利终值、CAGR、日频最大回撤、夏普、Calmar（口径见 docs/01 §10.6） |
+| 逐年分层报告 | `var/bt/e17_annual_tier_report.html` | `e17_annual_tier_report.py` 每年完成后重建 | 每年一章，含 档1-档4 四项口径 + box 高度梯度分布 + 诚实标注 || 复利统计 | `var/bt/snowball_stats.json` + `docs/experiments/e17_snowball_report.md` | `e17_snowball.py` 手动重建 | baseline / baseline+ 的链式复利终值、CAGR、日频最大回撤、夏普、Calmar（口径见 docs/01 §10.6） |
 | 已汇报年份 | `var/bt/e17_reported_years.txt` | 自动汇报成功后 append | 避免重复汇报同一年份 |
 | 队列状态 | `var/bt/e17_years_status.json` | 队列脚本每次状态变化时写 | state=waiting/running/done/failed + 当前 year + detail |
 | **新基线库（双镜）** | `var/bt/base/bt_baseA_<year>.db`（上证）/ `bt_baseB_<year>.db`（中证500） | `scripts/base_run.py` 跑完该年该镜 | **2026-10-28 起唯一对照锚**；参数 38 项（2026-10 快照口径；**现行基线 49 键见 docs/44 台账**），逐镜仅差 `gate.ma60.index` |
@@ -267,7 +267,7 @@ docs/experiments/<实验>_framework.md (零结果纯规则) + _report.{html,md} 
 
 - **监控计划任务**：`DarvasE17Watch`（每 20 分钟刷新 `e17_watch_report.md`）。
 - **自动汇报 automation**：`c931a120-06fd-406f-bcd3-7ced77a6c6e6`（每小时检查 metrics 新增年份，发现即汇报，成功后 append `e17_reported_years.txt`）。
-- **汇报内容**：年度净利/收益率/最大回撤/胜率/利润因子 + t1-t4 四项口径（胜率、每单位净利、保本胜率、利润集中度）+ 重点 t4 深度回调区风险收益；2008 注明"样本外验证"；2005-2013 无 p05 基线，不编造对照。
+- **汇报内容**：年度净利/收益率/最大回撤/胜率/利润因子 + 档1-档4 四项口径（胜率、每单位净利、保本胜率、利润集中度）+ 重点 档4 深度回调区风险收益；2008 注明"样本外验证"；2005-2013 无 p05 基线，不编造对照。
 
 ### 9.5 研究字段的后验可行性（2026-10-25 诊断结论）
 

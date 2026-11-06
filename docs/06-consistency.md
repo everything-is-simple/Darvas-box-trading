@@ -160,7 +160,7 @@ scripts/
 ### 6.2 研究铁律（与 docs/01 §10.5 一致，此处为一致性侧执行规则）
 
 > ⚠️ 本节「库隔离」「源库 `full_hist_10pct.db`」为 **raw 时代（e17）** 的历史规则。现行源库 = `full_hist_adj.db`，
-> 连续单库 = `bt_baseA_cont_adj.db`（见 `docs/53`/`docs/49`）；「只写 `bt_e17_<year>.db`」已由「scratch 库 + `--cont`/`--resume`」取代。
+> 连续单库 = `bt_baseA_cont_adj.db`（见 `docs/53`）；「只写 `bt_e17_<year>.db`」已由「scratch 库 + `--cont`/`--resume`」取代。
 
 - **参数冻结**：回测期间不得修改 `box.*`、`risk.*`、`buy.*`、`sell.*`、`match.*` 任何参数——所有年度必须用同一组参数跑，跨年可比性依赖于此。参数改动 = 新轮回，必须用独立回测库（如 `bt_e17_<year>_p3.db`）。
 - **串行不并发**：每年串行，文件锁 `e17_years.lock` 防并发；任一年失败即停队列。
@@ -232,6 +232,12 @@ scripts/
 | # | 位置 | 症状 | 影响面 | 修法方向 | 登记 |
 |---|---|---|---|---|---|
 | TD-1 | `internal/backtest/backtest.go` `runVerify` progressive 路径 | 逐日 `RescanIncremental` 对池内全部股票「读 800 根 K 线 → 全量重扫」，池子随回放推进变大 → 单日 boxscan 从 ~1 分钟涨到数十分钟，2013 年 64 日窗口跑不完（实测 21/64 日即终止，CPU 886s、WAL 1.5GB）。另 `Bootstrap` 整库 4.4GB 拷贝 × 2 份 | **仅影响 `--mode verify` 工具的可用性**；不影响任何回测结论（verify 是冗余印证，主证据在 E17-A0 §三 box 层三路全等 + A0③ 引擎幂等） | ① 池内票复用前日 box 状态、只增量推进（与生产 `RescanIncremental` 同语义）；② Bootstrap 改 `VACUUM INTO` / `ATTACH`+`INSERT SELECT` 按窗口裁剪重建，避免整库拷贝 | 2026-10-29（E17-A0/A1 §六 终止时登记） |
+| TD-2 | `internal/ledger` 成交写入 | 写 `fill` → 扣现金 → 改持仓**分三次提交**，中途崩溃会留下半截状态 | 回放是确定性重放，重跑即恢复；不影响结论 | 包进单事务 | 2026-11-04（原 `29`「已知未修缺陷」，2026-11-06 迁入） |
+| TD-3 | `pipeline.RunDaily` | 对六个任务取 `r2, _`，**任务失败不改变总 error** | 生产运维问题，与验收无关 | 聚合错误并上报 | 2026-11-04（同上） |
+| TD-4 | `ingest` | 单文件解析失败 / flush 失败只记日志，当日任务仍标 `ok` | 灌库验收必须**独立核对文件数/日期覆盖/失败数**（`53 §8.7`），不得只看 `ok` | 失败即置 `error` 并阻断下游 | 2026-11-04（同上） |
+
+> 另：`LastCompleteDate` 只取「六任务 ok 的最大日」、`db_complete()` 只校验端点与任务计数——**都不能证明中间无缺日**，
+> 故灌库/重建验收必须独立逐日对账（`53 §8.7`）。
 
 
 ---

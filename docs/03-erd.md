@@ -247,7 +247,7 @@ erDiagram
 > `broken_date` **只表向上突破**（仅 `broken_up` 有值，触发买入的那个事件）；
 > `dead_date` 表「死亡」= `broken_down`（向下破位）或 `invalid`（宽度不足作废）当天。
 > `broken_up` 箱体的生命周期终点即「突破日」，无额外死亡日（`dead_date` 为 NULL）。
-> 一格只表一件事，从库上可直接回答 docs/49 §五之二 特征一要求的
+> 一格只表一件事，从库上可直接回答 `docs/53 §10.1` 身份链要求的
 > 「出生(bottom_confirmed) → 突破(broken_date) → 死亡(dead_date) → 卖出(position.closed_date) → 继任(prev_box_id)」链条。
 >
 > 0028 首版曾让 `broken_date` 同时承载破位日（实测 100% 的 `broken_down` 两列同值，
@@ -373,7 +373,7 @@ erDiagram
 | `trigger` | number | 触发价 = `box_top × buy.premium` | 第 6 维（突破强度）—— 强度= `close(plan_date)/box_top−1` 可复算；**P1-4 A 类已收官（2026-10-30）**：3–8.14% 内无梯度 |
 | `high_52w` | number | 截至突破日的 52 周最高价 | 第 5 维 + 第 4 维后验原料 |
 | `newhigh_distance_pct` | number | `(high_52w - close) / high_52w × 100` | 第 5 维（box 位置）—— E17 阶梯分档依据 |
-| `sizing_basis` | string | `newhigh_t1`/`t2`/`t3`/`t4` 之一 | 第 5 维档位标记 |
+| `sizing_basis` | string | `newhigh_t1`/`档2`/`档3`/`档4` 之一 | 第 5 维档位标记 |
 | `units` | number | 该笔订单的仓位单位数（1 单位=2% 权益） | 每单位净利计算分母 |
 | `regime` | string | A 判据标签 `bull`/`bear`/`range`，**按 `plan_date` 当日计算**（`regime.ClassifyDateA`） | 第 10 维（头寸 regime）归因原料 |
 | `signal` | string | 信号类型（`breakout` 等） | 审计（非研究字段） |

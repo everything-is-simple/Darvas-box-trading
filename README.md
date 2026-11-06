@@ -23,7 +23,7 @@
 
 - 买什么：跟踪池中放量突破箱体上轨的股票
 - 何时买：次日停损买单挂在箱体上轨×1.03
-- 买多少：**阶梯制**——按「距 52 周高点」分四档，t1(0–5%) 3 单位 / t2(5–10%) 2 单位 / t3(10–20%) 1 单位 / t4(20–40%) 0.5 单位、>40% 拒买（1 单位 = 2% 权益；`pos.newhigh_ladder=on`。**已退役的 A M1「升势 2 单位/其余 1 单位」不再使用**）
+- 买多少：**阶梯制**——按「距 52 周高点」分四档，档1(0–5%) 3 单位 / 档2(5–10%) 2 单位 / 档3(10–20%) 1 单位 / 档4(20–40%) 0.5 单位、>40% 拒买（1 单位 = 2% 权益；`pos.newhigh_ladder=on`。**已退役的 A M1「升势 2 单位/其余 1 单位」不再使用**）
 - 卖什么：收盘跌破最新箱体下轨的持仓
 - 何时卖：次日止损卖单挂在下轨×0.97
 - 卖多少：全部，一次清仓（达瓦斯纪律）
@@ -108,27 +108,23 @@ darvas version
 
 ---
 
-## 文档体系（按此顺序读）
+## 文档体系
 
-> **完整索引与治理规则见 [docs/README.md](docs/README.md)**。顶层保留 14 份必要文档；历史里程碑、旧代码导读、旧实验纲领与一次性审计均已归档。
+> **完整索引、治理规则与"已合并文档去向"见 [docs/README.md](docs/README.md)。**
+> 顶层保留 **14 份**必要文档（2026-11-06 治理：20 → 14，5 份已合并、原文留在 `docs/archive/`）。
 
-| 文档 | 内容 |
-|------|------|
-| [docs/00-darvas-theory.md](docs/00-darvas-theory.md) | **理论宪法**：箱体理论全部规则+A股适配映射表 |
-| [docs/01-requirements.md](docs/01-requirements.md) | 需求：每日时间表（唯一时刻源）、价格口径、验收标准 |
-| [docs/02-architecture.md](docs/02-architecture.md) | 架构：分层、数据流、回放链路 |
-| [docs/03-erd.md](docs/03-erd.md) / [docs/04-api-contract.md](docs/04-api-contract.md) | ERD 与模块契约（事实源：`migrations/` / `contract.go`） |
-| [docs/29-box-gradient-experiment-plan.md](docs/29-box-gradient-experiment-plan.md) | **已裁定结论（append-only 16 条）+ 判定口径**；执行纲领定位已移交 `55`/`56`/`60` |
-| [docs/44-new-baseline-config.md](docs/44-new-baseline-config.md) | **唯一参数事实源**：49 键逐键生效值（`param_ledger.py` 生成 + C6 校验） |
-| [docs/49-baseline-rebuild-charter.md](docs/49-baseline-rebuild-charter.md) | **新基线重建纲领**：SOP、验收 V1–V7、身份、两项硬特征；A–F 已收官，唯一未完成项 = G 攻防转换 |
-| [docs/53-data-spec-new-baseline.md](docs/53-data-spec-new-baseline.md) | **后复权数据规格**：`daily_bar_adj` 已落地（`full_hist_adj.db`，`adj_ready=1`），生产 `serve` 仍走原始价 |
-| [docs/55-adj-experiment-replay-matrix.md](docs/55-adj-experiment-replay-matrix.md) | **adj 实验重做矩阵（22+3 项）+ Q1–Q5 裁定 + 执行契约 + §9 参数清单与关键参数判定 + §10 三项新实验预注册设计 + §11 中段实测修订**：旧结论加横幅保留、新结果 `_adj` 并存、B 类只与新基线比、2019+ 不解冻 |
-| [docs/56-live-plan.md](docs/56-live-plan.md) | **活计划看板（单页）**：现在该做什么、任务清单与状态、判据锚点、参数冻结、已关闭清单、铁律、每日检查。只做导航不引入新结论，数字均指回 `55` |
-| [docs/57-books-coverage-industry.md](docs/57-books-coverage-industry.md) | **三书对照 × 方法覆盖审计 × 口径分层 × 行业层可行性**：达瓦斯 / 欧尼尔(CAN SLIM 逐字母) / 楚云风、已覆盖/部分/未覆盖清单（带代码与 OCR 行号证据）、raw 与 adj 结论分层、行业层空白确认 + 免费数据路线 + Step 0 预注册 |
-| [docs/58-book-crosslearn-absorption.md](docs/58-book-crosslearn-absorption.md) | **三书可吸收清单（决策用）**：菲阿里/炭谷 + Sperandeo + Chan 只取检验方法与风控指标、不取信号；基线显著性 t=2.228 / bootstrap CI [+214,+2030]、51 连亏 −156,982、成本占利润 12%、参数 49 键 vs 上限 13.5、明确不吸收清单 |
-| [docs/59-param-taxonomy.md](docs/59-param-taxonomy.md) | **参数自由度重分类**：49 键 → 常量 10 / 结构开关 2 / 死键 7 / 仅日志 9 / 已锁 5 / 活参 16；真实自由度 16（+5=21）对上限 13.5 只超 1.19 倍；三步消参路线 + 三判据验收 |
-| [docs/60-experiment-plan.md](docs/60-experiment-plan.md) | **实验预注册队列（唯一排队表）**：21 条 / 25 臂 / 130 机时；A·B·P·K 四系编号；6 道批次闸门，批 1 首位 **K1 前视截尾检验**（不通过则 14 年结论作废）；反过拟合五条 + 判据总则 |
-| [docs/61-market-breadth-sensing.md](docs/61-market-breadth-sensing.md) | **大盘感知方案（A5）**：涨跌家数比替代 ma60 做主开关 + 涨停/跌停家数做情绪温度计与反向阀 + 百日新高家数做赚钱效应面；四样全部复权库免费回算；牛熊猴映射 + 行业只过滤不轮动；预注册进 docs/60 |
+| 想做什么 | 读哪份 |
+|---|---|
+| 判断某条规则能不能加 | `docs/00-darvas-theory.md`（理论宪法） |
+| 今天该做什么 | `docs/56-live-plan.md`（活看板，单页） |
+| 下一个实验是什么 | `docs/60-experiment-plan.md`（唯一预注册队列） |
+| 查参数的值 / 自由度 | `docs/44-new-baseline-config.md`（§二 值、§六 分类） |
+| 查账本数字与教训 | `docs/55-adj-experiment-replay-matrix.md`（§11 收官、§14 教训） |
+| 灌数据 / 重建基线 | `docs/53-data-and-rebuild.md` |
+| 做牛熊识别 / 攻防转换 | `docs/48-market-regime.md` |
+| 工程侧（需求/架构/表/接口/一致性） | `docs/01` / `02` / `03` / `04` / `06` |
+| 已决不得重开的裁定 | `docs/29-rulings-registry.md` |
+| 想从别的书搬东西进来 | `docs/57-external-methods.md` |
 
 ---
 
@@ -160,7 +156,7 @@ internal/
   pipeline/            # 盘后流水线编排 + 备份轮转
   reporter/            # HTML日报
   gui/                 # 本地HTTP UI（embed静态+JSON API）
-docs/                  # 12 份必要文档 + README 索引：00-04、06、29、44、48、49、53、55
+docs/                  # 14 份必要文档 + README 索引（00-04、06、29、44、48、53、55、56、57、60）
 docs/archive/          # 历史档案（非事实源，原稿留痕）
 scripts/               # 一致性检查脚本
 var/                   # 运行时（db/备份/报告）
@@ -174,8 +170,10 @@ var/                   # 运行时（db/备份/报告）
 - ✅ M7 周而复始：✅ 7.1 常驻调度（serve）· ✅ 7.2 周报 · ✅ 7.3 备份轮转+恢复演练 · ✅ 7.4 移植演练（15b5183）
 - ✅ M8 内置回放器：✅ 8.1 回放骨架 + as-of 差分审计（`darvas backtest`）· ✅ 8.2 模拟撮合器（`internal/match`）· ✅ 8.3 体制运行器（`--mode regime`）· ✅ 8.4a 体制参数敏感性（结论：基线已处理论前沿，单参数无解）
 - ✅ **仓位现行 = 阶梯制**（`pos.newhigh_ladder=on`，距 52 周高点四档 3/2/1/0.5 单位）；已退役的 **A M1**（升势 2 单位/其余 1 单位）仅存在于实验史，定稿见 `docs/00 §5.6.7`，事实见 `docs/29`
-- ✅ **新基线已收官**（`docs/49` + `docs/53`）：A–F 完成、后复权已上线，adj 连续基线 `bt_baseA_cont_adj.db` 100% 跑完（+1,213,822 / ×2.214 / MDD −32.50%，`docs/55 §17`）；唯一未完成项 = G（攻防转换）仍是接口桩（`mode=off`）
+- ✅ **新基线已收官**（`docs/53`）：A–F 完成、后复权已上线，adj 连续基线 `bt_baseA_cont_adj.db` 100% 跑完（+1,213,822 / ×2.214 / MDD −32.50%，`docs/55 §11`）；唯一未完成项 = G（攻防转换）仍是接口桩（`mode=off`）
+- ⏳ **正在跑 A1 `units.t4=0` 全窗消融**（`var/bt/arms/bt_a1_t4off.db`）：已到 2015-04（约 76%），总账领先基线 19.7 万，但**主判据（剔最好年）未通过**，结构上领先全部来自 2007 单年（`docs/55 §13`）
 - 📌 实验预注册队列见 [docs/60](docs/60-experiment-plan.md)，活任务看板见 [docs/56](docs/56-live-plan.md)；历史审计见 [归档快照](docs/archive/54-new-baseline-audit.md)。
+- 📚 **文档已治理（2026-11-06）**：顶层 20 → 14 份，`49/58/59/61/62/63` 已合并，`55` 删 9 代快照；去向见 [docs/README.md §墓碑](docs/README.md)。
 
 数据源状态：TDX vipdoc 增量更新可用；回测源库 `var/bt/full_hist_adj.db`（2005–2026，5,561 只 / `adj_ready=1`）。
 
