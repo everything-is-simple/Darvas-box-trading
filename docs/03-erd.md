@@ -241,7 +241,7 @@ erDiagram
 | confirmed → broken_up | 收盘>top×1.03且放量且非一字板 | 生成新箱体forming，prev指向本箱 |
 | confirmed → broken_down | 收盘<bottom | 触发stop信号 |
 | forming → invalid | 下轨确立前创新高 / 宽度校验失败（top≤bottom 或 (top−bottom)/top<box.min_width） | 当根K线即重启新箱体（见下一行）；invalid 不计入阶梯（prev 锚点=最近 confirmed 箱体） |
-| invalid → forming | invalidateAndRestart：从触发作废的当根 K 线重启（docs/00 §3.2.4 / §3.5） | 每根 K 线必属且仅属一个箱体（2026-10-29 对照 engine.go 校正） |
+| invalid → forming | invalidateAndRestart：从触发作废的当根 K 线重启（docs/00 §3.3 状态机） | 每根 K 线必属且仅属一个箱体（2026-10-29 对照 engine.go 校正） |
 
 > **✅ 突破/死亡语义已分离（2026-11-04，migration 0028 + 0029）**：
 > `broken_date` **只表向上突破**（仅 `broken_up` 有值，触发买入的那个事件）；

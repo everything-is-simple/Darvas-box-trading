@@ -360,7 +360,7 @@ func TestBreakdownStrictLess(t *testing.T) {
 	}
 }
 
-// ─── 阶梯链（§3.4）──
+// ─── 阶梯链（§3.3 状态机：突破即开新箱，阶梯由此涌现）──
 
 // 19. 多次突破形成阶梯，prev 逐级指向前一箱体
 func TestLadderChainPrevLinks(t *testing.T) {
@@ -519,7 +519,7 @@ func TestTailConfirmedBox(t *testing.T) {
 	}
 }
 
-// ─── 书中案例（docs/00 §3.4）──
+// ─── 书中案例（docs/00 §3.3 状态机）──
 
 // 27. 书中阶梯模型：$17/$24 → $24/$27 → $31/$35（构造3级阶梯，断言轨值与prev链）
 func TestBookLadderModel(t *testing.T) {
@@ -554,7 +554,7 @@ func TestBookLadderModel(t *testing.T) {
 	}
 }
 
-// 28. 新箱体下轨≈前一箱体上轨（阶梯涌现属性，§3.4 容差）
+// 28. 新箱体下轨≈前一箱体上轨（阶梯涌现属性，§3.3 容差）
 // 注：用阶梯对齐的 buildLadderSeries（bottom=前级top）验证；书中的实际箱体
 // 可有缺口（如 31 vs 27），±3% 是理想属性而非硬规则。
 func TestLadderBottomApproxPrevTop(t *testing.T) {

@@ -194,7 +194,7 @@ python scripts/base_ladder_band.py --db var/bt/arms/bt_a1_t4off.db   # 四档：
 python -c "import sqlite3;c=sqlite3.connect('file:var/bt/arms/bt_a1_t4off.db?mode=ro',uri=True);print(c.execute('select max(date),count(distinct date) from daily_run').fetchone())"
 # 进程
 tasklist //FI "IMAGENAME eq darvas-dev.exe"
-# 一致性（提交前必跑，现 9/9）
+# 一致性（提交前必跑，现 11/11：C1–C9）
 python scripts/check_consistency.py
 ```
 
@@ -227,6 +227,7 @@ python scripts/base_run.py --cont --src var/bt/full_hist_adj.db \
 | 2026-11-06 11:55 | 文档治理：章节引用随 `55` 重编同步；铁律补 R32/R33 并修正重复编号 |
 | 2026-11-06 13:50 | 术语统一：t1–t4→档1–档4、T1–T8→温1–温8、T4–T8→挂4–挂8 |
 | 2026-11-06 14:30 | **二次治理：`56` 整份并入本文**（现在在哪/任务/锚点/冻结/已关闭/铁律/三行/续跑），本文改名 `60-plan-and-board.md`，成为唯一「计划 + 看板」 |
+| 2026-11-06 14:50 | 机检扩容 9→11：**C8 数字对账**（账本→快照→`55 §11.10`→跨文档引用）、**C9 死链检查**（链接/反引号路径/`NN §x` 章节号）；补 `check_theory_refs.py` |
 
 ---
 

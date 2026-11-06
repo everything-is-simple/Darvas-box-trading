@@ -12,6 +12,8 @@ Darvas-box-trading 一致性检查（docs/06-consistency.md §2 防线一）。
       调度器/CLI/GUI/测试/一致性检查均由其派生，本项锁定代码与文档不漂移。）
   C6 参数台账：docs/44 生成区台账  ==  代码实读键 + 迁移演化后的生效值（2026-11-03 新增）
   C7 研究纪律：判据窗口 ≤2018-12-31（2019+ 不解冻）+ raw 报告口径横幅齐全（2026-11-05 新增，docs/55）
+  C8 数字对账：docs/55 锚点区 == 锚点快照 == 账本重算；48/60/README 引用的数字必须在册（2026-11-06 新增）
+  C9 死链检查：docs/**/*.md 的 md 链接、反引号路径、`NN §x` 章节引用必须可达（2026-11-06 新增）
 
 用法：python scripts/check_consistency.py [repo_root]
 退出码：0=全部一致；1=有漂移（CI应失败）。
@@ -263,6 +265,194 @@ def check_c7_research_discipline():
     return rc
 
 
+def check_c8_anchors():
+    """数字对账（2026-11-06 新增，docs/55 §11.10）。
+
+    链：账本 DB → docs/anchors/ledger_anchors.json（快照）→ docs/55 生成区 → 48/60/README 引用。
+    三段各查一段，缺哪段都会有数字悄悄失真而不报错：
+      ① docs/55 生成区 == 快照（防手改文档）
+      ② 快照 == 账本重算（防快照与库脱钩；库不在则跳过并明示）
+      ③ 跨文档「引基线收官数字」的句子逐数字在册（防手抄/口头改数）
+    """
+    import doc_anchors
+    doc_anchors.ROOT = pathlib.Path(ROOT)
+    doc_anchors.DOC55 = pathlib.Path(ROOT) / "docs" / "55-ledger-and-lessons.md"
+    doc_anchors.SNAPSHOT = pathlib.Path(ROOT) / "docs" / "anchors" / "ledger_anchors.json"
+
+    snap = doc_anchors.load_snapshot()
+    if not snap:
+        return fail("C8 锚点快照缺失 → 跑 python scripts/doc_anchors.py --write")
+
+    rc = 0
+    bad = doc_anchors.check_doc_vs_snapshot(snap)
+    if bad:
+        rc |= fail(f"C8 docs/55 锚点区漂移 {len(bad)} 处 → {'; '.join(bad[:4])}"
+                   f"  → 跑 python scripts/doc_anchors.py --write")
+    else:
+        ok(f"C8 docs/55 锚点区 == 快照（{len(snap['values'])} 键）")
+
+    db_bad, ran = doc_anchors.check_vs_db(snap)
+    if not ran:
+        print(f"  ℹ C8 账本不在（{snap.get('db')}），跳过重算——只校了文档↔快照")
+    elif db_bad:
+        rc |= fail(f"C8 快照与账本重算不一致 {len(db_bad)} 处 → {'; '.join(db_bad[:4])}"
+                   f"  → 跑 python scripts/doc_anchors.py --write")
+    else:
+        ok(f"C8 快照 == 账本重算（边界 {snap['cut']}，引擎 {str(snap.get('engine_sha256'))[:12]}）")
+
+    quotes = doc_anchors.check_quotes(snap)
+    if quotes:
+        rc |= fail(f"C8 跨文档未在册数字 {len(quotes)} 处 → {'; '.join(quotes[:3])}"
+                   f"  → 改文档或补登锚点后 --write")
+    else:
+        ok(f"C8 跨文档引用在册（{len(doc_anchors.CROSS_DOCS)} 份）")
+    return rc
+
+
+# ── C9 死链检查 ─────────────────────────────────────────────────────
+MD_LINK = re.compile(r"\[[^\]\n]*\]\(([^)\s]+?)(?:\s+\"[^\"]*\")?\)")
+CODE_SPAN = re.compile(r"`([^`\n]+)`")
+PATHISH = re.compile(r"^(docs|scripts|internal|cmd)/[\w./-]+\.(md|py|go|sql|json|ps1|bat|html|csv|txt|yaml)$")
+DOC_SHORT = re.compile(r"^docs/(\d{2})$")
+SEC_REF = re.compile(
+    r"(?:(?:`|docs/)?(\d{2})`?\s*(?:的\s*)?)?§\s*(\d+(?:\.\d+)*|[一二三四五六七八九十]+)")
+HEAD_ARA = re.compile(r"^#{2,4}\s*§?\s*(\d+(?:\.\d+)*)")
+HEAD_CN = re.compile(r"^#{2,4}\s*§?\s*([一二三四五六七八九十]+)\s*[、.·]")
+HEAD_DI = re.compile(r"^#{2,4}\s*第\s*(\d+(?:\.\d+)*)\s*条")
+FENCE = re.compile(r"^```.*?^```", re.S | re.M)
+
+
+def _doc_index():
+    """docs/NN-*.md → {NN: path}；archive 里的同号文档作为兜底。"""
+    idx, archived = {}, {}
+    for p in sorted((pathlib.Path(ROOT) / "docs").glob("*.md")):
+        m = re.match(r"(\d{2})-", p.name)
+        if m:
+            idx[m.group(1)] = p
+    adir = pathlib.Path(ROOT) / "docs" / "archive"
+    if adir.exists():
+        for p in sorted(adir.glob("*.md")):
+            m = re.match(r"(\d{2})-", p.name)
+            if m and m.group(1) not in idx:
+                archived[m.group(1)] = p
+    return idx, archived
+
+
+def _cn2arabic(text):
+    """把「六」「十一」这类中文序号归一成阿拉伯数字串；无法解析则原样返回。
+
+    44 用「## 六、」而 60 引 `44 §6`；48 用「## 五、」而 55 引 `48 §五`——
+    不归一就会把「存在」误报成「不存在」。
+    """
+    if not text:
+        return text
+    d = {"零": 0, "一": 1, "二": 2, "三": 3, "四": 4,
+         "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+    if re.fullmatch(r"\d+(\.\d+)*", text):
+        return text
+    if "十" in text:
+        a, _, b = text.partition("十")
+        tens = d.get(a, 1) if a else 1
+        ones = d.get(b, 0) if b else 0
+        return str(tens * 10 + ones)
+    if len(text) == 1 and text in d:
+        return str(d[text])
+    return text
+
+
+def _sections(path):
+    got = set()
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        for pat in (HEAD_ARA, HEAD_CN, HEAD_DI):
+            m = pat.match(line)
+            if m:
+                got.add(_cn2arabic(m.group(1)))
+    return got
+
+
+def scan_deadlinks():
+    """返回死链清单（供 check 与调试/导出共用）。"""
+    docs = pathlib.Path(ROOT) / "docs"
+    # 只查现役文档（docs/*.md）。docs/archive 与 docs/experiments 是冻结稿：
+    # 归档稿按原样保留历史编号与旧路径，实验报告由脚本重生成（禁手改），
+    # 对它们查「今天的路径」只会产生噪声。现役文档才是导航入口，必须零死链。
+    files = sorted(p for p in docs.glob("*.md"))
+    idx, archived = _doc_index()
+    sec_cache = {}
+    problems = []
+
+    def sections(num):
+        p = idx.get(num) or archived.get(num)
+        if p is None:
+            return None
+        if p not in sec_cache:
+            sec_cache[p] = _sections(p)
+        return sec_cache[p]
+
+    for f in files:
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        body = FENCE.sub(" ", text)          # 代码块里的示例链接不算
+        rel = f.relative_to(pathlib.Path(ROOT)).as_posix()
+        is_archive = "docs/archive/" in rel
+
+        # ① markdown 链接
+        for m in MD_LINK.finditer(body):
+            target = m.group(1).strip()
+            if target.startswith(("http://", "https://", "mailto:", "#")):
+                continue
+            target = target.split("#", 1)[0]
+            if not target:
+                continue
+            if not (f.parent / target).exists():
+                problems.append(f"{rel}: 链接目标不存在 → {target}")
+
+        # ② 反引号里的仓库路径（只查代码/文档产物；var/ 是运行产物，不入库不查）
+        for m in CODE_SPAN.finditer(body):
+            token = m.group(1).strip().split()[0] if m.group(1).strip() else ""
+            if not token or "*" in token or "<" in token or token.endswith("/"):
+                continue
+            if DOC_SHORT.match(token):
+                if token.split("/")[1] not in idx:
+                    problems.append(f"{rel}: 反引号路径不存在 → {token}")
+                continue
+            if PATHISH.match(token) and not (pathlib.Path(ROOT) / token).exists():
+                problems.append(f"{rel}: 反引号路径不存在 → {token}")
+
+        # ③ `NN §x` 章节引用（归档稿冻结，只查链接不查章节）
+        if is_archive:
+            continue
+        for m in SEC_REF.finditer(body):
+            num, sec = m.group(1), m.group(2)
+            if not num:
+                continue
+            # 「原 55 §3」「原引 docs/23 §9」是明确的历史引用（编号已归档/文档已删），不查
+            ctx = body[max(0, m.start() - 6):m.start()]
+            if "原" in ctx and "原始" not in ctx:
+                continue
+            got = sections(num)
+            sec_n = _cn2arabic(sec)
+            if got is None:
+                problems.append(f"{rel}: 引用了不存在的文档 {num}（§{sec}）")
+            elif sec_n not in got:
+                problems.append(f"{rel}: {num} 无 §{sec} 章节")
+    return problems
+
+
+def check_c9_deadlinks():
+    """死链检查（2026-11-06 新增）：链接目标 / 反引号路径 / `NN §x` 章节引用必须可达。
+
+    为什么机检：文档治理时改文件名、归档旧稿、重编号，都会留下「点进去 404」或
+    「`55 §11.9` 指向已不存在的节」——读者不会报错，只会读到过期内容。
+    """
+    problems = scan_deadlinks()
+    if problems:
+        detail = "; ".join(problems[:6]) + (f" …（共 {len(problems)} 处）" if len(problems) > 6 else "")
+        return fail(f"C9 死链 {len(problems)} 处 → {detail}")
+    n = len(list((pathlib.Path(ROOT) / "docs").glob("*.md")))
+    ok(f"C9 死链 0（现役 {n} 份 md：链接 / 反引号路径 / 章节引用；archive+experiments 冻结不检）")
+    return 0
+
+
 def main():
     rc = 0
     print("== Darvas-box-trading 一致性检查 ==")
@@ -272,6 +462,8 @@ def main():
     rc |= check_c4_schedule()
     rc |= check_c6_ledger()
     rc |= check_c7_research_discipline()
+    rc |= check_c8_anchors()
+    rc |= check_c9_deadlinks()
     print("=" * 40)
     print("结果:", "全部一致 ✓" if rc == 0 else "存在漂移 ✗")
     sys.exit(rc)
