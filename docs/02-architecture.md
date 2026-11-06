@@ -201,6 +201,9 @@ report      ──汇总──▶ daily_YYYYMMDD.html + db备份
 
 ### 9.1 研究数据流
 
+> ⚠️ 本图为 **raw 时代（e17/bt_base_<year>）研究架构**的历史描述，已被后复权 adj 架构取代（2026-11-05）。
+> 现行源库 = `var/bt/full_hist_adj.db`、连续单库 = `bt_baseA_cont_adj.db`、二进制 = `bin/darvas-dev.exe`，见 `docs/53` / `docs/49`。
+
 ```
 TDX 日线 (H:\new_tdx64)
    │  ingest (复用生产代码路径)

@@ -51,6 +51,11 @@ COMMON = {
 }
 
 
+# 实验臂覆盖（--set k=v,k=v）：在 COMMON 之上覆写，用于 arm 实验（如 A1 units.t4=0）。
+# 纪律：带 --set 的实验臂必须写全新 --db（引擎拒绝 --resume-run + --set 组合）。
+OVERRIDE = {}
+
+
 def now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -67,6 +72,7 @@ def setargs(mirror):
     idx, _ = MIRRORS[mirror]
     p = dict(COMMON)
     p["gate.ma60.index"] = idx
+    p.update(OVERRIDE)
     return ",".join(f"{k}={v}" for k, v in sorted(p.items()))
 
 
@@ -165,12 +171,17 @@ def run_cont(mirror, from_date, to_date, force=False, resume=False, src=SRC, exe
     sa = setargs(mirror)
     cmd = [str(exe), "backtest", "--src", str(src),
            "--from", from_date, "--to", to_date,
-           "--mode", "regime", "--db", str(db), "--set", sa]
+           "--mode", "regime", "--db", str(db)]
     if resume:
+        # 断点续跑一律不传 --set（backtest.resumeRegime 硬拒 --set）：
+        # 库内 param 已是目标参数，recordBaseline 记录的指纹即按该参数算，
+        # 不带 --set → curFp == base.ParamFingerprint → 通过身份校验。
         cmd.append("--resume-run")
+    else:
+        cmd += ["--set", sa]
     log(f"START CONT {from_date}~{to_date} {mirror}({name}) idx={idx} → {db.name}"
         f"{' [resume]' if resume else ''}", logp)
-    log(f"  set: {sa}", logp)
+    log(f"  {'set: 跳过（续跑一律用库内参数，库内指纹必须与 baseline 一致）' if resume else 'set: ' + sa}", logp)
     t0 = time.time()
     with logp.open("a", encoding="utf-8") as f:
         rc = subprocess.call(cmd, stdout=f, stderr=subprocess.STDOUT)
@@ -218,7 +229,14 @@ def main():
                     help=f"回放二进制（默认 {EXE.name}）")
     ap.add_argument("--db", default=None,
                     help="连续模式输出库路径（默认 bt_base{mirror}_cont.db；adj 重跑可传 bt_baseA_cont_adj.db）")
+    ap.add_argument("--set", dest="overrides", default="",
+                    help="实验臂参数覆写，如 pos.newhigh.units.t4=0（逗号分隔）；须配全新 --db")
     a = ap.parse_args()
+    for kv in [x for x in a.overrides.split(",") if x.strip()]:
+        if "=" not in kv:
+            raise SystemExit(f"--set 需 k=v 形式：{kv}")
+        k, v = kv.split("=", 1)
+        OVERRIDE[k.strip()] = v.strip()
     src = Path(a.src)
     exe = Path(a.exe)
     db_out = Path(a.db) if a.db else None

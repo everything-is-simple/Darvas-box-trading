@@ -159,6 +159,9 @@ scripts/
 
 ### 6.2 研究铁律（与 docs/01 §10.5 一致，此处为一致性侧执行规则）
 
+> ⚠️ 本节「库隔离」「源库 `full_hist_10pct.db`」为 **raw 时代（e17）** 的历史规则。现行源库 = `full_hist_adj.db`，
+> 连续单库 = `bt_baseA_cont_adj.db`（见 `docs/53`/`docs/49`）；「只写 `bt_e17_<year>.db`」已由「scratch 库 + `--cont`/`--resume`」取代。
+
 - **参数冻结**：回测期间不得修改 `box.*`、`risk.*`、`buy.*`、`sell.*`、`match.*` 任何参数——所有年度必须用同一组参数跑，跨年可比性依赖于此。参数改动 = 新轮回，必须用独立回测库（如 `bt_e17_<year>_p3.db`）。
 - **串行不并发**：每年串行，文件锁 `e17_years.lock` 防并发；任一年失败即停队列。
 - **库隔离**：只写 `var/bt/bt_e17_<year>.db`；源库 `full_hist_10pct.db` 与生产库 `darvas.db` mode=ro 打开，不得写入。

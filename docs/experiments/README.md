@@ -293,4 +293,4 @@
 
 ---
 
-*本目录保留历史实验原始产物和结论；当前执行顺序见 docs/29-box-gradient-experiment-plan.md。*
+*本目录保留历史实验原始产物和结论；当前执行顺序见 docs/60-experiment-plan.md（预注册队列）与 docs/56-live-plan.md（活看板），已裁定结论见 docs/29-box-gradient-experiment-plan.md。*
