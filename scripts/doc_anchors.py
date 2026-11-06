@@ -308,6 +308,7 @@ def extract_block(text: str) -> dict[str, str] | None:
 # ---------------------------------------------------------------- 跨文档对账
 # 只检查「明确在引基线收官数字」的句子，避免把历史实验数字误判成漂移。
 CROSS_DOCS = [
+    "docs/64-darvas-master.md",   # 第一入口，人体读过它就不再翻 55 —— 数字必须同样受管
     "docs/48-market-regime.md",
     "docs/60-plan-and-board.md",
     "docs/README.md",
