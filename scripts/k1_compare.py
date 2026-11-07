@@ -87,7 +87,9 @@ def compare(full_db, trunc_db, cutoff):
     diffs = []
     for d in days:
         fh, th = fhold.get(d, set()), thold.get(d, set())
-        fcl, tcl = fclose.get(d, set()), fclose.get(d, set())
+        # 清仓标记必须各取各自库的集合；曾误写为两处都取 fclose，
+        # 会让「清仓决策不一致」永远比不出差异（假通过）。
+        fcl, tcl = fclose.get(d, set()), tclose.get(d, set())
         if fh != th:
             diffs.append((d, "hold", sorted(fh - th), sorted(th - fh)))
         if fcl != tcl:
