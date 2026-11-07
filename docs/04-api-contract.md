@@ -368,6 +368,8 @@ type Planner interface {
     // 输出：trade_plan + plan_order（停损买/卖单，含触发价、委托价、数量、腿号）
     // A M1（2026-10-23，docs/00 §5.6.7 D0）：只首买、一律不加码。首买档位由 **A 判据升势**决定：
     //   regime.ClassifyDateA(planDate) == Bull（60 日低点逐级抬升）→ 2 单位；其余 → 1 单位。
+    //   （历史路径：新基线 pos.newhigh_ladder=on（0025）后该分支不可达；现行生产为阶梯制四档
+    //    ——档1–档4=3/2/1/0.5 单位，sizing_basis=newhigh_t1~t4，见 44 §二。）
     //   winner 5x 退役（D1 意图由 D0 实现）；track_level 保留作审计字段不驱动 units。
     //   不择时、不做熊市闸门（2026-10-23 六轮回测证伪，见 docs/00 第 0 条）。
     //   组合约束=同时持仓数上限 pool.max_hold。
@@ -382,7 +384,7 @@ type Planner interface {
 
 type PlanParams struct {
     UnitPct float64            // 0.02（1 单位 = 2% 权益）
-    MaxHold int                // 7（同时持仓上限，A M1 升势 2 单位 × 7 只 ≈ 28%，留 30%+ 现金）
+    MaxHold int                // 14（同时持仓上限；B-4 四年验证后 0025 种子化，见 44 §二；旧值 7 为 A M1 时代口径）
     BuyPremium, SellDiscount float64 // 1.03 / 0.97
     MaxLegs int                // 3（0017 后恒 1 腿，保留字段向后兼容）
     // 注：WinnerUnits / pos.units.winner 随 D0 退役（planner 不再读取，参数保留作审计）。
@@ -413,7 +415,7 @@ type Ledger interface {
   表头行与空行自动跳过；解析失败整批拒绝（宁可拒绝不可错账）。fee 可选缺省0。
 - **ApplyFills**：fill → 匹配 pending 订单（执行日≤成交日、触发价最接近）→ 订单 filled
   （状态机：pending→placed→filled/cancelled/expired，`CanTransition` 封闭集合）→
-  持仓状态机（买=开仓/加码+腿记录+止损上移；卖=减仓/清仓）→ 幂等（code+date+side+price+qty）。
+  持仓状态机（买=开仓/加码+腿记录+止损上移；卖=减仓/清仓；pyramid 加码已于 0017 退役，加仓重构走 65 D1）→ 幂等（code+date+side+price+qty）。
 - **Snapshot**：现金 = 本金(param `equity.base`，默认100万) + Σ卖出所得 − Σ买入支出；
   市值 = open持仓 × 当日收盘（停牌回退最近收盘）。现金不落增量字段，永远可从成交重算。
 - **AuditEquation** 三重校验：① 权益恒等式 cash+mv=total（重算 vs 快照 + 快照内部自洽）；
@@ -447,7 +449,7 @@ type Scheduler interface {
 - **触发点语义**：每任务一个触发点（`Schedule` 常量表，顺序即依赖链）。触发点到达时
   把「计划时刻已过且尚未ok」的任务按链序一次性补齐；每触发点每日只消费一次，
   失败任务在**后续触发点**自动重试（ingest 失败→中止本链，等下个触发点，不空转）。
-- **weekly 触发（M7.2）**：`fireWeekly` 独立于每日时刻表——周六本地时刻≥10:00 触发一次
+- **weekly 触发（M7.2）**：`fireWeekly` 独立于每日时刻表——周六本地时刻≥08:00 触发一次
   `weekly` 周报任务（`RerunTask(today,"weekly")`），不查交易日历（周六必非交易日）；
   当日只消费一次，且先查 `LastOKRun` 幂等跳过（手动跑过/serve重启不重复执行）；
   错过当日不自动回放，用 `darvas weekly --date X` 手动补。
@@ -571,11 +573,11 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
 | `trigger` | signal 上下文 | ✅ | 触发价 = box_top × buy.premium |
 | `high_52w` | signal 上下文 | ✅ | 截至突破日的 52 周最高 |
 | `newhigh_distance_pct` | signal 上下文 | ✅ | (high_52w - close) / high_52w × 100 |
-| `sizing_basis` | planner 计算 | ✅ | 当前生产值为 `A_regime_up`（A 判据升势日，2 单位）或 `default`（其余，1 单位）；历史 E17 `newhigh_t1..t4` 仅保留在旧回测报告语义中，不是当前生产订单档位 |
-| `units` | planner 计算 | ✅ | 当前生产值为 2 或 1；历史 E17 研究库可出现 3/2/1/0.5，报告必须注明基线语义 |
+| `sizing_basis` | planner 计算 | ✅ | 当前生产值为 `A_regime_up`（A 判据升势日，2 单位）或 `default`（其余，1 单位）——此为 A M1 时代历史路径，`pos.newhigh_ladder=on`（0025）后不可达；现行生产为阶梯制四档（档1–档4=3/2/1/0.5 单位，`sizing_basis`=`newhigh_t1~t4`，见 44 §二） |
+| `units` | planner 计算 | ✅ | 当前生产值为 2 或 1（A M1 历史路径，见上行注）；历史 E17 研究库可出现 3/2/1/0.5，报告必须注明基线语义 |
 | `regime` | planner（`regime.ClassifyDateA(planDate)`） | ✅ | A 判据标签 `bull`/`bear`/`range`，按 plan_date 当日计算；仅作第 10 维归因原料，不作择时依据 |
 
-- **当前生产仓位规则**：`A_regime_up` → 2 单位；`default` → 1 单位；一律不加码，`budget_bucket` 恒为 `normal`。
+- **当前生产仓位规则**：`A_regime_up` → 2 单位；`default` → 1 单位；一律不加码，`budget_bucket` 恒为 `normal`。（2026-11-07 注：此为 A M1 历史路径，阶梯制 on 后不可达；现行生产为阶梯制四档——档1–档4 = 3/2/1/0.5 单位，`sizing_basis` 取 `newhigh_t1~t4`，见 44 §二。）
 - **历史 E17 研究分档**：`newhigh_t1/档2/档3/档4` → 3/2/1/0.5 单位，仅用于旧基线/研究库对账，不得反推当前 planner 行为。
 
 - **`regime` 时点语义（2026-10-26 补）**：写入的是 **T 日（`plan_date`）** 的 A 判据标签，订单在 **T+1** 执行。
@@ -626,11 +628,11 @@ darvas backtest --src <库> [--from <起>] [--to <止>] [--db <scratch路径>] -
 
 | 项 | 契约 |
 |---|---|
-| `gate.ma60.mode` | `off`（默认，完全短路，不读指数、不写审计字段）/ `half`（下方首买降 0.5 单位）/ `stop`（下方不生成买单）；回测时 `--set` 注入，未种子化 |
+| `gate.ma60.mode` | `off`（完全短路，不读指数、不写审计字段）/ `half`（下方首买降 0.5 单位）/ `stop`（下方不生成买单）；现行 `stop` 已于 0025 种子化（B-2 十四年擂主，见 44 §二），不再是仅靠回测 `--set` 注入 |
 | `reason_json.gate_ma60` | 仅非 off 时写入：`{mode, below, close, ma, ok}`，时点为 `plan_date` 与 `regime` 同口径 |
 | 时点冻结 | 闸门判定用 `plan_date` 的收盘 vs MA60；**不得**用 `execute_date` 或未来数据 |
 
-> 本文件只定义**字段语义**，不定义统计口径；加法账/复利账、CAGR/MDD/Calmar 与擂台规则见 docs/01 §10.6，机检 C5 见 docs/06 §7。
+> 本文件只定义**字段语义**，不定义统计口径；加法账/复利账、CAGR/MDD/Calmar 与擂台规则见 docs/01 §10.6；机检实有 8 项（C1–C4、C6–C9，C5 编号留空未实现），统计口径规则见 docs/06 §7。
 
 > 三变体（off/half/stop）唯一差别 = `gate.ma60.mode`；其余阶梯与参数必须与 `run_e17.bat` 逐字一致，
 > 否则对照失效（off 模式已用四表逐单 diff 验证与历史基线 bit 级等价）。

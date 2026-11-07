@@ -72,7 +72,7 @@
 ```
 Darvas-box-trading/
 ├── README.md                     # 项目总览+快速开始
-├── docs/                         # 00理论 01需求 02设计 03ERD 04API 05任务 06一致性
+├── docs/                         # 00理论 01需求 02架构 03ERD 04API 06一致性 29裁定 44参数台账 48体制 53数据与重建 55账本教训 57外部方法 60计划看板 64总典 65重构计划 66lifespan + README；archive/ backup/ experiments/ reports/ anchors/ books/ 子目录
 ├── cmd/darvas/main.go            # 入口：CLI解析+ui/serve子命令
 ├── internal/
 │   ├── contract/                 # ★ 模块间接口定义（单一事实源，见04文档）
@@ -252,7 +252,7 @@ docs/experiments/<实验>_framework.md (零结果纯规则) + _report.{html,md} 
 | 逐年分层报告 | `var/bt/e17_annual_tier_report.html` | `e17_annual_tier_report.py` 每年完成后重建 | 每年一章，含 档1-档4 四项口径 + box 高度梯度分布 + 诚实标注 || 复利统计 | `var/bt/snowball_stats.json` + `docs/experiments/e17_snowball_report.md` | `e17_snowball.py` 手动重建 | baseline / baseline+ 的链式复利终值、CAGR、日频最大回撤、夏普、Calmar（口径见 docs/01 §10.6） |
 | 已汇报年份 | `var/bt/e17_reported_years.txt` | 自动汇报成功后 append | 避免重复汇报同一年份 |
 | 队列状态 | `var/bt/e17_years_status.json` | 队列脚本每次状态变化时写 | state=waiting/running/done/failed + 当前 year + detail |
-| **新基线库（双镜）** | `var/bt/base/bt_baseA_<year>.db`（上证）/ `bt_baseB_<year>.db`（中证500） | `scripts/base_run.py` 跑完该年该镜 | **2026-10-28 起唯一对照锚**；参数 38 项（2026-10 快照口径；**现行基线 49 键见 docs/44 台账**），逐镜仅差 `gate.ma60.index` |
+| **新基线库（连续单库）** | `var/bt/base/bt_baseA_cont_adj.db` | `scripts/base_run.py`（`--cont`/`--resume` 串行续跑） | **现行唯一对照锚**（v1 已验收：2005-01-04~2018-12-28，3,402 交易日，见 55 §11）；参数 49 键口径见 docs/44 §二；旧双镜分年库 `bt_baseA_<year>.db`/`bt_baseB_<year>.db` 为历史产物（双镜对照已终止，见 53） |
 | 新基线执行日志 | `var/bt/base/base_run.log`（冒烟）/ `base_run_s2.log`（代表年） | 每跑 append | 含 `START/DONE <year> <mirror> 耗时`，报告生成器以 `DONE` 为收据 |
 
 ### 9.3 串行执行与并发防护
@@ -281,5 +281,5 @@ docs/experiments/<实验>_framework.md (零结果纯规则) + _report.{html,md} 
 | 第 1 维 box 宽度 | 无（3 日固定） | ❌ 需参数化 box 周期长度多轮跑 |
 | 第 10 维 头寸 regime | `reason_json.regime`（= C3@plan_date）+ 上证 MA20/MA60 + 指数 52 周高点回撤 | ✅ **A 类已完成（P0-3，M10.0）**。⚠️ `regime` 是 plan_date 标签，与建仓日错 1 日（2014 年一致 86/100），归因须按建仓日重算；账户回撤逐年重置且 `>10%` 档 0 天，登记「不可检验」。详见 `docs/experiments/e17_regime_attribution_framework.md` |
 
-> 历史代码改动清单见 docs/archive/05-task-breakdown.md M9/M10；当前执行顺序只认 docs/29。
+> 历史代码改动清单见 docs/archive/05-task-breakdown.md M9/M10；队列与看板只认 docs/60，重构计划只认 docs/65，已裁定登记只认 docs/29。
 

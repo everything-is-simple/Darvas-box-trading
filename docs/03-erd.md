@@ -1,7 +1,7 @@
 # 03 · 数据库ERD（SQLite）
 
-> **单一事实源**：`internal/store/migrations/`（append-only；当前仓库含 0001–0020，实际 schema 以已应用迁移及代码为准）。本文档为数据模型释义，修改遵循《06-consistency》。
-> 版本注记：截至 2026-11-01，最新迁移编号为 0020；该编号不等同于 ERD 文档 schema 版本号。
+> **单一事实源**：`internal/store/migrations/`（append-only；当前仓库含 0001–0032，实际 schema 以已应用迁移及代码为准）。本文档为数据模型释义，修改遵循《06-consistency》。
+> 版本注记：截至 2026-11-07，最新迁移编号为 0032；该编号不等同于 ERD 文档 schema 版本号。
 
 ---
 
@@ -16,7 +16,7 @@ erDiagram
     security ||--o{ watch : "跟踪池"
     box ||--o{ watch : "当前箱体"
     security ||--o{ position : "持仓"
-    position ||--o{ position_leg : "金字塔腿"
+    position ||--o{ position_leg : "金字塔腿（schema 支持腿号，v1 全程单腿）"
     box ||--o{ position : "入场箱体"
     security ||--o{ signal : "信号"
     box ||--o{ signal : "触发箱体"
@@ -127,7 +127,7 @@ erDiagram
     position_leg {
         INTEGER id PK
         INTEGER position_id FK
-        INTEGER leg_no "1/2/3"
+        INTEGER leg_no "1/2/3（v1 全程单腿：1,142 笔=1,142 腿，64 O1；加仓待 65 D1）"
         DATE date
         INTEGER qty
         REAL price
@@ -298,7 +298,7 @@ erDiagram
 | watching → pending | 箱体confirmed且挂停损买单计划生成 |
 | pending → watching | 买单过期未成交（RelaxPendingWatches，B2接线） |
 | pending → holding | 买单成交（trade_fill回录） |
-| holding → exited | 止损成交 / 突破失败 / 3周不获利 / 人工移除 |
+| holding → exited | 止损成交 / 突破失败 / `position.staledays=2` 两日强平（0016；64 O2 判方向相反）/ 人工移除 |
 | watching → exited | 箱体broken_down / 连续4箱不涨 / 人工移除 |
 | watching/holding → suspended | 人工挂起（`pool suspend --resume <价>`，B2） |
 | suspended → watching | 收盘价 ≥ resume_trigger 激活价（poolsync 巡检） |
@@ -373,7 +373,7 @@ erDiagram
 | `trigger` | number | 触发价 = `box_top × buy.premium` | 第 6 维（突破强度）—— 强度= `close(plan_date)/box_top−1` 可复算；**P1-4 A 类已收官（2026-10-30）**：3–8.14% 内无梯度 |
 | `high_52w` | number | 截至突破日的 52 周最高价 | 第 5 维 + 第 4 维后验原料 |
 | `newhigh_distance_pct` | number | `(high_52w - close) / high_52w × 100` | 第 5 维（box 位置）—— E17 阶梯分档依据 |
-| `sizing_basis` | string | `newhigh_t1`/`档2`/`档3`/`档4` 之一 | 第 5 维档位标记 |
+| `sizing_basis` | string | `newhigh_t1`~`newhigh_t4`（对应档1–档4）之一 | 第 5 维档位标记 |
 | `units` | number | 该笔订单的仓位单位数（1 单位=2% 权益） | 每单位净利计算分母 |
 | `regime` | string | A 判据标签 `bull`/`bear`/`range`，**按 `plan_date` 当日计算**（`regime.ClassifyDateA`） | 第 10 维（头寸 regime）归因原料 |
 | `signal` | string | 信号类型（`breakout` 等） | 审计（非研究字段） |

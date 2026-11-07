@@ -2,7 +2,7 @@
 
 > **性质：数据侧规格 + 基线重建作业指导书 + 验收判据。数据侧已实施并验收（2026-11-05），生产 `serve` 尚未切换。**
 > **2026-11-06 合并原 `49`（重建新基线行动纲领）**：§9 重建 SOP / §10 验收判据 / §11 永续化 / §12 红线 为原 49 内容，
-> 原文见 `archive/49`。A–F 六阶段已收官（adj 基线 100%），唯一未完成 = G 攻防转换，已移交 `48`（B 类判据在新账本重算后开工）。
+> 原文见 `archive/49`。A–F 六阶段已收官（adj 基线 100%），唯一未完成 = G 攻防转换，已移交 `48`：G 未开工，前置是 48 新账本重算 + A 系时序（A 系已降支线，以 `60`/`65` 为准）。
 > **一句话分工：本文件管「数据长什么样、基线怎么建、建成什么样才算过」，`44` 管参数值，`29` 管已决裁定，`55` 管实验与账本，`60` 管排队与看板。**
 > 表内"下线""切换"等描述是**代码侧已实现的契约**（0032，commit `64083db`）：`daily_bar_adj` 已落地、
 > `var/bt/full_hist_adj.db` 已验收（`adj_ready=1`，5,561 只 / 17,962,168 行，判据 7/7）；
@@ -147,6 +147,8 @@ adj_volume(t)  = Volume_none(t) / factor_norm(t)         # 量反向调整，保
 
 ## §5 重跑前必须固定的全部配置项（逐项 checklist）
 
+> 注：本节的 A1–A7 / B1–B9 / C1–C4 / D1–D4 / E1–E5 是**重建 SOP 配置组编号**，与 `60` 的实验臂（A1/A3/A5/A6、D3/D4 等）、机检 C1–C9 **同名不同物**。
+
 ### A. 数据源
 
 | # | 项 | **固定值** |
@@ -177,7 +179,7 @@ adj_volume(t)  = Volume_none(t) / factor_norm(t)         # 量反向调整，保
 
 | # | 项 | **固定值** |
 |---|---|---|
-| C1 | 键数 | **48**（41 库内种子 + 7 代码默认），生成器 `scripts/param_ledger.py` 校验 |
+| C1 | 键数 | **49**（42 库内种子 + 7 代码默认），生成器 `scripts/param_ledger.py` 校验 |
 | C2 | 变更 | **本轮零变更**。「换口径」与「调参数」必须分开，否则收益变化无法归因 |
 | C3 | 仓位制 | 阶梯制 `pos.newhigh_ladder=on`，`档1/档2/档3/档4 = 3/2/1/0.5`，`pos.unit=0.02` |
 | C4 | 校验 | 重跑前 `python scripts/check_consistency.py` 必须全绿 |
@@ -213,7 +215,7 @@ adj_volume(t)  = Volume_none(t) / factor_norm(t)         # 量反向调整，保
 | 4 | 同源性 | 抽样 50 只 `daily_bar.close` ≡ tqcenter `none`（差分 0） |
 | 5 | 引擎切表 | `BarsWindow` 读 `daily_bar_adj`；用 1 年小样本跑通，成交笔数 > 0 |
 | 6 | 除权清仓下线 | 全库检索 `sim:dividend` 成交数 = **0** |
-| 7 | 一致性 | `check_consistency.py` C1–C6 全绿 |
+| 7 | 一致性 | `check_consistency.py` 机检全绿（C1–C4、C6–C9，无 C5） |
 | 8 | 14 年重跑 | 串行、白天跑；完整性判据 `max(date) ≥ 2018-12-01` |
 
 > **⚠️ 切表实施要点（2026-11-04 补，防静默失效）**：
@@ -450,6 +452,7 @@ python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A 
 - `base_run.py` 已把 4 个实验结论注入项（`newhigh_ladder=on / ma60=stop / max_hold=14 / equity_gate=off`）写死在 `COMMON` 里，与 migration 0025 一致 → **重建不需要 `--set`**。
 - 执行器**幂等**：`db_complete()` 判 `equity_snapshot` 非空才跳过，强杀留下的半成品会被识别并删掉重跑。
 - **串行，勿并发**（回测并发会污染 scratch 心跳）。
+- L0 lifespan 建库（`66`）用现有 adj 数据、零机时（不跑回测），不新增数据规格需求。
 
 **耗时**：实测约 **28 min/年 × 14 年 ≈ 6.6 小时**；臂实验约 5.2h/臂。**只在白天跑**（夜间长进程必被环境回收）。
 
@@ -461,7 +464,7 @@ python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A 
 
 | 判据 | 内容 | 怎么跑 | 通过标准 |
 |---|---|---|---|
-| **V1 一致性** | C1–C9 机器校验 | `python scripts/check_consistency.py` | 全绿 |
+| **V1 一致性** | 机检 8 项（C1–C4、C6–C9，无 C5） | `python scripts/check_consistency.py` | 全绿 |
 | **V2 账本对账** | 库可读、`equity_snapshot` 非空、参数键 = 基线 | `python scripts/param_ledger.py --db <库>` | 与 `44` 台账逐键一致 |
 | **V3 剔除前三不翻负** | 总账剔除前三赢家后仍为正 | 复用 `e17_regime_scale_a.py` 的 `summarize` 口径 | 剔除前三净利 > 0（**铁律级判据**） |
 | **V4 年度一致性** | 逐年方向与 `44 §四` 登记一致 | `base_year_summary.py` | 方向一致 |
@@ -476,7 +479,7 @@ python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A 
 | C 连续单库 | **V5-1 结转**：跨年 open 持仓数 > 0｜**V5-2 复利**：连续库终值 ≠ 链式终值｜**V5-3 逐年**：与单年库逐年收益率差 < 1% | ✅ |
 | D 断点续跑 | **V6-1 幂等**：二跑识别「已是最新」0 日续跑｜**V6-2 断点续**：kill 后从 `MAX(ok date)+1` 续、`daily_run` 无重复｜**V6-3 参数拒续**：任何 `--set` 一律拒绝｜**V6-4 换二进制拒续**：引擎 hash 不一致拒绝｜**V6-5 六任务全 ok** | ✅ |
 | E 日追加/补跑 | **V7-1 多日补跑**｜**V7-2 空库兜底**｜**V7-3 幂等** | ✅ |
-| **G 攻防转换** | 见 `48 §五` 五条判据 | ⚠️ **接口桩 `mode=off`，未开工**（待 A1/A3 定案） |
+| **G 攻防转换** | 见 `48 §五` 五条判据 | ⚠️ **接口桩 `mode=off`，G 未开工**：前置是 48 新账本重算 + A 系时序（A 系已降支线，以 `60`/`65` 为准） |
 
 > 阶段 A–F 的实施细节见 `archive/50`、`archive/51`、`archive/52`；**代码是事实源**（`base_run.py --cont` / `--resume` / `scheduler.CatchUp`）。
 

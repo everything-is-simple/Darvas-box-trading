@@ -154,7 +154,7 @@
 | `pool.max_hold=14` | B-4：14 只胜 7 只，也胜 50% 权益闸门 | 是（相对 7 与闸门）。**20 档未验**，见 §4.2 |
 | `pos.equity_gate=off` | B-4 ③ 否决权益预算闸门 | 是 |
 | `pos.newhigh_ladder=on` | M9.0 甜区落地四档阶梯，现行生产仓位语义 | 是（相对已退役 A M1） |
-| `pos.newhigh.units.t1~档4=3/2/1/0.5` | 档位结构已验证（档1/档2 唯一稳定正贡献，档4>40% 净亏） | 结构是；**每档单位数未单独 A/B** |
+| `pos.newhigh.units.t1~t4=3/2/1/0.5` | 档位结构已验证（档1/档2 唯一稳定正贡献，档4>40% 净亏） | 结构是；**每档单位数未单独 A/B** |
 | `pos.newhigh.lookback/cutoff=252/40` | 随阶梯一并定案 | 是（结构参数） |
 | `box.max_growth_days=6` | LB-4：≤6 日最优（+626 超门槛、3/4 年改善） | 是。**「提升器」不是「翻正药」** |
 | `box.volmult=2.0` | P1-4：牛松熊紧——1.5 在震荡/牛/结构市最优，**2018 熊市 2.0 更优** | 是（当前市况下）。门槛最优值是市况的函数 |
@@ -202,15 +202,15 @@
 
 | 参数 | 现值 | 结论 |
 |---|---|---|
-| `pos.newhigh.units.t4`（档4） 🔴 | 0.5 | **0（A1 唯一臂）**，删它上界 +178,018 |
+| `pos.newhigh.units.t4`（档4） 🔴 | 0.5 | **0.5 维持**（A1 判伪不升 v2，2026-11-06，`55 §13`）；「删它上界 +178,018」为 A1 臂推算值，未采纳 |
 | `pos.newhigh.units.t3`（档3） 🔴 | 1 | 1，A1 后立即复查第二刀 |
-| `pos.newhigh.units.t2`（档2） 🟡 | 2 | 2，A1 后单独立项 2 vs 2.5 |
+| `pos.newhigh.units.t2`（档2） 🟡 | 2 | 2，A1 后单独立项 2 vs 2.5（未入 `60` 预注册，属设想非队列；队列只认 `60`） |
 | `pos.newhigh.units.t1`（档1） 🔴 | 3 | **仓位冻结**；但机制要查——`time_stop × 档1` 168 笔 −892,725，占总亏损 47.3% |
 | `pos.newhigh.cutoff` | 40 | 不动（改它连带改档3/档4 归属，101 笔错分教训） |
-| `position.staledays` | 2 | **冻结，永不放宽**（分母端） |
+| `position.staledays` | 2 | **冻结，永不放宽**（分母端）。登记例外：D3+D4 臂以 =0 在跑（65 阶段 0 原著复刻，`60 §2.3`） |
 | `gate.ma60.mode` 🔴 | stop | **A3 前不动** |
 | `pos.unit` | 0.02 | 不动（先解决脉冲式重仓） |
-| 全部出场端 / 止损端 | — | **冻结 12 个月**（均亏 CV 0.43 已到底，见 `55 §11.7`） |
+| 全部出场端 / 止损端 | — | **冻结 12 个月**（均亏 CV 0.43 已到底，见 `55 §11.7`）。登记例外：D13 寿命闸门调出场（65 阶段 3.5，`60 §2.3`） |
 | `gate.amp.*` 振幅闸门 | — | ❌ **永久不采纳**（判伪，`55 §10.5`） |
 
 改参数默认值**必须写 migration**（0017 教训）；49 键冻结以外的改动一律要过 `60 §4` 判据总则。
@@ -299,25 +299,26 @@
 
 | # | 键 | 值 | 状态 / 建议 |
 |---|---|---|---|
-| 1 | `pos.newhigh.units.t4` | 0.5 | A1 正在测 0 → **最可能的删除项**
-| 2 | `pos.newhigh.units.t3` | 1 | 已知裂缝（+141,012 但剔前3 −58,237）→ **A1 后第一刀**
-| 3 | `pos.newhigh.cutoff` | 40 | 档4 归零后此键退化为死键 → 合并删
+| 1 | `pos.newhigh.units.t4` | 0.5 | A1 已判伪（2026-11-06）：剔档4 不升 v2，**0.5 维持**；档4 去留改由 65 新物种重判（65 阶段 5「重跑 A1」）
+| 2 | `pos.newhigh.units.t3` | 1 | 已知裂缝（+141,012 但剔前3 −58,237）→ `60 §2.3` 已预注册「档3 第二刀」；A/B 系已降支线，时序以 `60`/`65` 为准
+| 3 | `pos.newhigh.cutoff` | 40 | 档4 归零前提不成立（A1 判伪，档4 维持 0.5）→ 暂不删
 | 4 | `pool.max_hold` | 14 | B-4 已验 14>7，20 档待测
 | 5 | `box.min_width` | 0.05 | **未验，成本最大**，优先做
-| 6 | `position.staledays` | 2 | 五档全在噪声内 → 固定 2 并删键
+| 6 | `position.staledays` | 2 | 五档全在噪声内 → 固定 2 并删键；**例外**：D3+D4 臂以 =0 在跑（65 阶段 0 原著复刻）
 | 7 | `sell.discount` | 0.97 | 三档在噪声内 → 固定并删键
 | 8 | `screen.rs_excess_min` | 0.20 | 梯度未验
 | 9 | `match.max_entry_gap` | 1.05 | 梯度未验，与滑点耦合
 | 10 | `buy.premium` | 1.03 | 3–8.14% 无梯度 → **直接固定删键**
 | 11 | `box.volwindow` | 50 | 与 volmult 绑定，固定 50
 | 12 | `pos.unit` | 0.02 | 资金管理分母，**不实验**（改了整条曲线平移）
-| 13 | `pool.blacklist_months` | 12 | 冷却参数，固定 12
+| 13 | `pool.blacklist_months` | 12 | 冷却参数，固定 12。注：B3 已预注册 0/6/12/24 梯度（`60 §2.3`），D4 臂以 =0 在跑（65 阶段 0）
 | 14 | `pool.flatboxmax` | 4 | 未验，与出池逻辑耦合
 | 15 | `pool.min_watch_days` | 3 | 与 staledays 功能重叠 → 合并
 | 16 | `screen.rswindow` | 20 | 与 rs_excess_min 绑定，固定 20
 
 **其中「固定/合并即可、无需实验」的 8 个**：`buy.premium`、`box.volwindow`、`screen.rswindow`、`pool.blacklist_months`、
 `pool.min_watch_days`、`position.staledays`、`sell.discount`、`pos.unit`。
+（注：`pool.blacklist_months` 例外——B3 已预注册 0/6/12/24 梯度、D4 臂以 =0 在跑，见 `60 §2.3`；本行旧分类保留。）
 **剩 8 个真正需要实验**：`units.t4`、`units.t3`、`cutoff`、`pool.max_hold`、`box.min_width`、`screen.rs_excess_min`、`match.max_entry_gap`、`pool.flatboxmax`。
 
 ### 6.5 消参判据（三选二即通过，`60` P4 沿用）
