@@ -13,12 +13,19 @@
     连续 MAX_FAIL 次仍失败则退出非 0（避免空转）。
 
 用法：
-  python scripts/guard_d3d4.py
+  python scripts/guard_d3d4.py                 # 长循环（手动前台跑）
+  python scripts/guard_d3d4.py --once          # 单次检查，供计划任务每 2 分钟触发
   python scripts/guard_d3d4.py --poll 30 --max-fail 6
+
+--once 设计要点（同 a1_watchdog.py，2026-11-07 加）：
+  长循环进程会被 Agent 会话清理连带杀掉，故正式值守改由 Windows 计划任务托管；
+  每次触发只检查一次：进程活着或库已完整就退出，否则用 DETACHED_PROCESS 拉起
+  `base_run.py --resume` 后立刻退出，90 秒启动锁防重复拉起。
 
 只读查库 + 只续跑，不删库、不重头跑。手动停：Ctrl+C 或 taskkill 本进程。
 """
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -38,13 +45,20 @@ MIN_END = "2018-11-26"
 # 实际 2018-12-31 → min_end = 2018-12-01（base_run 里 12 月特判为 replace(day=1)）
 MIN_END = "2018-12-01"
 
+LOCK = ROOT / "var" / "bt" / "arms" / "d3d4_guard.lock"
+GUARD_LOG = ROOT / "var" / "bt" / "arms" / "guard_d3d4.log"
+START_LOCK_SEC = 90
+
 
 def ts():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def log(msg):
-    print(f"[{ts()}] {msg}", flush=True)
+    line = f"[{ts()}] {msg}"
+    print(line, flush=True)
+    with GUARD_LOG.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
 
 
 def proc_alive():
@@ -114,11 +128,55 @@ def resume():
     return subprocess.run(cmd, cwd=str(ROOT)).returncode
 
 
+def launch_detached():
+    """脱离式拉起续跑（--once 用）：不等待子进程，立刻返回，避免占用计划任务。"""
+    out = (ROOT / "var" / "bt" / "arms" / "d3d4_resume_sched.out").open("a", encoding="utf-8")
+    err = (ROOT / "var" / "bt" / "arms" / "d3d4_resume_sched.err").open("a", encoding="utf-8")
+    cmd = [
+        sys.executable, str(ROOT / "scripts" / "base_run.py"),
+        "--cont", "--from", FROM, "--to", TO, "--mirrors", "A",
+        "--src", str(SRC), "--exe", str(EXE), "--db", str(DB), "--resume",
+    ]
+    flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    p = subprocess.Popen(cmd, cwd=str(ROOT), stdout=out, stderr=err, creationflags=flags)
+    log(f"续跑已脱离拉起 pid={p.pid}（--resume，不带 --set）")
+
+
+def once():
+    """单次检查：完整退出 / 活着退出 / 否则脱离拉起续跑后退出。"""
+    if db_complete():
+        d, m = last_progress()
+        log(f"DONE {d} 日 / {m}，无需值守")
+        return 0
+    if proc_alive():
+        d, m = last_progress()
+        log(f"ALIVE 进度={d} 日 / {m}")
+        return 0
+    now = time.time()
+    if LOCK.exists():
+        try:
+            if now - float(LOCK.read_text().strip()) < START_LOCK_SEC:
+                d, m = last_progress()
+                log(f"LOCKED 进度={d} 日 / {m}（{START_LOCK_SEC}s 内已拉起过）")
+                return 0
+        except Exception:
+            pass
+    LOCK.write_text(str(now))
+    d, m = last_progress()
+    log(f"进程已停且未完成，从 {m}（{d} 日）续跑")
+    launch_detached()
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--poll", type=int, default=30, help="轮询间隔秒")
     ap.add_argument("--max-fail", type=int, default=6, help="连续续跑失败上限")
+    ap.add_argument("--once", action="store_true", help="单次检查（计划任务模式），不进入长循环")
     a = ap.parse_args()
+
+    if a.once:
+        return once()
 
     log(f"守护启动：DB={DB.name} 目标 MIN_END={MIN_END} 轮询={a.poll}s")
     fails = 0
