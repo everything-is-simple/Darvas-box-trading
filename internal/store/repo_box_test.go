@@ -357,3 +357,65 @@ func TestUpsertBoxesInvalidIdentity(t *testing.T) {
 		t.Errorf("box 行数=%d want 2（同 top 不同作废日各占一行）", n)
 	}
 }
+
+// TestLatestConfirmedBoxAsOf O6 (a) 时点隔离（docs/65 §4 用户 2026-11-08 裁定）。
+// 手工造一组 id 序与确认日序背离的箱体（UpsertBoxes 复用旧 id 的真实后果），
+// 验证新口径：上下轨都确立 + 两确认日均 ≤ planDate + 按「完全确立日」取最新。
+func TestLatestConfirmedBoxAsOf(t *testing.T) {
+	st := newTestStore(t)
+	code := "sh600519"
+	seedSecs(t, st, code)
+	type boxRow struct {
+		id         int
+		top, bot   float64
+		topC, botC string
+		status     string
+	}
+	rows := []boxRow{
+		{9, 26, 22, "2026-10-08", "2026-10-12", "confirmed"},  // 当期最新但 id 最小 ← 应选中
+		{10, 10, 8, "2026-09-01", "2026-09-05", "confirmed"},  // 旧箱体，id 更大
+		{11, 20, 18, "2026-10-01", "2026-10-05", "confirmed"}, // 当期次新
+		{12, 30, 28, "2026-11-01", "2026-11-05", "confirmed"}, // 未来：10-16 时点须排除
+		{13, 40, 38, "2026-10-10", "", "confirmed"},           // 下轨未确立
+		{14, 50, 48, "2026-10-12", "2026-10-14", "forming"},   // forming 暂态
+	}
+	for _, r := range rows {
+		var botC any
+		if r.botC != "" {
+			botC = r.botC
+		}
+		if _, err := st.DB().Exec(`INSERT INTO box(id,code,top,bottom,top_confirmed,bottom_confirmed,status)
+			VALUES (?,?,?,?,?,?,?)`, r.id, code, r.top, r.bot, r.topC, botC, r.status); err != nil {
+			t.Fatalf("insert box #%d: %v", r.id, err)
+		}
+	}
+	// 旧口径（ORDER BY id DESC）确实拿错，证明本修复不是空转。
+	old, err := st.BoxRepo.LatestNonFormingBox(code)
+	if err != nil || old == nil {
+		t.Fatalf("LatestNonFormingBox: box=%v err=%v", old, err)
+	}
+	if old.ID == 9 {
+		t.Fatalf("旧口径恰好选中正确箱体 #9，测试构造失效（拿到 #%d）", old.ID)
+	}
+
+	got, err := st.BoxRepo.LatestConfirmedBoxAsOf(code, "2026-10-16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.ID != 9 || got.Bottom != 22 || got.BottomConfirmed != "2026-10-12" {
+		t.Fatalf("planDate=2026-10-16 取到 %+v，want #9 bottom=22 botC=2026-10-12", got)
+	}
+	// 时点提前到所有确认日之前 → 不得消费任何未来箱体。
+	none, err := st.BoxRepo.LatestConfirmedBoxAsOf(code, "2026-01-01")
+	if err != nil || none != nil {
+		t.Fatalf("planDate=2026-01-01 应无合格箱体，got=%+v err=%v", none, err)
+	}
+	// 时点后移：原本的「未来箱体」完全确立日 11-05 最新，此时才可见。
+	later, err := st.BoxRepo.LatestConfirmedBoxAsOf(code, "2026-11-10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if later == nil || later.ID != 12 {
+		t.Fatalf("planDate=2026-11-10 取到 %+v，want #12", later)
+	}
+}

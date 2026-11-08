@@ -1267,7 +1267,6 @@ func TestIsHighestBoxTrend(t *testing.T) {
 	}
 }
 
-
 // TestRegimeScaleMultStub 攻防转换传导接口桩（0030）：mode=off 恒 1.0（与基线逐单等价）；
 // mode=on 尚未实现 L1 状态机，暂也返回 1.0（不改变任何输出）。这是「缺传导」链在代码里的
 // 物理挂点——验证它存在且默认等价，留待后复权（docs/53）+ 新基线账本后接入真实乘数。
@@ -1278,5 +1277,82 @@ func TestRegimeScaleMultStub(t *testing.T) {
 	// on 尚未接状态机：现阶段也必须恒等，否则会污染新基线账本。
 	if got := regimeScaleMult(regimeScaleState{mode: "on"}); got != 1.0 {
 		t.Errorf("on（未实现）乘数=%v want 1.0（挂点占位，不改变输出）", got)
+	}
+}
+
+// insertPlannerBox 手工插入指定 id / 确认日的箱体（绕开 UpsertBoxes 的 id 复用），
+// 用于构造「id 序 ≠ 时间序」的 O6 回归场景。
+func insertPlannerBox(t *testing.T, st *store.Store, code string, id int,
+	top, bottom float64, topC, botC, status string) {
+	t.Helper()
+	var bc any
+	if botC != "" {
+		bc = botC
+	}
+	if _, err := st.DB().Exec(`INSERT INTO box(id,code,top,bottom,top_confirmed,bottom_confirmed,status)
+		VALUES (?,?,?,?,?,?,?)`, id, code, top, bottom, topC, bc, status); err != nil {
+		t.Fatalf("insert box #%d: %v", id, err)
+	}
+}
+
+// TestRaiseStopsTimeIsolation O6 (a)（docs/65 §4 裁定）：止损只能挂到
+// 「planDate 时点上下轨都已牢固确立的最新箱体」下轨，不能挂到 id 更大但确认日更旧的
+// 历史箱体、也不能挂到确认日仍在未来的箱体。旧口径会取 #102（历史 broken_down，
+// 下轨 87）→ 止损 84.39 远高于当日收盘；新口径应取 #99（当期新箱体，下轨 22）。
+func TestRaiseStopsTimeIsolation(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)                                                                 // 10-09..10-15，10-15 收盘 23.4
+	insertPlannerBox(t, st, code, 101, 24, 17, "2026-10-01", "2026-10-05", "broken_up")   // 入场箱体
+	insertPlannerBox(t, st, code, 102, 90, 87, "2001-10-19", "2001-12-21", "broken_down") // 历史箱体
+	insertPlannerBox(t, st, code, 103, 200, 180, "2026-12-01", "2026-12-05", "confirmed") // 未来箱体
+	insertPlannerBox(t, st, code, 99, 26, 22, "2026-10-08", "2026-10-12", "confirmed")    // 当期新箱体（id 最小）
+	if _, err := st.DB().Exec(`INSERT INTO position(code, opened_date, entry_box_id, qty, avg_cost, stop_price, status)
+		VALUES (?, '2026-10-05', 101, 500, 20, 16.49, 'open')`, code); err != nil {
+		t.Fatal(err)
+	}
+	positions, err := st.TradeRepo.OpenPositions()
+	if err != nil || len(positions) != 1 {
+		t.Fatalf("OpenPositions: n=%d err=%v", len(positions), err)
+	}
+	if n := New(st).raiseStops(positions, 0.97, "2026-10-15"); n != 1 {
+		t.Fatalf("上移笔数=%d want 1", n)
+	}
+	var stop float64
+	if err := st.DB().QueryRow(`SELECT stop_price FROM position WHERE code=?`, code).Scan(&stop); err != nil {
+		t.Fatal(err)
+	}
+	if !approx(stop, 22*0.97, 0.001) {
+		t.Fatalf("stop_price=%.4f want %.4f（当期新箱体下轨 22×0.97；旧口径会得 84.39 / 未来箱体 174.60）",
+			stop, 22*0.97)
+	}
+}
+
+// TestRaiseStopsSkipsFutureBoxes O6 (a) 反向断言：只有入场箱体与尚未确立/未来箱体时，
+// 不得上移止损（不得消费未来信息）。
+func TestRaiseStopsSkipsFutureBoxes(t *testing.T) {
+	st := newPlannerStore(t)
+	code := "sh600519"
+	seedBars(t, st, code)
+	insertPlannerBox(t, st, code, 101, 24, 17, "2026-10-01", "2026-10-05", "broken_up")   // 入场箱体
+	insertPlannerBox(t, st, code, 103, 200, 180, "2026-12-01", "2026-12-05", "confirmed") // 未来箱体
+	insertPlannerBox(t, st, code, 104, 60, 55, "2026-10-12", "", "confirmed")             // 下轨未确立
+	if _, err := st.DB().Exec(`INSERT INTO position(code, opened_date, entry_box_id, qty, avg_cost, stop_price, status)
+		VALUES (?, '2026-10-05', 101, 500, 20, 16.49, 'open')`, code); err != nil {
+		t.Fatal(err)
+	}
+	positions, err := st.TradeRepo.OpenPositions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := New(st).raiseStops(positions, 0.97, "2026-10-15"); n != 0 {
+		t.Fatalf("上移笔数=%d want 0（无 planDate 时点可用的新箱体）", n)
+	}
+	var stop float64
+	if err := st.DB().QueryRow(`SELECT stop_price FROM position WHERE code=?`, code).Scan(&stop); err != nil {
+		t.Fatal(err)
+	}
+	if !approx(stop, 16.49, 0.001) {
+		t.Fatalf("stop_price=%.4f want 16.49（不得改动）", stop)
 	}
 }

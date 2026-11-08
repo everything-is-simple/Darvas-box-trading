@@ -247,6 +247,14 @@
 6. **成本提示**：全窗 3,402 日重跑约 34 小时，按既有长跑节奏安排，勿与其他臂并行。
 7. **执行边界**：**代码修改与起跑长跑须用户另给一句明确指令，本轮不动**。
 
+**🔧 (a) 实施状态（2026-11-08，用户指令「先动 `raiseStops` 的 (a) 时点隔离」；只改代码，不 rebuild、不重跑、不提交）**：
+
+- `internal/store/repo_box.go` 新增 `LatestConfirmedBoxAsOf(code, planDate)`：只取上／下轨确认日均非空且均 ≤ 计划日的箱体，按「完全确立日」＝两确认日的较晚者倒序取最新（同日并列再按 `id`）；状态集合沿用 `confirmed / broken_up / broken_down`，排除 `forming / invalid`。**`LatestNonFormingBox` 未改**，signal / poolsync / screener / 箱体扫描等既有调用口径不变。
+- `internal/planner/planner.go`：`raiseStops` 增加 `planDate` 入参并改用上述查询；(b) 按裁定只加一行「新止损高于当日收盘」的**只读告警日志**，不拦截、不改订单、不改参数。
+- 未动：参数键、表结构、迁移文件、`bin/darvas-dev.exe`（仍是旧二进制、旧 `engine_sha256`）、任何账本／臂库；K1（全量前视验证）继续暂停。
+- 新增回归单测（同包、可直接 `go test` 触发）：`TestLatestConfirmedBoxAsOf`（id 序与确认日序背离／未来箱体／下轨未确立／forming 四类隔离，含时点前后可见性）、`TestRaiseStopsTimeIsolation`（历史大 id 箱体不得被取用）、`TestRaiseStopsSkipsFutureBoxes`（无当期新箱体时不得上移）。`go build ./...` 与全量 Go 单测通过；gui 包的 `TestAPIEndpoints` 在本会话环境因 Go 进程回环连接被拦而失败，已用最小 `httptest` 探针复现为环境问题、与本次改动无关。`check_consistency.py` 全部一致。
+- **验收仍未做、不得预设结果**：越价事件里仍有一批依据是 `broken_down` 箱体，(a) 只改时点与排序、未改状态集合；越价次数是否归零、恒等式是否 0.00，必须按第 5 条**删库全新跑完全窗**后用 `scripts/d5_raise_stops.py` + `scripts/d5_evidence_recheck.py` 实测。**重建引擎二进制 + 起跑全窗须用户另给一句明确指令**。
+
 ---
 
 ## 5 阶段 3 · 装油门（🟠 高，仓位端，原著核心；**属段 A 复刻期 · 必装项**）

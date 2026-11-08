@@ -232,6 +232,61 @@ func (r *BoxRepo) LatestNonFormingBox(code string) (*contract.Box, error) {
 	return &b, nil
 }
 
+// LatestConfirmedBoxAsOf 取某证券在 planDate 时点「上下轨都已牢固确立」的最新箱体。
+//
+// 与 LatestNonFormingBox 的区别（O6，docs/65 §4 用户 2026-11-08 裁定「只修 (a) 时点隔离」）：
+//   - 时点隔离：只取 top_confirmed / bottom_confirmed 均非空且均 ≤ planDate 的箱体，
+//     不消费任何未来确认的箱体；
+//   - 取最新按「完全确立日」= max(上轨确认日, 下轨确认日)，而不是 ORDER BY id DESC。
+//     UpsertBoxes 会复用旧 id、新箱体又追加更大 id，id 序与时间序会背离
+//     （D5 补证据实测：同一股票内相邻 id 的确认日倒退 20.82%），旧口径因此把
+//     止损挂到历史箱体下轨上，造成 133 次止损越过当日收盘、131 次次日无理由清仓；
+//   - 状态集合不变（confirmed / broken_up / broken_down；排除 forming / invalid），
+//     避免顺带改动 signal / poolsync / screener 的判定口径。
+//
+// 仅供 planner.raiseStops 使用；其他决策逻辑仍走 LatestNonFormingBox。
+func (r *BoxRepo) LatestConfirmedBoxAsOf(code, planDate string) (*contract.Box, error) {
+	asOf := planDate
+	if len(asOf) > 10 {
+		asOf = asOf[:10]
+	}
+	// 两确认日的较晚者 = 上下轨「都牢固确立」之日；CASE 而非 max() 以免与聚合语义混淆。
+	const confirmedAt = `CASE WHEN substr(CAST(top_confirmed AS TEXT),1,10) >= substr(CAST(bottom_confirmed AS TEXT),1,10)
+		THEN substr(CAST(top_confirmed AS TEXT),1,10)
+		ELSE substr(CAST(bottom_confirmed AS TEXT),1,10) END`
+	q := `SELECT id, code, top, bottom,
+		CAST(top_confirmed AS TEXT), CAST(bottom_confirmed AS TEXT), status, prev_box_id, CAST(broken_date AS TEXT), CAST(dead_date AS TEXT)
+		FROM box WHERE code = ?
+		AND status IN ('confirmed','broken_up','broken_down')
+		AND top_confirmed IS NOT NULL AND TRIM(CAST(top_confirmed AS TEXT)) <> ''
+		AND bottom_confirmed IS NOT NULL AND TRIM(CAST(bottom_confirmed AS TEXT)) <> ''
+		AND substr(CAST(top_confirmed AS TEXT),1,10) <= ?
+		AND substr(CAST(bottom_confirmed AS TEXT),1,10) <= ?
+		ORDER BY ` + confirmedAt + ` DESC, id DESC LIMIT 1`
+
+	var b contract.Box
+	var topC, botC, broken, dead sql.NullString
+	var prev sql.NullInt64
+	var status string
+	err := r.db.QueryRow(q, code, asOf, asOf).
+		Scan(&b.ID, &b.Code, &b.Top, &b.Bottom, &topC, &botC, &status, &prev, &broken, &dead)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	b.TopConfirmed = topC.String
+	b.BottomConfirmed = botC.String
+	b.BrokenDate = broken.String
+	b.DeadDate = dead.String
+	if prev.Valid {
+		b.PrevBoxID = prev.Int64
+	}
+	b.Status = contract.BoxStatus(status)
+	return &b, nil
+}
+
 // Ladder 取某证券的全部箱体（时间顺序，含 invalid），供 GUI 画阶梯/回溯 prev_box_id。
 // 调用方按需过滤 invalid（invalid 不计入可视阶梯，docs/00 §3.3）。
 func (r *BoxRepo) Ladder(code string) ([]contract.Box, error) {

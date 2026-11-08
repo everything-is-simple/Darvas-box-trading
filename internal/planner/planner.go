@@ -154,7 +154,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 
 	// M4.4 止损上移（docs/00 §5.2：新箱体确认 → 止损上移到新箱下轨下方）。
 	// DB 触发器保证只升不降（降则 ABORT），此处仅在候选值更高时调用。
-	stopMoves := p.raiseStops(positions, sellDisc)
+	stopMoves := p.raiseStops(positions, sellDisc, planDate)
 
 	// 已有在途卖出单的股票：避免重复生成（time_stop 持续条件每日重复挂单，
 	// 撮合清仓后剩余单「卖出无持仓」——M8.3 暴露，archive/09）。
@@ -500,23 +500,30 @@ func lotQty(shares int, units float64) int {
 	return int(math.Floor(float64(shares)*units/100)) * 100
 }
 
-// raiseStops 止损上移（M4.4）：对每只持仓，若最新箱体下轨已3日确认
-// 且 新止损 = 下轨×sellDisc 高于现止损 → UpdateStop（触发器兜底拒绝下降）。
-// 入场箱体本身不参与（B2 校订后：腿1/2/3 初始止损一律=入场箱体上轨下方，
-// 均不随入场箱体自身重算）。返回上移笔数。
+// raiseStops 止损上移（M4.4 / 原著 O6）：对每只持仓，取「上下轨都已牢固确立、
+// 且两确认日均不晚于 planDate」的最新箱体，若 新止损 = 下轨×sellDisc 高于现止损
+// → UpdateStop（触发器兜底拒绝下降）。入场箱体本身不参与（B2 校订后：腿1/2/3
+// 初始止损一律=入场箱体上轨下方，均不随入场箱体自身重算）。返回上移笔数。
 //
-// 修复 archive/07 #1：用 LatestNonFormingBox——LatestBox 取 forming(bottom=0) 致
-// `lb.Bottom <= 0 → continue`，止损上移永不触发。
-func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) int {
+// 2026-11-08 用户裁定（docs/65 §4「裁定与修复范围」，只修 (a) 时点隔离）：
+// 旧实现用 LatestNonFormingBox（ORDER BY id DESC LIMIT 1）。UpsertBoxes 复用旧 id
+// 会让 id 序与确认日序背离（同股票实测 20.82% 倒退），于是把止损挂到历史箱体
+// 下轨上 —— D5 补证据：133 次新止损高于当日收盘、131 次次日无理由清仓。
+// 现改用 LatestConfirmedBoxAsOf：按「完全确立日」取最新且 ≤ planDate。
+// (b)「止损不得高于当日收盘」按裁定**不加行为改动**，只打一条只读告警留痕；
+// 修复 (a) 后若仍有越价，须由 65 §4 验收判据（重跑全窗 + 两个 D5 脚本）单独再拍 (b)。
+//
+// 修复 archive/07 #1 仍保留：跳过 forming / invalid，否则 bottom=0 会让上移永不触发。
+func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64, planDate string) int {
 	moves := 0
 	for i := range positions {
 		pos := &positions[i]
-		lb, err := p.st.BoxRepo.LatestNonFormingBox(pos.Code)
-		if err != nil || lb == nil {
+		lb, err := p.st.BoxRepo.LatestConfirmedBoxAsOf(pos.Code, planDate)
+		if err != nil {
+			p.log.Printf("⚠ 止损上移取箱体失败: pos#%d %s: %v", pos.ID, pos.Code, err)
 			continue
 		}
-		// 下轨未3日确认（forming/未确认）不作为止损依据
-		if lb.Bottom <= 0 || lb.BottomConfirmed == "" {
+		if lb == nil || lb.Bottom <= 0 {
 			continue
 		}
 		// 入场箱体不算上移
@@ -525,12 +532,18 @@ func (p *Planner) raiseStops(positions []contract.Position, sellDisc float64) in
 		}
 		cand := lb.Bottom * sellDisc
 		if cand > pos.StopPrice {
+			// (b) 只读告警：只记录、不拦截、不改订单，段 A 不允许引入非原著行为护栏。
+			if px, ok, err := p.st.BarRepo.CloseOn(pos.Code, planDate); err == nil && ok && cand > px {
+				p.log.Printf("⚠ O6 只读告警（不改行为）%s %s: 新止损 %.2f 高于当日收盘 %.2f（箱体 #%d，上轨确认 %s / 下轨确认 %s）",
+					pos.Code, planDate, cand, px, lb.ID, lb.TopConfirmed, lb.BottomConfirmed)
+			}
 			if err := p.st.TradeRepo.UpdateStop(pos.ID, cand); err != nil {
 				p.log.Printf("⚠ 止损上移被拒(触发器): pos#%d %s: %v", pos.ID, pos.Code, err)
 				continue
 			}
-			p.log.Printf("止损上移 %s: %.2f → %.2f（新箱体 #%d 下轨 %.2f）",
-				pos.Code, pos.StopPrice, cand, lb.ID, lb.Bottom)
+			p.log.Printf("止损上移 %s: %.2f → %.2f（新箱体 #%d 下轨 %.2f，确立日 上轨 %s / 下轨 %s）",
+				pos.Code, pos.StopPrice, cand, lb.ID, lb.Bottom,
+				lb.TopConfirmed, lb.BottomConfirmed)
 			moves++
 		}
 	}
