@@ -9,6 +9,8 @@
   - 进程活着 → 继续等。
   - 进程死了但库未完整 → 调 base_run.py --resume 续跑（不带 --set）。
   - 库完整 → 退出 0。
+  - 已到窗口末但库仍不完整（failed 任务 / 缺日）→ 立刻退出 2 报人工介入：
+    续跑只从断点往后跑，补不了历史缺口，重复拉起是空转（2026-11-08 加固）。
   - 续跑后立刻失败（rc!=0 或进程几秒内消失且进度未动）→ 记错，退避重试，
     连续 MAX_FAIL 次仍失败则退出非 0（避免空转）。
 
@@ -39,10 +41,8 @@ SRC = ROOT / "var" / "bt" / "full_hist_adj.db"
 FROM = "2005-01-01"
 TO = "2018-12-31"
 # 完整判据终点：与 base_run.run_cont 的 min_end 一致（to_date 12 月 → 当年 12-01）
-MIN_END = "2018-11-26"
-
-# 完整判据所需的最小日期（保守取 12-01 前推 35 天，与 db_complete 的 min_end 对齐）
-# 实际 2018-12-31 → min_end = 2018-12-01（base_run 里 12 月特判为 replace(day=1)）
+# 完整判据所需的最小日期（与 base_run.db_complete 的 min_end 对齐：
+# 2018-12-31 → min_end = 2018-12-01，12 月特判为 replace(day=1)）
 MIN_END = "2018-12-01"
 
 LOCK = ROOT / "var" / "bt" / "arms" / "d3d4_guard.lock"
@@ -101,6 +101,34 @@ def db_complete():
         return False
 
 
+def failed_runs():
+    """账本缺口明细：非 ok 的 daily_run 任务（只读）。"""
+    try:
+        import sqlite3
+        c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+        try:
+            return c.execute(
+                "SELECT date, task, status FROM daily_run WHERE status <> 'ok' ORDER BY date"
+            ).fetchall()
+        finally:
+            c.close()
+    except Exception:
+        return []
+
+
+def at_end_but_incomplete():
+    """引擎已到窗口末、进程已停、但库判不完整 → 无效续跑场景。
+
+    2026-11-08 教训：D3+D4 跑到 2018-12-28 正常结束，4 天 signal 因
+    SQLITE_BUSY 写入失败使 db_complete 判不完整，guard 每 ~70s 空转续跑
+    6 次才退出。**严格判据不放宽**（它抓到的是真实账本缺陷），只修「无效续跑」。
+    """
+    d, m = last_progress()
+    if not m or m < MIN_END or proc_alive() or db_complete():
+        return None
+    return m, d, failed_runs()
+
+
 def last_progress():
     """当前进度 (days, max_date)，查询失败返回 (None, None)。"""
     try:
@@ -143,7 +171,13 @@ def launch_detached():
 
 
 def once():
-    """单次检查：完整退出 / 活着退出 / 否则脱离拉起续跑后退出。"""
+    """单次检查：完整退出 / 活着退出 / 到窗口末但账本有缺口则停止值守 / 否则续跑。"""
+    stalled = at_end_but_incomplete()
+    if stalled:
+        m, d, bad = stalled
+        log(f"STALLED 已到窗口末 {m}（{d} 日）但账本不完整：{len(bad)} 个非 ok 任务；"
+            f"续跑补不了历史，停止值守，需人工介入")
+        return 2
     if db_complete():
         d, m = last_progress()
         log(f"DONE {d} 日 / {m}，无需值守")
@@ -181,6 +215,12 @@ def main():
     log(f"守护启动：DB={DB.name} 目标 MIN_END={MIN_END} 轮询={a.poll}s")
     fails = 0
     while True:
+        stalled = at_end_but_incomplete()
+        if stalled:
+            m, d, bad = stalled
+            log(f"STALLED 已到窗口末 {m}（{d} 日）但账本不完整：{len(bad)} 个非 ok 任务；"
+                f"续跑补不了历史，守护退出，需人工介入")
+            return 2
         if db_complete():
             d, m = last_progress()
             log(f"完成。进度 {d} 日 / {m}。守护退出。")
