@@ -253,7 +253,14 @@
 - `internal/planner/planner.go`：`raiseStops` 增加 `planDate` 入参并改用上述查询；(b) 按裁定只加一行「新止损高于当日收盘」的**只读告警日志**，不拦截、不改订单、不改参数。
 - 未动：参数键、表结构、迁移文件、`bin/darvas-dev.exe`（仍是旧二进制、旧 `engine_sha256`）、任何账本／臂库；K1（全量前视验证）继续暂停。
 - 新增回归单测（同包、可直接 `go test` 触发）：`TestLatestConfirmedBoxAsOf`（id 序与确认日序背离／未来箱体／下轨未确立／forming 四类隔离，含时点前后可见性）、`TestRaiseStopsTimeIsolation`（历史大 id 箱体不得被取用）、`TestRaiseStopsSkipsFutureBoxes`（无当期新箱体时不得上移）。`go build ./...` 与全量 Go 单测通过；gui 包的 `TestAPIEndpoints` 在本会话环境因 Go 进程回环连接被拦而失败，已用最小 `httptest` 探针复现为环境问题、与本次改动无关。`check_consistency.py` 全部一致。
-- **验收仍未做、不得预设结果**：越价事件里仍有一批依据是 `broken_down` 箱体，(a) 只改时点与排序、未改状态集合；越价次数是否归零、恒等式是否 0.00，必须按第 5 条**删库全新跑完全窗**后用 `scripts/d5_raise_stops.py` + `scripts/d5_evidence_recheck.py` 实测。**重建引擎二进制 + 起跑全窗须用户另给一句明确指令**。
+- **验收仍未做、不得预设结果**：越价事件里仍有一批依据是 `broken_down` 箱体，(a) 只改时点与排序、未改状态集合；越价次数是否归零、恒等式是否 0.00，必须按第 5 条**归档旧库后全新跑完全窗**后用 `scripts/d5_raise_stops.py` + `scripts/d5_evidence_recheck.py` 实测。
+
+**🚀 全窗重跑起跑状态（2026-11-08 12:15，用户授权「重建引擎二进制 + 归档旧库 + 全新起跑全窗」）**：
+
+- **归档而非删库**（用户把第 5 条的「删库」改为归档）：旧臂库 `var/bt/arms/bt_d3d4_off.db`（6.9 GB）经 `scripts/bt_archive.py` 复制到 **`B:/Darvas-archive/o6a_pre_2026-11-08/`**，业务统计（778 笔 / Σpnl +1,252,513.40 / 3,402 日 / staledays=0）与 **sha256 `82784deb7d0a21bb…`** 双校验一致后才删源，台账 `MANIFEST.tsv` 已写；旧引擎二进制 `darvas-dev_fe3a9f22.exe`（sha `fe3a9f22…`）一并归档，供复现旧账本。I 盘回收站经 `bt_recycle_purge.py --apply` 释放 6.9 GB（安全边界：只清 `var/bt/` 且 ≥1 GB 的库）。
+- **引擎重建**：`go build -o bin/darvas-dev.exe ./cmd/darvas`（12:13），新 sha **`65ad3e7106914c9887bdfe4d080e5ca7b8364cb34d730757a90415f14335e11a`**；新库 `baseline.engine_sha256` 已实测等于该值、`data_mode=adj`，**HARD① 身份锚对齐**。
+- **全新起跑**：12:15:51 白天串行，命令与 `60 §7.0` 完全一致（源 `full_hist_adj.db`、同名库、`--set "position.staledays=0,pool.blacklist_months=0"`、不带 `--resume-run`），起跑前 `--dry-run` 核对注入参数与旧臂逐键一致。日志 `var/bt/o6a_full.log` 与 `var/bt/arms/bt_d3d4_off.log`；首日已推进到 2005-01-11。
+- **纪律边界**：未改参数、未动迁移、未碰 K1（全量前视验证继续暂停）、未转阶段 3 装油门（D1 金字塔加仓 / D2 / D11）、未恢复 guard 值守（待用户拍）；**越价是否归零仍不许预设**，须跑完全窗后用两个 D5 脚本实测「133 → 0（或近零且逐例可解释）」＋恒等式 0.00，过关才关阶段 2、O6 方可回填「对齐」。
 
 ---
 
