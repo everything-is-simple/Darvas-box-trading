@@ -16,8 +16,13 @@
 
 O6 原著：「总是等到下一个新箱体的上下轨都牢固确立之后才上移止损位，
           设在新箱体的下轨之下一点点」（64 §1.3）。
-实现：raiseStops 取 LatestNonFormingBox（下轨已 3 日确认、非入场箱体），
-      cand = bottom × sell.discount > 现止损则 UpdateStop（planner.go:503-538）。
+实现（现行）：raiseStops 取 LatestConfirmedBoxAsOf（只依据两轨确认日均 ≤ 计划日的箱体，
+      按「完全确立日」取最新），cand = bottom × sell.discount > 现止损则 UpdateStop。
+      （旧版按 LatestNonFormingBox / ORDER BY id DESC 的叙述已作废，见挂11 / 65 §4 终验。）
+
+叙述文字已于 2026-11-09（挂11）做纯文字修复：不再写死旧账本数字与旧待拍结论，
+一律以本次运行实测与 65 §4 终验为准；算法、字段、输出文件名与判据均未改动。
+本脚本下方的事件重放 SQL 仍按历史 id 口径（算法未改、仅叙述修复），勿与引擎现行实现混读。
 
 用法：
   python scripts/d5_raise_stops.py
@@ -376,7 +381,7 @@ def render(d, r, args):
     A("| sell.discount | %.4f（读自 param，未硬编码） |" % disc)
     A("| 计划日历 | %d 日（%s ~ %s，取 `trade_plan.plan_date`） |"
       % (len(cal), cal[0], cal[-1]))
-    A("| 非 ok 的 daily_run | %d 条（4 天 signal SQLITE_BUSY 写入失败，用户 2026-11-08 裁定「就这样了，以后注意点」，接受存档） |"
+    A("| 非 ok 的 daily_run | %d 条（历史版本曾因 signal SQLITE_BUSY 写入失败产生缺口，用户 2026-11-08 裁定旧库「就这样了，以后注意点」接受存档；本轮次数以本次运行实测为准） |"
       % len(d["failed_runs"]))
     A("| 持仓 | %d 笔（已平 %d） |" % (n_pos, sum(1 for p in P.values() if p["status"] == "closed")))
     A("| 常驻止损单快照 | %d 张，覆盖 %d 笔持仓 |" % (sum(len(t) for t in T.values()), n_trail))
@@ -620,7 +625,7 @@ def render(d, r, args):
       "其中 %d 次无法归因到任何当期箱体；这些常驻止损卖单会立即触发、无理由清仓。"
       "另有 %d 次明确依据窗口外箱体、`E_NO_BOX` 中 %d 次最接近箱体也在窗口外；"
       "可判时点的 %d 次里只有 %d 次是入场箱体的阶梯后继。"
-      "据此 O6「等下一个新箱体上下轨牢固确立后才上移」在这份账本里**不能判定为已对齐**。"
+      "据此只能给出本账本的时点证据；O6 是否对齐由 `65 §4` 终验裁定，本脚本不裁定。"
       % (len(over), pct(len(over), len(ev)),
          max(e["stop_vs_close_pct"] for e in over) if over else 0.0,
          sum(1 for e in over if e["cls"] == "E_NO_BOX"),
@@ -630,16 +635,16 @@ def render(d, r, args):
       "`stop_move` 表」应改为「账本已有逐日止损快照，直接还原即可；`stop_move` 降为可选审计增强」。"
       "样本由旧稿 504 笔改为当前段 A 账本全量 %d 笔。" % n_pos)
     A("5. **本件只交付证据，不裁定 O6 是否对齐、不改计划、不改引擎、不调参数、不接 lifespan**。"
-      "按 `65 §1.1` 三段纪律，段 A 结论须用户拍板后再回填 `64 §1.3` 主表与 `60 §6` 看板。")
-    A("6. **待拍四件**：")
+      "按 `65 §1.1` 三段纪律，段 A 结论由用户拍板后回填；`65 §4` 终验已拍板并关门阶段 2，本件不重开。")
+    A("6. **历史待拍四件（2026-11-09 `65 §4` 终验已拍板，本脚本不重开裁定）**：")
     A("   - ① O6 判定：判为「对齐」/「需修实现」/「补证据再判」；若判需修，"
       "修的是 `raiseStops` 取箱体的口径（属段 A 复刻，不是段 C 调参）。")
     A("   - ② 是否新增 `stop_move` 审计表（position_id / date / old / new / box_id / reason）；"
       "本件已证明非必需。")
     A("   - ③ `E_NO_BOX` 窗口外箱体现象是否追查；根因可能牵涉 box 行后写 / upsert，"
       "与 K1（全量前视验证，用户裁定「继续暂停」）同源，按裁定不补跑。")
-    A("   - ④ 段 A 下一步是否转阶段 3 装油门（D1 金字塔加仓 / D2 / D11）；"
-      "按 `65 §1.1` 需先由用户对 D5 结论拍板。")
+    A("   - ④ 段 A 下一步是否转阶段 3 装油门（D1 金字塔加仓 / D2a / D11）；"
+      "按 `65 §1.1` 起跑仍须用户另给一句明确指令（本轮未授权）。")
     A("")
     A("## 附：明细")
     A("")
