@@ -452,7 +452,7 @@ python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A 
 - `base_run.py` 已把 4 个实验结论注入项（`newhigh_ladder=on / ma60=stop / max_hold=14 / equity_gate=off`）写死在 `COMMON` 里，与 migration 0025 一致 → **重建不需要 `--set`**。
 - 执行器**幂等**：`db_complete()` 判 `equity_snapshot` 非空才跳过，强杀留下的半成品会被识别并删掉重跑。
 - **串行，勿并发**（回测并发会污染 scratch 心跳）。
-- L0 lifespan 建库（`66`）用现有 adj 数据、零机时（不跑回测），不新增数据规格需求。
+- L0 余年框架（SLE）建库（`66`）用现有 adj 数据、零机时（不跑回测），不新增数据规格需求；现有脚本仅时间单轨，补涨幅轨属 `66 §8` 工程欠账。
 
 **耗时**：实测约 **28 min/年 × 14 年 ≈ 6.6 小时**；臂实验约 5.2h/臂。**只在白天跑**（夜间长进程必被环境回收）。
 

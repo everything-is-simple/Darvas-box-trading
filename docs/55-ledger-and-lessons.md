@@ -965,7 +965,7 @@ python scripts/base_run.py --cont --src var/bt/full_hist_adj.db \
 | 攻防与市场状态设计 | `48` |
 | 数据口径与基线重建 | `53` |
 | 重构计划（D 系阶段与路径） | `65` |
-| lifespan 框架设计（唯一事实源） | `66` |
+| 余年框架（SLE）唯一定义 | `66` |
 
 ---
 

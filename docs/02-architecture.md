@@ -72,7 +72,7 @@
 ```
 Darvas-box-trading/
 ├── README.md                     # 项目总览+快速开始
-├── docs/                         # 00理论 01需求 02架构 03ERD 04API 06一致性 29裁定 44参数台账 48体制 53数据与重建 55账本教训 57外部方法 60计划看板 64总典 65重构计划 66lifespan + README；archive/ backup/ experiments/ reports/ anchors/ books/ 子目录
+├── docs/                         # 00理论 01需求 02架构 03ERD 04API 06一致性 29裁定 44参数台账 48体制 53数据与重建 55账本教训 57外部方法 60计划看板 64总典 65重构计划 66余年(SLE) + README；archive/ backup/ experiments/ reports/ anchors/ books/ 子目录
 ├── cmd/darvas/main.go            # 入口：CLI解析+ui/serve子命令
 ├── internal/
 │   ├── contract/                 # ★ 模块间接口定义（单一事实源，见04文档）
