@@ -202,7 +202,7 @@ report      ──汇总──▶ daily_YYYYMMDD.html + db备份
 ### 9.1 研究数据流
 
 > ⚠️ 本图为 **raw 时代（e17/bt_base_<year>）研究架构**的历史描述，已被后复权 adj 架构取代（2026-11-05）。
-> 现行源库 = `var/bt/full_hist_adj.db`、连续单库 = `bt_baseA_cont_adj.db`、二进制 = `bin/darvas-dev.exe`，见 `docs/53`。
+> 现行源库 = `var/bt/full_hist_adj.db`、连续单库 = `bt_baseA_cont_adj.db`、二进制 = `bin/darvas-dev.exe`；数据规格原文见 `docs/archive/53-data-and-rebuild-2026-11-09.md`（历史归档），现行状态见 `67 §8.7`。
 
 ```
 TDX 日线 (H:\new_tdx64)
@@ -281,5 +281,5 @@ docs/experiments/<实验>_framework.md (零结果纯规则) + _report.{html,md} 
 | 第 1 维 box 宽度 | 无（3 日固定） | ❌ 需参数化 box 周期长度多轮跑 |
 | 第 10 维 头寸 regime | `reason_json.regime`（= C3@plan_date）+ 上证 MA20/MA60 + 指数 52 周高点回撤 | ✅ **A 类已完成（P0-3，M10.0）**。⚠️ `regime` 是 plan_date 标签，与建仓日错 1 日（2014 年一致 86/100），归因须按建仓日重算；账户回撤逐年重置且 `>10%` 档 0 天，登记「不可检验」。详见 `docs/experiments/e17_regime_attribution_framework.md` |
 
-> 历史代码改动清单见 docs/archive/05-task-breakdown.md M9/M10；队列与看板只认 docs/60，重构计划只认 docs/65，已裁定登记只认 docs/29。
+> 历史代码改动清单见 docs/archive/05-task-breakdown.md M9/M10；唯一激活计划只认 docs/67，完成线验收契约看 docs/65，已裁定登记只认 docs/29。
 

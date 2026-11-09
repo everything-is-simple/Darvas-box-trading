@@ -12,7 +12,7 @@ Darvas-box-trading 一致性检查（docs/06-consistency.md §2 防线一）。
       调度器/CLI/GUI/测试/一致性检查均由其派生，本项锁定代码与文档不漂移。）
   C6 参数台账：docs/44 生成区台账  ==  代码实读键 + 迁移演化后的生效值（2026-11-03 新增）
   C7 研究纪律：判据窗口 ≤2018-12-31（2019+ 不解冻）+ raw 报告口径横幅齐全（2026-11-05 新增，docs/55）
-  C8 数字对账：docs/55 锚点区 == 锚点快照 == 账本重算；48/60/README 引用的数字必须在册（2026-11-06 新增）
+  C8 数字对账：docs/55 锚点区 == 锚点快照 == 账本重算；归档 48/60/README 引用的数字必须在册（2026-11-06 新增）
   C9 死链检查：docs/**/*.md 的 md 链接、反引号路径、`NN §x` 章节引用必须可达（2026-11-06 新增）
 
 用法：python scripts/check_consistency.py [repo_root]
@@ -330,8 +330,13 @@ FENCE = re.compile(r"^```.*?^```", re.S | re.M)
 
 
 def _doc_index():
-    """docs/NN-*.md → {NN: path}；archive 里的同号文档作为兜底。"""
-    idx, archived = {}, {}
+    """docs/NN-*.md → {NN: path}；archive 里的同号文档作为兜底。
+
+    2026-11-09 治理：同号归档可能有多份（如 48 既有 11-05 旧稿、又有 11-09 整份归档）。
+    旧实现按文件名排序覆盖，会把 `48 §十一` 解析到不含该节的旧稿，产生假死链。
+    现改为「同号取文件名日期最新者」——整份归档稿才是历史章节引用的正确落点。
+    """
+    idx, archived, stamp = {}, {}, {}
     for p in sorted((pathlib.Path(ROOT) / "docs").glob("*.md")):
         m = re.match(r"(\d{2})-", p.name)
         if m:
@@ -340,8 +345,14 @@ def _doc_index():
     if adir.exists():
         for p in sorted(adir.glob("*.md")):
             m = re.match(r"(\d{2})-", p.name)
-            if m and m.group(1) not in idx:
-                archived[m.group(1)] = p
+            if not m or m.group(1) in idx:
+                continue
+            num = m.group(1)
+            d = re.search(r"(\d{4}-\d{2}-\d{2})", p.name)
+            key = (d.group(1) if d else "", p.name)
+            if num not in stamp or key > stamp[num]:
+                stamp[num] = key
+                archived[num] = p
     return idx, archived
 
 

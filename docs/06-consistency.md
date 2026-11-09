@@ -42,7 +42,8 @@
    - 键集来源 = `GetFloat/GetInt/GetString` 的字符串字面量，因此**新增参数只要写了代码就会被要求登记**，
      人力维护的表不可能再漏。
 6. **数字对账（C8，2026-11-06 新增）**：文档里的收官数字必须等于账本算出来的（详见 §9）。
-   链：账本 DB → `docs/anchors/ledger_anchors.json`（快照）→ `55 §11.10` 生成区 → `48`/`60`/`README` 引用。
+   链：账本 DB → `docs/anchors/ledger_anchors.json`（快照）→ `55 §11.10` 生成区 → 归档 `48`／`60`（2026-11-09 整份归档）／`README` 引用；
+   C8 的 `CROSS_DOCS` 仍扫归档稿，防历史稿数字被手改而不报错。
    - 漂移时唯一修法：`python scripts/doc_anchors.py --write`，**禁止手改锚点表或快照**。
 7. **死链检查（C9，2026-11-06 新增）**：现役 `docs/*.md` 的 md 链接、反引号路径、`NN §x` 章节引用必须可达。
    - 为什么必须机检：改名、归档、重编号都不会报错，只会让引用**静默指向不存在的节**。
@@ -175,7 +176,7 @@ scripts/
 ### 6.2 研究铁律（与 docs/01 §10.5 一致，此处为一致性侧执行规则）
 
 > ⚠️ 本节「库隔离」「源库 `full_hist_10pct.db`」为 **raw 时代（e17）** 的历史规则。现行源库 = `full_hist_adj.db`，
-> 连续单库 = `bt_baseA_cont_adj.db`（见 `docs/53`）；「只写 `bt_e17_<year>.db`」已由「scratch 库 + `--cont`/`--resume`」取代。
+> 连续单库 = `bt_baseA_cont_adj.db`（历史规格见 `docs/archive/53-data-and-rebuild-2026-11-09.md`）；「只写 `bt_e17_<year>.db`」已由「scratch 库 + `--cont`/`--resume`」取代。
 
 - **参数冻结**：回测期间不得修改 `box.*`、`risk.*`、`buy.*`、`sell.*`、`match.*` 任何参数——所有年度必须用同一组参数跑，跨年可比性依赖于此。参数改动 = 新轮回，必须用独立回测库（如 `bt_e17_<year>_p3.db`）。
 - **串行不并发**：每年串行，文件锁 `e17_years.lock` 防并发；任一年失败即停队列。
@@ -200,14 +201,14 @@ scripts/
 - docs/00 §3.6 十一维表的「现行规则或实现边界」列与实际代码一致；`ConfirmDays=3` 是冻结引擎常量，不再检查已作废的 `box.period` 参数化待办。
 - docs/01 §10.3 档位定义与 `internal/planner` 的 sizing_basis 分档逻辑一致。
 - docs/03 §6.1 已落地字段清单与**实际 `reason_json` 键集合**一致（2026-10-26 已补入 `regime` 缺项；对账方法：任取一年库 `SELECT reason_json FROM plan_order WHERE leg_no=1 LIMIT 100`，求键的并集与清单比对）。
-- 队列与看板只认 docs/60，重构计划只认 docs/65，已裁定登记只认 docs/29；docs/archive/05-task-breakdown.md 与 E17 状态文件仅作为历史证据，不再维护为现行队列。
+- 唯一激活计划只认 docs/67，完成线验收契约看 docs/65，已裁定登记只认 docs/29；docs/archive/05-task-breakdown.md 与 E17 状态文件仅作为历史证据，不再维护为现行队列。
 
 ### 6.5 研究产物的版本纪律
 
 - `var/bt/e17_annual_tier_report.html` 每年跑完自动重建（覆盖旧版），不保留历史版本——研究结论是迭代的，最新版即权威版。
 - `var/bt/e17_metrics.csv` append-only，不得删除或修改已有行（已汇报年份的事实源）。
 - `var/bt/e17_reported_years.txt` append-only，已汇报年份不得移除（避免重复汇报）。
-- 跨年结论及证据沉淀于 `docs/experiments/`；队列与看板更新 `docs/60`，重构计划更新 `docs/65`，已裁定登记 `docs/29`；涉及规则变化时同步对应 SSoT，不另建队列。旧方法论见 docs/archive/05-task-breakdown.md M10.5。
+- 跨年结论及证据沉淀于 `docs/experiments/`；唯一激活计划更新 `docs/67`，验收契约更新 `docs/65`，已裁定登记 `docs/29`；涉及规则变化时同步对应 SSoT，不另建队列。旧方法论见 docs/archive/05-task-breakdown.md M10.5。
 
 ## 7. 统计口径一致性（2026-10-27 立项，C5）
 
@@ -301,7 +302,7 @@ scripts/
 |---|---|---|---|
 | ① 文档 ↔ 快照 | `docs/55 §11.10` 生成区 == `docs/anchors/ledger_anchors.json` | 有人手改了锚点表 | `python scripts/doc_anchors.py --write` |
 | ② 快照 ↔ 账本 | 快照 == 从账本重算（含引擎 sha256 一致性） | 账本重跑过 / 快照过期 / 换了引擎 | 同上（重算后覆盖快照） |
-| ③ 跨文档引用 | `64`/`48`/`60`/`README`/`29`/`53` 里「引基线收官数字」的句子，每个金额/百分比/倍数必须**在册** | 手抄错一位数，或口径改了口号没改 | 改文档，或把新数字登记为锚点 |
+| ③ 跨文档引用 | `64`／`README`／`29` 与 3 份归档稿（`48`／`60`／`53`，见 `doc_anchors.py` 的 `CROSS_DOCS`）里「引基线收官数字」的句子，每个金额/百分比/倍数必须**在册** | 手抄错一位数，或口径改了口号没改 | 改文档，或把新数字登记为锚点 |
 | ④ 全库近似值 | 现役 `docs/*.md` 全部数字：**不在册** + 与某锚点**同形状** + 相对差 ≤0.1% | 手抄错末几位（在册 `+1,213,822` 的末三位被改掉） | 改回在册值；真是新口径则重跑账本 `--write` |
 
 - **锚点唯一事实源** = 账本（`var/bt/base/bt_baseA_cont_adj.db`），快照只是它的可 diff 存证。

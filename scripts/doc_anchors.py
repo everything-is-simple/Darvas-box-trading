@@ -413,11 +413,13 @@ def extract_block(text: str) -> dict[str, str] | None:
 # 只检查「明确在引基线收官数字」的句子，避免把历史实验数字误判成漂移。
 CROSS_DOCS = [
     "docs/64-darvas-master.md",   # 第一入口，人体读过它就不再翻 55 —— 数字必须同样受管
-    "docs/48-market-regime.md",
-    "docs/60-plan-and-board.md",
+    # 2026-11-09 治理：48/53/60 三份已归档，路径改指归档原文。
+    # 归档稿仍纳入「数字必须在册」校验：防止有人手改历史稿里的收官数字而不报错。
+    "docs/archive/48-market-regime-2026-11-09.md",
+    "docs/archive/60-plan-and-board-2026-11-09.md",
     "docs/README.md",
     "docs/29-rulings-registry.md",
-    "docs/53-data-and-rebuild.md",
+    "docs/archive/53-data-and-rebuild-2026-11-09.md",
 ]
 # 只认「承载收官锚点」的节：§11 整章 / §11.2 账本 / §11.3 概率 / §11.9 判据 / §11.10 台账。
 # §11.5 亏损分解、§11.7 加仓等引的是过程数字（如 time_stop 累计亏损），不是收官锚点，误判进来会报假警。

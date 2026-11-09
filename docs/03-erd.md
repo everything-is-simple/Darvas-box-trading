@@ -247,7 +247,7 @@ erDiagram
 > `broken_date` **只表向上突破**（仅 `broken_up` 有值，触发买入的那个事件）；
 > `dead_date` 表「死亡」= `broken_down`（向下破位）或 `invalid`（宽度不足作废）当天。
 > `broken_up` 箱体的生命周期终点即「突破日」，无额外死亡日（`dead_date` 为 NULL）。
-> 一格只表一件事，从库上可直接回答 `docs/53 §10.1` 身份链要求的
+> 一格只表一件事，从库上可直接回答 `53 §10.1`（归档 53，历史材料）身份链要求的
 > 「出生(bottom_confirmed) → 突破(broken_date) → 死亡(dead_date) → 卖出(position.closed_date) → 继任(prev_box_id)」链条。
 >
 > 0028 首版曾让 `broken_date` 同时承载破位日（实测 100% 的 `broken_down` 两列同值，
