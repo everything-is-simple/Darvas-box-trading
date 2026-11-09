@@ -234,7 +234,7 @@ type DataQuality struct {
 type BoxParams struct {
 	VolMultiplier float64 // 突破放量倍数，默认2.0
 	VolWindow     int     // 均量窗口，默认50
-	BreakPremium  float64 // 收盘>上轨×该值确认突破，默认1.03
+	BreakPremium  float64 // 收盘>上轨×该值确认突破，默认1.00（突破即买，0033）
 	MinBoxWidth   float64 // 箱体最小宽度（比例），默认0.05
 	ConfirmDays   int     // 轨道确认天数（三日法则），默认3；0由引擎归一为3（M8.4a参数化，未设置=旧行为）
 }
@@ -260,7 +260,7 @@ type PlanParams struct {
 	PerStockProbeBull float64 // 已废弃（方案A）：牛市单票试探单位，代码不再读取，保留作对照
 	PerStockMainMax   float64 // 单票主力上限（单位），默认10（=20%）
 	PerStockMainStep  float64 // 单次主力最小加码（单位），默认3
-	BuyPremium        float64 // 买入触发溢价，默认1.03
+	BuyPremium        float64 // 买入触发溢价，默认1.00（突破即买，0033）
 	SellDiscount      float64 // 卖出触发折价，默认0.97
 	MaxLegs           int     // 最大腿数，默认3
 }

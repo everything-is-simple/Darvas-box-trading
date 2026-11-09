@@ -52,7 +52,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	res := contract.TaskResult{Task: "plan", Date: planDate}
 
 	// 参数（A M1：首买单位由 A 判据升势决定，winner 5x 退役）。
-	buyPrem := p.st.ParamRepo.GetFloat("buy.premium", 1.03)
+	buyPrem := p.st.ParamRepo.GetFloat("buy.premium", 1.00)
 	sellDisc := p.st.ParamRepo.GetFloat("sell.discount", 0.97)
 	unitPct := p.st.ParamRepo.GetFloat("pos.unit", 0.02) // 1 单位 = 2% 权益
 	maxHold := p.st.ParamRepo.GetInt("pool.max_hold", 0) // 0 = 废止（docs/00 §5.6.9：改由 50% 权益预算约束）
@@ -225,13 +225,14 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	// 实测 M8.8 五年 53 笔平仓中，16 日强平 17 笔全亏（平均 -7363）。
 	// 改「尽快斩断亏损」：staledays 15→2（次日收盘仍 ≤ 成本即走，第3日卖出）。
 	// 依据《简简单单做股票》L755「不赚钱立刻出局」+ A股 T+1 最早次日可卖。
-	staleDays := p.st.ParamRepo.GetInt("position.staledays", 2)
+	staleDays := p.st.ParamRepo.GetInt("position.staledays", 0)
 	// D3（2026-11-06，docs/65 阶段 2「拆反向总成」）：staledays≤0 = 彻底禁用 time_stop。
 	// 原著 O2「没有任何理由卖掉一支正在上涨的股票」；两日强平是 v1 唯一大额净损出口
 	// （55 §11.5：815 笔 −1,840,601，占总亏损 77.5%），且使「持有到下一个箱体」不可能
 	// 发生（64 §1.4 因果颠倒）。旧代码 staledays=0 落入 n<0 恒假分支 → 变成「当日收盘
 	// ≤成本即强平」而非关闭（语义错误）；本分支使 0/负数成为合法关闭档。
-	// （staledays=1/≥3 已在 29 §三关闭；=0 是此前不可达的新档。）
+	// 0033（2026-11-09）：干净默认改 0 —— 迁移 0033 把 position.staledays 固定为禁用档，
+	// 代码默认同步改 0；实验臂不再靠 --set 注入复现。
 	if staleDays > 0 {
 		for i := range positions {
 			pos := &positions[i]
@@ -677,7 +678,8 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		}
 	}
 	// P0-2（2026-10-21）：生成买单前校验 trigger 与信号现价偏离。
-	// 正常 breakout 时 ClosePx ≈ 箱顶、trigger ≈ 箱顶×1.03（偏离约3%）；
+	// 现生产默认 buy.premium=1.00（0033 类别 Ⅰ 突破即买）时 ClosePx ≈ 箱顶、trigger ≈ 箱顶；
+	// 旧 v1 默认 1.03 时 trigger ≈ 箱顶×1.03（偏离约 3%）。
 	// 陈旧箱体（连板盲区 R7 致箱体未及时更新，如 sh600825 箱顶5.10 vs 现价15.58）
 	// 会产出 trigger 严重偏离现价的灾难订单，必须拦截。
 	// 注意：max_entry_gap 存的是「现价允许的 trigger 倍数上限」，默认 1.05（=+5%）。

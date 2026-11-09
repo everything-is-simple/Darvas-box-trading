@@ -17,6 +17,9 @@ MA60 闸门镜子 = 上证 sh000001（单镜；换镜已证伪，双镜擂台已
   python scripts/base_run.py --years 2005..2018 --mirrors A     # 全量 14 年（单镜）
   python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A  # 连续单库（docs/50 阶段 C）
   python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A --resume  # 断点续跑（docs/51 阶段 D）
+  python scripts/base_run.py --cont --from 2005-01-01 --to 2018-12-31 --mirrors A \
+      --src var/bt/full_hist_adj.db --exe bin/darvas-dev.exe --db var/bt/arms/<全新库> \
+      --clean-default   # 0033 干净默认复现：完全不传 --set，参数取库内迁移种子值
 """
 import argparse
 import subprocess
@@ -47,7 +50,7 @@ COMMON = {
     "pool.max_hold": "14",
     "pos.equity_gate": "off",
     "gate.ma60.mode": "stop",
-    "position.staledays": "2",
+    "position.staledays": "2",  # 历史臂复现用；0033 干净默认起跑不走 COMMON（库内种子=0）
 }
 
 
@@ -146,7 +149,8 @@ def run_one(year, mirror, force=False, src=SRC, exe=EXE):
     return 0
 
 
-def run_cont(mirror, from_date, to_date, force=False, resume=False, src=SRC, exe=EXE, db=None):
+def run_cont(mirror, from_date, to_date, force=False, resume=False, src=SRC, exe=EXE, db=None,
+             clean_default=False):
     """连续单库（docs/50 阶段 C）：一次跑完 [from, to] 一条真实资金约束的账本，
     替代"单年库 + 事后链式复利"。复用 regime 模式 + COMMON 参数，只改窗口推导。
     resume=True 时断点续跑（docs/51 阶段 D）：保留已跑库，交给 darvas --resume-run 从断点续。
@@ -177,11 +181,15 @@ def run_cont(mirror, from_date, to_date, force=False, resume=False, src=SRC, exe
         # 库内 param 已是目标参数，recordBaseline 记录的指纹即按该参数算，
         # 不带 --set → curFp == base.ParamFingerprint → 通过身份校验。
         cmd.append("--resume-run")
-    else:
+    elif not clean_default:
         cmd += ["--set", sa]
+    # 0033 干净默认复现（docs/65 §1.2.5）：首次起跑也完全不传 --set，
+    # 所有参数取「跑完全部迁移后的库内种子值」，COMMON 不参与。
+    if clean_default and not resume:
+        log("  clean-default: 首次起跑不传 --set，参数全部取库内迁移种子（0033）", logp)
     log(f"START CONT {from_date}~{to_date} {mirror}({name}) idx={idx} → {db.name}"
-        f"{' [resume]' if resume else ''}", logp)
-    log(f"  {'set: 跳过（续跑一律用库内参数，库内指纹必须与 baseline 一致）' if resume else 'set: ' + sa}", logp)
+        f"{' [resume]' if resume else ''}{' [clean-default]' if clean_default else ''}", logp)
+    log(f"  {'set: 跳过（续跑一律用库内参数，库内指纹必须与 baseline 一致）' if resume else ('set: 跳过（干净默认，取库内种子）' if clean_default else 'set: ' + sa)}", logp)
     t0 = time.time()
     with logp.open("a", encoding="utf-8") as f:
         rc = subprocess.call(cmd, stdout=f, stderr=subprocess.STDOUT)
@@ -231,7 +239,14 @@ def main():
                     help="连续模式输出库路径（默认 bt_base{mirror}_cont.db；adj 重跑可传 bt_baseA_cont_adj.db）")
     ap.add_argument("--set", dest="overrides", default="",
                     help="实验臂参数覆写，如 pos.newhigh.units.t4=0（逗号分隔）；须配全新 --db")
+    ap.add_argument("--clean-default", action="store_true",
+                    help="0033 干净默认复现：连续模式首次起跑完全不传 --set，参数取库内迁移种子值；"
+                         "不可与 --set 同用（docs/65 §1.2.5）")
     a = ap.parse_args()
+    if a.clean_default and a.overrides:
+        raise SystemExit("--clean-default 不可与 --set 同用（干净默认禁止任何参数注入）")
+    if a.clean_default and not a.cont:
+        raise SystemExit("--clean-default 只用于 --cont 连续单库模式")
     for kv in [x for x in a.overrides.split(",") if x.strip()]:
         if "=" not in kv:
             raise SystemExit(f"--set 需 k=v 形式：{kv}")
@@ -253,14 +268,17 @@ def main():
             for m in mirrors:
                 idx, name = MIRRORS[m]
                 tag = " [resume]" if a.resume else ""
+                tag += " [clean-default: 不传 --set]" if a.clean_default else ""
                 print(f"\n连续单库 {a.from_date}~{a.to_date} {m}({name}) idx={idx}{tag}")
-                for kv in setargs(m).split(","):
-                    print(f"   {kv}")
+                if not a.clean_default and not a.resume:
+                    for kv in setargs(m).split(","):
+                        print(f"   {kv}")
             return 0
         for m in mirrors:
             tag = " [resume]" if a.resume else ""
             print(f"\n=== 连续单库 [{a.from_date}~{a.to_date}] {m}{tag} ===", flush=True)
-            if run_cont(m, a.from_date, a.to_date, a.force, a.resume, src, exe, db_out) != 0:
+            if run_cont(m, a.from_date, a.to_date, a.force, a.resume, src, exe, db_out,
+                        clean_default=a.clean_default) != 0:
                 print(f"失败即停：连续 {m}", flush=True)
                 return 1
         print("\n连续单库全部完成")

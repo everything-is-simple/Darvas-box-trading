@@ -49,10 +49,16 @@ func TestSyntheticAsOfDifferential(t *testing.T) {
 		t.Fatalf("bootstrap progressive: %v", err)
 	}
 	// 关闭滑点：本测试聚焦 as-of 差分纪律，撮合参数（滑点）不应污染期望值。
+	// 0033（2026-11-09）干净默认改 buy.premium=1.00 / staledays=0 / blacklist_months=0 后，
+	// 本 CI 常驻用例仍锁定 v1 语义的「time_stop → 亏损拉黑」链条与金额期望，
+	// 故两库显式注入同一组旧值（必须两库一致，否则差分审计会因参数分叉）。
 	if st, err := store.Open(prog); err != nil {
 		t.Fatalf("open prog set slippage: %v", err)
 	} else {
 		_ = st.ParamRepo.Set("match.slippage", "0")
+		_ = st.ParamRepo.Set("buy.premium", "1.03")
+		_ = st.ParamRepo.Set("position.staledays", "2")
+		_ = st.ParamRepo.Set("pool.blacklist_months", "12")
 		st.Close()
 	}
 	progHashes, fails, err := Replay(prog, days, dayBars, nil)
@@ -72,6 +78,9 @@ func TestSyntheticAsOfDifferential(t *testing.T) {
 		t.Fatalf("open pre set slippage: %v", err)
 	} else {
 		_ = st.ParamRepo.Set("match.slippage", "0")
+		_ = st.ParamRepo.Set("buy.premium", "1.03")
+		_ = st.ParamRepo.Set("position.staledays", "2")
+		_ = st.ParamRepo.Set("pool.blacklist_months", "12")
 		st.Close()
 	}
 	preHashes, fails, err := Replay(pre, days, nil, nil)

@@ -205,7 +205,7 @@ func (s *scanner) finish() {
 }
 
 // isBreakout 判定第 i 日是否构成有效向上突破（docs/00 §4.2 / FR-203）：
-//   - 收盘价 > 上轨 × BreakPremium（默认 1.03，突破确认溢价）
+//   - 收盘价 > 上轨 × BreakPremium（默认 1.00，突破即买；0033 类别 Ⅰ 原著规则）
 //   - 当日成交量 ≥ VolWindow 日均量 × VolMultiplier（默认 50 日×2.0，放量确认）
 //   - 非一字板（一字涨停追不进，§7 涨停板细分）
 //
@@ -263,7 +263,7 @@ func DefaultParams() contract.BoxParams {
 	return contract.BoxParams{
 		VolMultiplier: 2.0,
 		VolWindow:     50,
-		BreakPremium:  1.03,
+		BreakPremium:  1.00,
 		MinBoxWidth:   0.05,
 		ConfirmDays:   3,
 	}

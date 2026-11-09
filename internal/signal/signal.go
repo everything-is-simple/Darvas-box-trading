@@ -37,7 +37,7 @@ func New(st *store.Store) *Engine {
 func (e *Engine) Evaluate(ctx context.Context, date string) (contract.TaskResult, error) {
 	start := time.Now()
 	res := contract.TaskResult{Task: "signal", Date: date}
-	premium := e.st.ParamRepo.GetFloat("buy.premium", 1.03)
+	premium := e.st.ParamRepo.GetFloat("buy.premium", 1.00)
 
 	var sigs []contract.Signal
 	countByType := map[contract.SignalType]int{}

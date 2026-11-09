@@ -53,7 +53,7 @@
 |---|---|---|---|---|---|---|
 | `buy.highest_box_mode` | `off` | string | 代码默认（未种子化） | `off` | 否决 | P3-8 2026-11-03 定稿否决（alltime/trend 三档全否） |
 | `buy.highest_box_window` | `120` | int | 代码默认（未种子化） | `120` | 否决 | 随 highest_box_mode 否决；trend 模式专用 |
-| `buy.premium` | `1.03` | float | 种子 0001_init.sql | `1.03` | 未验 | A 类：3–8.14% 无梯度；低端 0–3% 另案（旧队列 P1-4） |
+| `buy.premium` | `1.00` | float | 迁移 0033_clean_default_o4_o2_o3.sql | `1.00` | 原著规则 | 类别 Ⅰ（O4 突破即买，65 §1.2.4）：0033 固定 1.00；旧 1.03 是 v1 生效值，非原著规则 |
 | `buy.uptrend_only` | `off` | string | 代码默认（未种子化） | `off` | 否决 | P3-8 2026-11-03 定稿否决，仅回测注入，不种子化 |
 
 **箱体**
@@ -69,7 +69,7 @@
 
 | 键 | 生效值 | 类型 | 来源 | 代码默认 | 验证状态 | 依据 |
 |---|---|---|---|---|---|---|
-| `sell.discount` | `0.97` | float | 种子 0001_init.sql | `0.97` | 维持 | 历史实验「sell.discount 三档」在噪声内，维持 0.97，不宣称最优 |
+| `sell.discount` | `0.97` | float | 种子 0001_init.sql | `0.97` | 维持 | T3 三档在噪声内，维持 0.97，不宣称最优 |
 
 **持仓**
 
@@ -77,23 +77,23 @@
 |---|---|---|---|---|---|---|
 | `pos.equity_gate` | `off` | string | 迁移 0025_new_baseline_inject.sql | `on` | 已验 | B-4 ③ 否决权益预算闸门；0025 种子化 off |
 | `pos.equity_limit` | `0.5` | float | 种子 0018_equity_budget.sql | `0.5` | 地基 | 闸门关时不生效，留作「牛冲熊守」动态仓地基 |
-| `pos.newhigh.cutoff` | `40` | float | 迁移 0026_baseline_explicit.sql | `40` | 已验 | >40% 归 档4（十四年净亏档） |
+| `pos.newhigh.cutoff` | `40` | float | 迁移 0026_baseline_explicit.sql | `40` | 已验 | >40% 归 t4（十四年净亏档） |
 | `pos.newhigh.lookback` | `252` | int | 迁移 0026_baseline_explicit.sql | `252` | 已验 | 52 周（交易日），随阶梯一并定案 |
-| `pos.newhigh.units.t1` | `3` | float | 迁移 0026_baseline_explicit.sql | `3` | 已验 | M9.0：档1/档2 唯一稳定正贡献 |
-| `pos.newhigh.units.t2` | `2` | float | 迁移 0026_baseline_explicit.sql | `2` | 已验 | M9.0：档1/档2 唯一稳定正贡献 |
+| `pos.newhigh.units.t1` | `3` | float | 迁移 0026_baseline_explicit.sql | `3` | 已验 | M9.0：t1/t2 唯一稳定正贡献 |
+| `pos.newhigh.units.t2` | `2` | float | 迁移 0026_baseline_explicit.sql | `2` | 已验 | M9.0：t1/t2 唯一稳定正贡献 |
 | `pos.newhigh.units.t3` | `1` | float | 迁移 0026_baseline_explicit.sql | `1` | 已验 | M9.0 落地档位，未单独 A/B |
 | `pos.newhigh.units.t4` | `0.5` | float | 迁移 0026_baseline_explicit.sql | `0.5` | 已验 | M9.0：>40% 净亏档，给 0.5 单位 |
 | `pos.newhigh_ladder` | `on` | string | 迁移 0025_new_baseline_inject.sql | `off` | 已验 | M9.0 第 5 维：距 52 周高点四档加码；0025 种子化 on |
 | `pos.regime_scale.mode` | `off` | string | 迁移 0030_regime_scale_stub.sql | `off` | 未验 | 攻防转换传导开关（0030 接口桩）：off 恒等；on 读 L1 状态机，留待后复权 + 新基线账本重算（docs/48 特征二） |
 | `pos.single_limit` | `0.08` | float | 种子 0018_equity_budget.sql | `0.08` | 地基 | 同上，单票 ≤8% 权益 |
 | `pos.unit` | `0.02` | float | 种子 0010_breadth_unit_position.sql | `0.02` | 已验 | 1 单位 = 2% 权益（A M1 单位制定案） |
-| `position.staledays` | `2` | int | 迁移 0016_staledays_2.sql | `2` | 维持 | P2-6a 五档全在噪声内，维持 2（非「2 最优」） |
+| `position.staledays` | `0` | int | 迁移 0033_clean_default_o4_o2_o3.sql | `0` | 原著规则 | O2：0033 固定 0（禁用 2 日强平）；v1 值 2 属反向刹车，干净默认已废（65 §1.2.5） |
 
 **跟踪池**
 
 | 键 | 生效值 | 类型 | 来源 | 代码默认 | 验证状态 | 依据 |
 |---|---|---|---|---|---|---|
-| `pool.blacklist_months` | `12` | int | 迁移 0031_blacklist_months_reseed.sql | `12` | 维持 | 亏损清仓后黑名单冷却月数；0017 种子=12，0019 误删，0031 重新种子化=12（代码默认对齐） |
+| `pool.blacklist_months` | `0` | int | 迁移 0033_clean_default_o4_o2_o3.sql | `0` | 原著规则 | O3：0033 固定 0（停用亏损拉黑）；0031 的 12 属 v1 历史值（65 §1.2.5） |
 | `pool.flatboxmax` | `4` | int | 种子 0001_init.sql | `4` | 未验 | 连续 4 箱不涨出池 |
 | `pool.max_hold` | `14` | int | 迁移 0025_new_baseline_inject.sql | `0` | 已验 | B-4：14 只胜 7 只与 50% 权益闸门；0025 种子化。20 档待验 |
 | `pool.maxwatch` | `8` | int | 种子 0003_pool_lifecycle.sql | `8` | 未验 | 软参考：不拒入池，仅日志告警 |

@@ -75,13 +75,16 @@ func near(a, b float64) bool {
 
 // TestClosePositionBlacklistCooldown E16：冷却截止日以「清仓日」为基准（回放不得用
 // time.Now，否则历史回放里所有亏损票会被永久隔离）；months=0 关闭拉黑；months<0 永久。
+// 0033（2026-11-09）：干净默认改为 0（O3 停用亏损拉黑），故「参数缺省」用例期望
+// normal／无冷却；旧 12 月行为改由显式注入的 12m 用例覆盖。
 func TestClosePositionBlacklistCooldown(t *testing.T) {
 	cases := []struct {
 		name                 string
-		months               string // 空=参数缺省（12 月）
+		months               string // 空=参数缺省（0033 干净默认 0＝关闭拉黑）
 		wantLevel, wantUntil string
 	}{
-		{"default12m", "", "blacklist", "2015-03-05"},
+		{"default_off", "", "normal", ""},
+		{"12m", "12", "blacklist", "2015-03-05"},
 		{"6m", "6", "blacklist", "2014-09-05"},
 		{"24m", "24", "blacklist", "2016-03-05"},
 		{"disabled", "0", "normal", ""},

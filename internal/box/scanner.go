@@ -71,7 +71,7 @@ func (s *Scanner) boxParams() contract.BoxParams {
 	p := DefaultParams()
 	p.VolMultiplier = s.st.ParamRepo.GetFloat("box.volmult", 2.0)
 	p.VolWindow = s.st.ParamRepo.GetInt("box.volwindow", 50)
-	p.BreakPremium = s.st.ParamRepo.GetFloat("buy.premium", 1.03)
+	p.BreakPremium = s.st.ParamRepo.GetFloat("buy.premium", 1.00)
 	p.MinBoxWidth = s.st.ParamRepo.GetFloat("box.min_width", 0.05)
 	return p
 }

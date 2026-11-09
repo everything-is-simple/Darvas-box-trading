@@ -413,7 +413,7 @@ func Run(ctx context.Context, st *store.Store, from, to, outDir string) (string,
 	params := box.DefaultParams()
 	params.VolMultiplier = st.ParamRepo.GetFloat("box.volmult", 2.0)
 	params.VolWindow = st.ParamRepo.GetInt("box.volwindow", 50)
-	params.BreakPremium = st.ParamRepo.GetFloat("buy.premium", 1.03)
+	params.BreakPremium = st.ParamRepo.GetFloat("buy.premium", 1.00)
 	params.MinBoxWidth = st.ParamRepo.GetFloat("box.min_width", 0.05)
 	labels := LabelBoxes(bars, params)
 

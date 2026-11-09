@@ -500,6 +500,7 @@ func (r *TradeRepo) UpdatePositionQtyCost(id int64, qty int, avgCost float64) er
 //          否则（normal / blacklist）→ blacklist（冷却 N 月）。
 // 冷却期参数 pool.blacklist_months：>0 冷却 N 月（从清仓日算起，回放用模拟日，
 // 非 time.Now）；=0 关闭拉黑（亏损不改变等级）；<0 永久拉黑（截止日 9999-12-31）。
+// 0033（2026-11-09）：干净默认改 0，停用「止损后拉黑」；>0 档保留供历史复现／对照臂注入。
 // 单次马尔可夫：只看最近这一笔盈亏，不看历史累计（用户拍板 2026-10-22）。
 func (r *TradeRepo) ClosePosition(id int64, date, reason string) error {
 	// B2（0003）：清仓时落库本次交易已实现盈亏（战绩分级流转依据）。
@@ -538,7 +539,7 @@ func (r *TradeRepo) applyTrackTransition(posID int64, date string) error {
 	}
 	// 0031：改走三件套口径（param_ledger.py 扫 Get* 字面量，直读 SQL 是盲区）。
 	// 0019 误删此行后代码走默认 12 恰等于 0017 种子值，行为不变但台账漏登、Set 静默失败、指纹噪声。
-	months := NewParamRepo(r.db).GetInt("pool.blacklist_months", 12)
+	months := NewParamRepo(r.db).GetInt("pool.blacklist_months", 0)
 	switch {
 	case pnl > 0:
 		// 盈利 → winner
