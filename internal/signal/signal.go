@@ -9,6 +9,9 @@
 //
 // 0017（2026-10-22）：废除 pyramid 加码（一律不加码）——持仓股再突破不再发加码信号，
 // 交易只发生在「第一次信号」；下注档位由 planner 按战绩等级（普通1单位/赢家5单位）决定。
+// 阶段 3 装油门（2026-11-10，docs/65 §5 第 2 行 / O1）：恢复 pyramid 加码通道——
+// 持仓股新箱体再突破重新发 SignalPyramid；腿数上限由 position_leg CHECK(1,2,3) 机制钳制
+//（MaxLegs 只立机制、不落参数，65 §5 第 4 行），达 3 腿不再发信号。
 //
 // 另：AppendSignals 同日幂等（同 date+code+type+box 已存在则跳过），重跑/调度重试不重复。
 package signal
@@ -71,7 +74,10 @@ func (e *Engine) Evaluate(ctx context.Context, date string) (contract.TaskResult
 }
 
 // evalOne 对单只在池股票判定信号（首次事件语义）。优先级：stop > failed_breakout > breakout。
-// 0017：无 pyramid（一律不加码）。
+// 0017 废金字塔后一度无 pyramid；阶段 3 装油门（2026-11-10）恢复：持仓股新箱体再突破发
+// SignalPyramid（腿数达 CHECK(1,2,3) 机制上限后不再发）。
+const maxLegs = 3 // position_leg CHECK(leg_no IN (1,2,3)) 机制上限（65 §5 第 4 行 MaxLegs 只立机制）
+
 func (e *Engine) evalOne(w contract.Watch, date string, premium float64) *contract.Signal {
 	// 修复 archive/07 #1：用 LatestNonFormingBox 而非 LatestBox——突破日引擎输出
 	// [broken_up箱体, forming(0,0)箱体]，LatestBox(id DESC) 必取 forming 致四类信号全死。
@@ -107,11 +113,26 @@ func (e *Engine) evalOne(w contract.Watch, date string, premium float64) *contra
 
 	// breakout：箱体今日刚迁移为 broken_up（BrokenDate==今日）→ 突破事件当日一次。
 	// （boxscan 引擎已用当日窗口完成放量/非一字板等形态判定，此处只消费状态迁移。）
-	// 0017（2026-10-22）：一律不加码——持仓股再突破不再发 pyramid 加码信号，
-	// 只有「无持仓」的票才发 breakout 首买。下注档位由 planner 按战绩等级决定。
+	// 阶段 3 装油门（O1，2026-11-10）：无持仓发 breakout 首买；已持仓（holding）新箱体
+	// 再突破发 pyramid 加码信号——腿数达机制上限（position_leg CHECK(1,2,3)）不再发。
 	if box.Status == contract.BoxBrokenUp && box.BrokenDate == date {
 		if w.Stage == contract.StageHolding {
-			return nil // 已持仓：一律不加码
+			n, err := e.st.TradeRepo.LegCountByCode(w.Code)
+			if err != nil {
+				e.log.Printf("⚠ %s 腿数读取失败，跳过 pyramid 判定: %v", w.Code, err)
+				return nil
+			}
+			if n >= maxLegs {
+				return nil // 已达腿数机制上限（3 腿），不再加码
+			}
+			return &contract.Signal{
+				Date: date, Code: w.Code, Type: contract.SignalPyramid,
+				BoxID: box.ID, ClosePx: close, BoxLevel: box.Top,
+				Payload: map[string]any{
+					"stage": string(w.Stage), "box_top": box.Top,
+					"premium": premium, "broken_date": box.BrokenDate,
+				},
+			}
 		}
 		return &contract.Signal{
 			Date: date, Code: w.Code, Type: contract.SignalBreakout,

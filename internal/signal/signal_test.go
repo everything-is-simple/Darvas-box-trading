@@ -105,8 +105,9 @@ func TestBreakoutFiresOnlyOnBrokenDate(t *testing.T) {
 	}
 }
 
-// TestHoldingNoPyramid 0017：已持仓（holding）股新箱体再突破 → 一律不加码，不发信号。
-func TestHoldingNoPyramid(t *testing.T) {
+// TestHoldingPyramidRestored 阶段 3 装油门（O1，2026-11-10）：已持仓（holding）股新箱体
+// 再突破 → 发 pyramid 加码信号（0017 的「一律不加码」已按 65 §5 第 2 行恢复）。
+func TestHoldingPyramidRestored(t *testing.T) {
 	st := newTestStore(t)
 	code := "sh600003"
 	box := contract.Box{Code: code, Top: 20, Bottom: 18, TopConfirmed: "2026-10-10",
@@ -132,12 +133,14 @@ func TestHoldingNoPyramid(t *testing.T) {
 		t.Fatalf("evaluate: %v", err)
 	}
 	sigs := mustSigs(t, st, "2026-10-14")
-	if len(sigs) != 0 {
-		t.Fatalf("0017 已持仓一律不加码，期望0条信号, got %v", sigs)
+	if len(sigs) != 1 || sigs[0].Type != contract.SignalPyramid {
+		t.Fatalf("已持仓1腿应发1条 pyramid 加码信号, got %v", sigs)
 	}
 }
 
-// TestPyramidMaxLegsReached 已持仓（一律不加码）→ 不再发加码信号（0017 简化后冗余保留为回归）。
+// TestPyramidMaxLegsReached 腿数机制上限（MaxLegs 只立机制，position_leg CHECK(1,2,3)，
+// 65 §5 第 4 行）：已加码到第 3 腿，下次突破不再发 pyramid 信号。
+// （0017 时期此测因「一律不加码」恒真而冗余保留；阶段 3 装油门后成为机制上限的正式回归。）
 func TestPyramidMaxLegsReached(t *testing.T) {
 	st := newTestStore(t)
 	code := "sh600004"

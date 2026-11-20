@@ -11,11 +11,17 @@
 // 取消 winner 5x（D1：docs/23 §9 实证 3 年仅 2 笔全亏 -3,201，有害无益）。
 // 不做熊市闸门、不引入 C 判据（2026-10-23 六轮回测硬结论：C 开仓滞后、A 在熊市不触发，
 // 大盘择时实证不通，见 docs/00 第 0 条回滚标注）。track_level 保留作审计字段，不驱动 units。
-// 一律不加码（0017）：已持仓股再突破不生成买单。组合约束 = 同时持仓数上限（pool.max_hold）。
-//   - breakout → 腿1停损买单：trigger = box.top × buy.premium，stop = box.top × sell.discount
+// 加码（阶段 3 装油门，2026-11-10，65 §5 第 2/3/4 行 / O1 / D2a）：0017「一律不加码」
+// 恢复为「持仓股新箱体再突破 → pyramid 加码一腿」（signal 层发 SignalPyramid，planner
+// 按信号类型分流）。腿号 = 当前持仓腿数 + 1，上限由 position_leg CHECK(1,2,3) 机制钳制
+//（MaxLegs 只立机制、不落参数）。组合约束 = 同时持仓数上限（pool.max_hold）。
+//   - breakout → 腿1停损买单（试探仓，reason 标 $.probe）：trigger = box.top × buy.premium，
+//     stop = box.top × sell.discount
 //     （B1修正2026-10-18：首腿紧止损=被突破箱体上轨/突破点下方，原书§4.1；旧实现误挂箱体下轨下方）
-//   - pyramid → 一律不加码（0017）：已持仓不生成买单（防御性时滞分支随 0017 退役）
-//   - stop/failed_breakout → 止损卖单：trigger = box.bottom × sell.discount，qty = 持仓全部（一次全出）
+//   - pyramid → 腿N（N=腿数+1）停损买单：同 trigger/stop 公式，逐腿独立 stop 记录于
+//     position_leg.stop_after；卖单 side 不变（一次全出，O15 冻结）
+//   - stop/failed_breakout → 止损卖单：trigger = box.bottom × sell.discount，qty = 持仓全部（一次全出）；
+//     试探入场的持仓被止损 → reason 标 $.eliminated（O12 试探淘汰事件，D11 验收直查）
 package planner
 
 import (
@@ -33,6 +39,15 @@ import (
 
 // defaultEquity 无权益快照时的默认本金（可被 param equity.base 覆盖）。
 const defaultEquity = 1000000.0
+
+// maxLegs 腿数机制上限 = position_leg CHECK(leg_no IN (1,2,3))（0001_init.sql）。
+// MaxLegs 只立机制、不落参数（65 §5 第 4 行；D2b 腿数梯度选优归段 C）。
+const maxLegs = 3
+
+// equityHardCapRatio 单腿成交金额制度天花板 = 当日权益 × 20%（65 §1.2.4 已拍；
+// 结构常量非可调参数：不写迁移、不落 param，65 §5 第 5 行）。当前默认配置下
+// pos.single_limit=0.08 先于 20% 约束，天花板为段 C 放宽预留的机制护栏。
+const equityHardCapRatio = 0.20
 
 // Planner 计划生成器（contract.Planner）。
 type Planner struct {
@@ -151,6 +166,14 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 	for i := range positions {
 		posByCode[positions[i].Code] = &positions[i]
 	}
+	// O12 试探淘汰（阶段 3 装油门，65 §5 第 6 行）：试探入场（leg1 买单带 $.probe）的
+	// 未平仓持仓集合——这类持仓的卖单 reason 标 $.eliminated = true（原生事件落点，D11
+	// 验收 CLI 直查）。纯审计标记，读取失败不阻塞计划（保守不标，不影响卖出行为本身）。
+	probePos, err := p.st.TradeRepo.OpenProbePositionIDs()
+	if err != nil {
+		p.log.Printf("⚠ 试探持仓集合读取失败，本日 eliminated 标记缺席（不影响卖出）: %v", err)
+		probePos = map[int64]bool{}
+	}
 
 	// M4.4 止损上移（docs/00 §5.2：新箱体确认 → 止损上移到新箱下轨下方）。
 	// DB 触发器保证只升不降（降则 ABORT），此处仅在候选值更高时调用。
@@ -207,7 +230,7 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 			if pendingSell[s.Code] {
 				continue // 已有在途卖出单，不重复生成（M8.3）
 			}
-			o := p.sellOrder(s, box, sellDisc, posByCode, planDate, executeDate)
+			o := p.sellOrder(s, box, sellDisc, posByCode, probePos, planDate, executeDate)
 			if o != nil {
 				orders = append(orders, *o)
 				// P0-3（2026-10-21）：生成卖单后立即回写 pendingSell，
@@ -250,17 +273,21 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 			if !ok || px > pos.AvgCost {
 				continue
 			}
+			tsReason := map[string]any{
+				"signal": "time_stop_noprofit", "days_held": n,
+				"entry_box_id": pos.EntryBoxID,
+				"avg_cost":     pos.AvgCost, "last_close": px, "qty": pos.Qty, "position_id": pos.ID,
+			}
+			if probePos[pos.ID] {
+				tsReason["eliminated"] = true // O12 试探淘汰（65 §5 第 6 行）
+			}
 			orders = append(orders, contract.PlanOrder{
 				PlanDate: planDate, ExecuteDate: executeDate, Code: pos.Code,
 				Side: "sell", OrderKind: "stop_sell",
 				TriggerPrice: px, LimitPrice: px, Qty: pos.Qty, LegNo: 0,
 				// 无信号驱动（source_signal_id 保持 NULL）；entry_box_id 取持仓自己的入场箱体，
 				// 复盘「不获利离场」时能定位该仓位来自哪个箱体。
-				Reason: map[string]any{
-					"signal": "time_stop_noprofit", "days_held": n,
-					"entry_box_id": pos.EntryBoxID,
-					"avg_cost":     pos.AvgCost, "last_close": px, "qty": pos.Qty, "position_id": pos.ID,
-				},
+				Reason: tsReason,
 			})
 			// P0-3（2026-10-21）：回写 pendingSell，防御同批次重复卖单（与信号循环同源）。
 			pendingSell[pos.Code] = true
@@ -281,15 +308,19 @@ func (p *Planner) Build(ctx context.Context, planDate string) (contract.TaskResu
 		if pendingSell[pos.Code] {
 			continue // 当日已有卖出单（stop/failed/time_stop），不再挂初始止损
 		}
+		isReason := map[string]any{
+			"signal": "initial_stop", "stop_price": pos.StopPrice,
+			"entry_box_id": pos.EntryBoxID,
+			"avg_cost": pos.AvgCost, "qty": pos.Qty, "position_id": pos.ID,
+		}
+		if probePos[pos.ID] {
+			isReason["eliminated"] = true // O12 试探淘汰（65 §5 第 6 行）
+		}
 		orders = append(orders, contract.PlanOrder{
 			PlanDate: planDate, ExecuteDate: executeDate, Code: pos.Code,
 			Side: "sell", OrderKind: "stop_sell",
 			TriggerPrice: pos.StopPrice, LimitPrice: pos.StopPrice, Qty: pos.Qty, LegNo: 0,
-			Reason: map[string]any{
-				"signal": "initial_stop", "stop_price": pos.StopPrice,
-				"entry_box_id": pos.EntryBoxID,
-				"avg_cost": pos.AvgCost, "qty": pos.Qty, "position_id": pos.ID,
-			},
+			Reason: isReason,
 		})
 	}
 
@@ -641,20 +672,23 @@ func (p *Planner) isHighestBox(box *contract.Box, mode string, windowN int, plan
 	return box.Top >= maxTop-1e-9
 }
 
-// buyOrder 构造停损买单（A M1：首买，一律不加码）。
-// 规则（2026-10-23，var/bt/regime_final_summary_and_prompt.md + docs/23 §9 D0/D1）：
-//   - 交易只发生在「第一次信号」——同一只票持仓期间一律不加码（0017）。
+// buyOrder 构造停损买单（首买 breakout / 加码 pyramid 共用，阶段 3 装油门后双通道）。
+// 规则（2026-10-23，var/bt/regime_final_summary_and_prompt.md + docs/23 §9 D0/D1；
+// 加码通道 2026-11-10 按 docs/65 §5 第 2–5 行恢复）：
+//   - breakout = 首买（试探仓，reason 标 $.probe，O12）；pyramid = 持仓新箱体再突破
+//     追加一腿（腿号 = 持仓腿数+1，价随新箱顶逐级抬高，每腿独立 stop 落 position_leg）。
 //   - 默认首买单位由 A 判据（60 日低点相邻日比，regime.ClassifyDateA）决定：
 //     升势日 2 单位、其余 1 单位。取消 winner 5x（D1：实证有害无益）。
 //   - E17 实验开关 pos.newhigh_ladder=on 时改为按信号收盘距52周新高分档：
 //     0-5/5-10/10-20/20-40% 分别取参数单位，>cutoff 拒买；默认 off。
 //   - 组合约束（docs/00 §5.6.9，2026-10-27 拍板）＝ 50% 权益预算：下单金额 = min(单位仓,
-//     50% 剩余额度, 单票 8%)，挂单生成即预占；pool.max_hold 废止（0）。
+//     50% 剩余额度, 单票 8%, 20% 制度天花板)，挂单生成即预占；pool.max_hold 废止（0）。
 //     旧「同时持仓数上限 7 只 / 留 30% 现金」已废——7 × 实测均值 2.6% ≈ 18%，吃不满 50%。
 //   - 不引入 C 判据、不做熊市闸门（2026-10-23 六轮回测硬结论：大盘择时不通）。
 //   - track_level 保留作审计字段（记录该票战绩等级），不再驱动 units。
 // 腿号金字塔（leg1=1/leg2=3/leg3补到10）、第②通道加码、单票上限10单位、主力预算30单位
-//   全部随「不加码」退役（见 docs/00 §5.6）。
+//   等 v1 数值梯度全部退役（见 docs/00 §5.6）；段 A 只立机制（腿号+1、CHECK 上限、20% 取小），
+//   腿数梯度 2/3/4 选优（D2b）与 any 数值放宽归段 C。
 func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.Regime, unitValue,
 	buyPrem, sellDisc float64, posByCode map[string]*contract.Position,
 	budget *holdBudget, eqb *equityBudget, plannedQty map[string]int, planDate, execDate string, maxEntryGap float64,
@@ -696,9 +730,29 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 		return nil
 	}
 
-	// 0017：只首买，不加码。已有持仓（pos != nil）→ 不再买入。
-	if _, hasPos := posByCode[s.Code]; hasPos {
-		p.log.Printf("跳过 %s：已持仓，一律不加码（首买后持仓期间不再追加）", s.Code)
+	// 阶段 3 装油门（O1/D2a，2026-11-10）：按信号类型分流首买档／加仓档。
+	//   - breakout（首买信号）+ 已持仓 → 防御性跳过（持仓加码由 pyramid 信号专属通道负责，
+	//     防信号层时滞造成同票双通道并发）。
+	//   - pyramid（加码信号）+ 无持仓 → 防御性跳过（无仓可加）。
+	//   - pyramid + 有持仓 → 腿号 = 当前持仓腿数 + 1；达机制上限（CHECK(1,2,3)）跳过。
+	legNo := 1
+	if s.Type == contract.SignalPyramid {
+		if _, hasPos := posByCode[s.Code]; !hasPos {
+			p.log.Printf("跳过 %s：pyramid 加码信号但无持仓（防御）", s.Code)
+			return nil
+		}
+		legs, err := p.st.TradeRepo.LegCountByCode(s.Code)
+		if err != nil {
+			p.log.Printf("跳过 %s：腿数读取失败 %v", s.Code, err)
+			return nil
+		}
+		legNo = legs + 1
+		if legNo > maxLegs {
+			p.log.Printf("跳过 %s：已达腿数机制上限 %d（position_leg CHECK(1,2,3)）", s.Code, maxLegs)
+			return nil
+		}
+	} else if _, hasPos := posByCode[s.Code]; hasPos {
+		p.log.Printf("跳过 %s：breakout 首买信号但已持仓（防御，加码走 pyramid 通道）", s.Code)
 		return nil
 	}
 
@@ -754,10 +808,18 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	if qty <= 0 {
 		return nil
 	}
-	// A′ 三层取小（docs/00 §5.6.9）：实际下单 = min(单位仓, 50% 剩余额度, 单票 8%)。
+	// A′ 三层取小（docs/00 §5.6.9）+ 制度天花板（65 §1.2.4，阶段 3 装油门 O1）：
+	// 实际下单 = min(单位仓, 50% 剩余额度, 单票 8%, 权益×20%)。capAmt = min(capFor, 权益×20%)，
+	// 取小生效值连同 cap_for/hard_cap 落 reason["cap_amt"]（D1 验收 CLI 直查，不做代理）。
 	// 挂单在生成时即预占额度（eqb.take），撤单/过期由下次 Build 重新计算释放。
+	capFor, hardCap, capAmt := 0.0, 0.0, 0.0
 	if eqb != nil && eqb.on {
-		capAmt := eqb.capFor()
+		capFor = eqb.capFor()
+		hardCap = equityHardCapRatio * eqb.equity
+		capAmt = capFor
+		if hardCap < capAmt {
+			capAmt = hardCap
+		}
 		if capAmt <= 0 {
 			p.log.Printf("跳过 %s：50%% 权益预算已用满（已用 %.0f / 上限 %.0f）",
 				s.Code, eqb.used, eqb.limit*eqb.equity)
@@ -786,11 +848,16 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	reason := map[string]any{
 		"signal": string(s.Type), "box_id": box.ID,
 		"box_top": box.Top, "box_bottom": box.Bottom,
-		"trigger": trigger, "stop": stop, "leg": 1,
+		"trigger": trigger, "stop": stop, "leg": legNo,
 		"regime": string(market), "sizing_basis": basis,
 		"track_level": string(lv), "budget_bucket": "normal",
 		"unit_value": unitValue, "unit_shares": shares, "units": units,
 		"high_52w": high52w, "newhigh_distance_pct": distance,
+	}
+	// O12 试探事件标记（D11 验收 CLI 直查，65 §5 第 6 行）：breakout 首买 = 多候选
+	// 小仓试探的一注；pyramid 加码不标（其 leg≥2 本身即「强者加码」事件）。
+	if s.Type == contract.SignalBreakout {
+		reason["probe"] = true
 	}
 	// 仅闸门开启时写入 gate_ma60（off 模式不写，保 bt_b12_off 与历史基线逐单等价）。
 	if gate.mode != "off" {
@@ -806,6 +873,13 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 			"equity": eqb.equity, "used_before": eqb.used - float64(qty)*trigger,
 			"notional": float64(qty) * trigger,
 		}
+		// D1 验收直查（65 §5 第 5 行）：capAmt 取小生效值与两分量落逐日快照，
+		// 不做代理——CLI 核验 applied == min(cap_for, hard_cap) 且 applied ≤ 权益×20%。
+		reason["cap_amt"] = map[string]any{
+			"cap_for":  capFor,
+			"hard_cap": hardCap,
+			"applied":  capAmt,
+		}
 	}
 
 	// T2 追踪链（2026-11-02，migration 0021）：box_id 与 trigger/stop 同源（本单实际用的箱体），
@@ -814,30 +888,35 @@ func (p *Planner) buyOrder(s contract.Signal, box *contract.Box, market regime.R
 	return &contract.PlanOrder{
 		PlanDate: planDate, ExecuteDate: execDate, Code: s.Code,
 		Side: "buy", OrderKind: "stop_buy",
-		TriggerPrice: trigger, LimitPrice: trigger, Qty: qty, LegNo: 1,
+		TriggerPrice: trigger, LimitPrice: trigger, Qty: qty, LegNo: legNo,
 		SourceSignalID: s.ID,
 		Reason: reason,
 	}
 }
 
-// sellOrder 构造止损卖单（一次全出）。
+// sellOrder 构造止损卖单（一次全出）。probePos = 试探入场（O12）持仓集合：
+// 命中时 reason 标 $.eliminated = true——弱者止损淘汰事件的原生落点（D11 验收直查）。
 func (p *Planner) sellOrder(s contract.Signal, box *contract.Box, sellDisc float64,
-	posByCode map[string]*contract.Position, planDate, execDate string) *contract.PlanOrder {
+	posByCode map[string]*contract.Position, probePos map[int64]bool, planDate, execDate string) *contract.PlanOrder {
 	pos, ok := posByCode[s.Code]
 	if !ok {
 		return nil // 无持仓不生成卖单（watching 的 stop 由 poolsync 出池处理）
 	}
 	trigger := box.Bottom * sellDisc
+	reason := map[string]any{
+		"signal": string(s.Type), "box_id": box.ID, "box_bottom": box.Bottom,
+		"trigger": trigger, "qty": pos.Qty, "position_id": pos.ID,
+	}
+	if probePos[pos.ID] {
+		reason["eliminated"] = true // O12 试探淘汰（65 §5 第 6 行）
+	}
 	// T2 追踪链（0021）：卖单同样写 box_id 与 source_signal_id（信号驱动单强引用来源信号）。
 	return &contract.PlanOrder{
 		PlanDate: planDate, ExecuteDate: execDate, Code: s.Code,
 		Side: "sell", OrderKind: "stop_sell",
 		TriggerPrice: trigger, LimitPrice: trigger, Qty: pos.Qty, LegNo: 0,
 		SourceSignalID: s.ID,
-		Reason: map[string]any{
-			"signal": string(s.Type), "box_id": box.ID, "box_bottom": box.Bottom,
-			"trigger": trigger, "qty": pos.Qty, "position_id": pos.ID,
-		},
+		Reason: reason,
 	}
 }
 

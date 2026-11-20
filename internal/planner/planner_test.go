@@ -110,8 +110,11 @@ func TestPlannerBreakoutUnitQtyBull(t *testing.T) {
 	}
 }
 
-// TestPlannerNoPyramidOnHolding 0017（2026-10-22）：已持仓股再突破 → 一律不加码，无买单。
-func TestPlannerNoPyramidOnHolding(t *testing.T) {
+// TestPlannerPyramidAddonOnHolding 阶段 3 装油门（O1/D2a，2026-11-10，65 §5 第 2–5 行）：
+// 已持仓股 pyramid 加码信号 → 生成腿2买单：LegNo=2、reason.leg=2、trigger=箱顶×buy.premium、
+// reason.cap_amt 落 {cap_for, hard_cap=权益×20%, applied=min}；pyramid 单不带 $.probe。
+//（0017 时期的 TestPlannerNoPyramidOnHolding「已持仓无买单」随装油门反转。）
+func TestPlannerPyramidAddonOnHolding(t *testing.T) {
 	st := newPlannerStore(t)
 	code := "sh600519"
 	seedBars(t, st, code)
@@ -122,7 +125,7 @@ func TestPlannerNoPyramidOnHolding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 已持仓（holding）
+	// 已持仓（holding）1 腿
 	posID, err := st.TradeRepo.CreatePosition(contract.Position{
 		Code: code, OpenedDate: "2026-10-10", EntryBoxID: ids[0], Qty: 600, AvgCost: 25, StopPrice: 20,
 	})
@@ -137,6 +140,10 @@ func TestPlannerNoPyramidOnHolding(t *testing.T) {
 		BoxID: ids[0], ClosePx: 31, BoxLevel: 30,
 	}})
 	st.TradeRepo.SetEquityDefault("2026-10-16", 1000000)
+	// cap_amt 落点仅在 pos.equity_gate=on 时写入（与 equity_budget 同口径）——显式开启。
+	if err := st.ParamRepo.Set("pos.equity_gate", "on"); err != nil {
+		t.Fatal(err)
+	}
 
 	p := New(st)
 	if _, err := p.Build(context.Background(), "2026-10-16"); err != nil {
@@ -146,10 +153,51 @@ func TestPlannerNoPyramidOnHolding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, o := range orders {
-		if o.Side == "buy" {
-			t.Fatalf("0017 已持仓一律不加码，不应有买单: %+v", o)
+	var buy *contract.PlanOrder
+	for i := range orders {
+		if orders[i].Side == "buy" {
+			buy = &orders[i]
+			break
 		}
+	}
+	if buy == nil {
+		t.Fatalf("pyramid 加码应生成腿2买单, orders=%+v", orders)
+	}
+	if buy.LegNo != 2 {
+		t.Errorf("LegNo=%d want 2（持仓腿数+1）", buy.LegNo)
+	}
+	if leg, ok := buy.Reason["leg"].(float64); !ok || leg != 2 {
+		t.Errorf("reason.leg=%v want 2", buy.Reason["leg"])
+	}
+	if sig, ok := buy.Reason["signal"].(string); !ok || sig != "pyramid" {
+		t.Errorf("reason.signal=%v want pyramid", buy.Reason["signal"])
+	}
+	if _, isProbe := buy.Reason["probe"]; isProbe {
+		t.Errorf("pyramid 加码单不应带 $.probe（probe 仅首买试探标记）")
+	}
+	capAmt, ok := buy.Reason["cap_amt"].(map[string]any)
+	if !ok {
+		t.Fatalf("reason.cap_amt 缺失（D1 验收直查落点）: %+v", buy.Reason)
+	}
+	hardCap, ok := capAmt["hard_cap"].(float64)
+	if !ok || hardCap != 200000 {
+		t.Errorf("cap_amt.hard_cap=%v want 200000（权益×20%%）", capAmt["hard_cap"])
+	}
+	applied, _ := capAmt["applied"].(float64)
+	capFor, _ := capAmt["cap_for"].(float64)
+	if applied != capFor && applied != hardCap {
+		t.Errorf("cap_amt.applied=%v 应 = min(cap_for=%v, hard_cap=%v)", applied, capFor, hardCap)
+	}
+	// 持仓带 StopPrice，同日还应挂一张 initial_stop 卖单（一次全出出口不变）
+	var sell *contract.PlanOrder
+	for i := range orders {
+		if orders[i].Side == "sell" {
+			sell = &orders[i]
+			break
+		}
+	}
+	if sell == nil {
+		t.Errorf("持仓应挂 initial_stop 卖单, orders=%+v", orders)
 	}
 }
 

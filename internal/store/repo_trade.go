@@ -652,6 +652,32 @@ func (r *TradeRepo) LegCountByCode(code string) (int, error) {
 	return n, nil
 }
 
+// OpenProbePositionIDs 返回「leg1 入场订单带 $.probe 标记」的未平仓持仓 id 集合（O12 试探淘汰，
+// 阶段 3 装油门，65 §5 第 6 行）。planner 对这类持仓的卖单 reason 标 $.eliminated = true，
+// 供 D11 验收 CLI 直查「试探 → 淘汰」事件序列（原生事件落点，非代理）。
+// 纯只读查询；无任何匹配时返回空集合。
+func (r *TradeRepo) OpenProbePositionIDs() (map[int64]bool, error) {
+	rows, err := r.db.Query(`SELECT DISTINCT pl.position_id
+		FROM position_leg pl
+		JOIN plan_order po ON po.id = pl.plan_order_id
+		WHERE pl.leg_no = 1
+		  AND json_extract(po.reason_json, '$.probe') IS NOT NULL
+		  AND pl.position_id IN (SELECT id FROM position WHERE status = 'open')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
 // AllPositions 取全部持仓含 closed（交易记录视图）。
 func (r *TradeRepo) AllPositions() ([]contract.Position, error) {
 	rows, err := r.db.Query(`SELECT id, code, CAST(opened_date AS TEXT), COALESCE(entry_box_id,0), qty, avg_cost,
